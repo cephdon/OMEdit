@@ -28,28 +28,33 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef CRASHREPORTDIALOG_H
 #define CRASHREPORTDIALOG_H
 
-#include <QtCore>
-#include <QtGui>
+#include <QtGlobal>
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+#include <QNetworkReply>
+#include <QHttpMultiPart>
+#else
 #include <QtNetwork>
+#endif
 
-#include "Utilities.h"
+#include "Util/Utilities.h"
+
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QProgressBar>
 
 class CrashReportDialog : public QDialog
 {
   Q_OBJECT
 public:
-  CrashReportDialog();
+  CrashReportDialog(QString stacktrace);
 private:
+  QString mStackTrace;
   Label *mpCrashReportHeading;
   QFrame *mpHorizontalLine;
   Label *mpEmailLabel;
@@ -63,6 +68,10 @@ private:
   QPushButton *mpSendReportButton;
   QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
+  Label *mpProgressLabel;
+  QProgressBar *mpProgressBar;
+
+  void createGDBBacktrace();
 public slots:
   void sendReport();
   void reportSent(QNetworkReply *pNetworkReply);

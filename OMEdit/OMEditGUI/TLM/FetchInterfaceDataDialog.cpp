@@ -29,15 +29,32 @@
  */
 
 #include "FetchInterfaceDataDialog.h"
+#include "Util/Helper.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Util/Utilities.h"
+#include "FetchInterfaceDataThread.h"
 
-FetchInterfaceDataDialog::FetchInterfaceDataDialog(LibraryTreeNode *pLibraryTreeNode, MainWindow *pMainWindow)
-  : QDialog(pMainWindow, Qt::WindowTitleHint), mpMainWindow(pMainWindow), mpLibraryTreeNode(pLibraryTreeNode)
+#include <QPushButton>
+#include <QObject>
+
+/*!
+ * \class FetchInterfaceDataDialog
+ * \brief A dialog showing progress information when fetch interface data is requested.
+ */
+/*!
+ * \brief FetchInterfaceDataDialog::FetchInterfaceDataDialog
+ * \param pLibraryTreeItem
+ * \param pParent
+ */
+FetchInterfaceDataDialog::FetchInterfaceDataDialog(LibraryTreeItem *pLibraryTreeItem, QString singleModel, QWidget *pParent)
+  : QDialog(pParent), mpLibraryTreeItem(pLibraryTreeItem)
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(tr("Fetch Interface Data")).append(" - ")
-                 .append(mpLibraryTreeNode->getNameStructure()));
+                 .append(mpLibraryTreeItem->getName()));
   setAttribute(Qt::WA_DeleteOnClose);
   setMinimumWidth(550);
-  mpLibraryTreeNode = pLibraryTreeNode;
+  mpLibraryTreeItem = pLibraryTreeItem;
+  mSingleModel = singleModel;
   // progress
   mpProgressLabel = new Label;
   mpProgressLabel->setTextFormat(Qt::RichText);
@@ -75,22 +92,6 @@ FetchInterfaceDataDialog::FetchInterfaceDataDialog(LibraryTreeNode *pLibraryTree
 }
 
 /*!
- * \brief FetchInterfaceDataDialog::closeEvent
- * \param event
- * Reimplentation of QDialog::closeEvent(). Doesn't allow closing the dialog if we are fetching interface data.
- */
-void FetchInterfaceDataDialog::closeEvent(QCloseEvent *event)
-{
-  if (mpFetchInterfaceDataThread->isManagerProcessRunning()) {
-    event->ignore();
-  } else {
-    mpFetchInterfaceDataThread->exit();
-    mpFetchInterfaceDataThread->wait();
-    event->accept();
-  }
-}
-
-/*!
  * \brief FetchInterfaceDataDialog::cancelFetchingInterfaceData
  * Slot activated when mpCancelButton clicked signal is raised.\n
  * Kills the manager process.
@@ -99,12 +100,17 @@ void FetchInterfaceDataDialog::cancelFetchingInterfaceData()
 {
   if (mpFetchInterfaceDataThread->isManagerProcessRunning()) {
     mpFetchInterfaceDataThread->getManagerProcess()->kill();
-    mpProgressLabel->setText(tr("Fetching interface data for <b>%1</b> is cancelled.").arg(mpLibraryTreeNode->getNameStructure()));
+    mpProgressLabel->setText(tr("Fetching interface data for <b>%1</b> is cancelled.").arg(mpLibraryTreeItem->getName()));
     mpCancelButton->setEnabled(false);
     mpFetchAgainButton->setEnabled(true);
   }
 }
 
+/*!
+ * \brief FetchInterfaceDataDialog::fetchAgainInterfaceData
+ * Slot activated when mpFetchAgainButton clicked signal is raised.\n
+ * Restart the fetching of interface data.
+ */
 void FetchInterfaceDataDialog::fetchAgainInterfaceData()
 {
   if (mpFetchInterfaceDataThread->isRunning()) {
@@ -121,7 +127,7 @@ void FetchInterfaceDataDialog::fetchAgainInterfaceData()
  */
 void FetchInterfaceDataDialog::managerProcessStarted()
 {
-  mpProgressLabel->setText(tr("Fetching interface data for <b>%1</b>...").arg(mpLibraryTreeNode->getNameStructure()));
+  mpProgressLabel->setText(tr("Fetching interface data for <b>%1</b>...").arg(mpLibraryTreeItem->getName()));
   mpProgressBar->setRange(0, 0);
   mpProgressBar->setTextVisible(true);
   mpCancelButton->setEnabled(true);
@@ -137,19 +143,9 @@ void FetchInterfaceDataDialog::managerProcessStarted()
  */
 void FetchInterfaceDataDialog::writeManagerOutput(QString output, StringHandler::SimulationMessageType type)
 {
-  /* move the cursor down before adding to the logger. */
-  QTextCursor textCursor = mpOutputTextBox->textCursor();
-  textCursor.movePosition(QTextCursor::End);
-  mpOutputTextBox->setTextCursor(textCursor);
-  /* set the text color */
-  QTextCharFormat charFormat = mpOutputTextBox->currentCharFormat();
-  charFormat.setForeground(StringHandler::getSimulationMessageTypeColor(type));
-  mpOutputTextBox->setCurrentCharFormat(charFormat);
-  /* append the output */
-  mpOutputTextBox->insertPlainText(output + "\n");
-  /* move the cursor */
-  textCursor.movePosition(QTextCursor::End);
-  mpOutputTextBox->setTextCursor(textCursor);
+  QTextCharFormat format;
+  format.setForeground(StringHandler::getSimulationMessageTypeColor(type));
+  Utilities::insertText(mpOutputTextBox, output, format);
 }
 
 /*!
@@ -168,8 +164,113 @@ void FetchInterfaceDataDialog::managerProcessFinished(int exitCode, QProcess::Ex
   mpFetchAgainButton->setEnabled(true);
   // if manager process has finished successfully then try reading the interface data.
   if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-    mpProgressLabel->setText(tr("Fetched interface data for <b>%1</b>...").arg(mpLibraryTreeNode->getNameStructure()));
-    emit readInterfaceData(mpLibraryTreeNode);
+    mpProgressLabel->setText(tr("Fetched interface data for <b>%1</b>...").arg(mpLibraryTreeItem->getName()));
+    emit readInterfaceData(mpLibraryTreeItem);
   }
 }
 
+/*!
+ * \brief FetchInterfaceDataDialog::reject
+ * Reimplentation of QDialog::reject(). Doesn't allow closing the dialog if we are fetching interface data.
+ */
+void FetchInterfaceDataDialog::reject()
+{
+  if (mpFetchInterfaceDataThread->isManagerProcessRunning()) {
+    return;
+  }
+  QDialog::reject();
+}
+
+/*!
+ * \class AlignInterfacesDialog
+ * \brief A dialog for aligning interfaces.
+ */
+/*!
+ * \brief AlignInterfacesDialog::AlignInterfacesDialog
+ * \param pModelWidget
+ * \param pConnectionLineAnnotation
+ */
+AlignInterfacesDialog::AlignInterfacesDialog(ModelWidget *pModelWidget, LineAnnotation *pConnectionLineAnnotation)
+  : QDialog(pModelWidget), mpModelWidget(pModelWidget)
+{
+  setWindowTitle(QString("%1 - %2 - %3").arg(Helper::applicationName).arg(Helper::alignInterfaces)
+                 .arg(mpModelWidget->getLibraryTreeItem()->getName()));
+  setAttribute(Qt::WA_DeleteOnClose);
+  // set heading
+  mpAlignInterfacesHeading = Utilities::getHeadingLabel(QString("%1 - %2").arg(Helper::alignInterfaces)
+                                                        .arg(mpModelWidget->getLibraryTreeItem()->getName()));
+  // set separator line
+  mpHorizontalLine = Utilities::getHeadingLine();
+  // list of interfaces
+  QStringList interfaces;
+  if (pConnectionLineAnnotation) {
+    interfaces << pConnectionLineAnnotation->getStartComponentName() + "  ->  " + pConnectionLineAnnotation->getEndComponentName();
+    interfaces << pConnectionLineAnnotation->getEndComponentName() + "  ->  " + pConnectionLineAnnotation->getStartComponentName();
+  } else {
+    CompositeModelEditor *pCompositeModelEditor = dynamic_cast<CompositeModelEditor*>(pModelWidget->getEditor());
+    if (pCompositeModelEditor) {
+      QDomNodeList connections = pCompositeModelEditor->getConnections();
+      for (int i = 0; i < connections.size(); i++) {
+        QDomElement connection = connections.at(i).toElement();
+        //Only align bidirectional connections
+        if(pCompositeModelEditor->getInterfaceCausality(connection.attribute("From")) ==
+           StringHandler::getTLMCausality(StringHandler::TLMBidirectional) &&
+           pCompositeModelEditor->getInterfaceCausality(connection.attribute("To")) ==
+           StringHandler::getTLMCausality(StringHandler::TLMBidirectional)) {
+          interfaces << connection.attribute("From") + "  ->  " + connection.attribute("To");
+          interfaces << connection.attribute("To") + "  ->  " + connection.attribute("From");
+        }
+      }
+    }
+  }
+  // interfaces list
+  mpInterfaceListWidget = new QListWidget;
+  mpInterfaceListWidget->setItemDelegate(new ItemDelegate(mpInterfaceListWidget));
+  mpInterfaceListWidget->setTextElideMode(Qt::ElideMiddle);
+  mpInterfaceListWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+  mpInterfaceListWidget->addItems(interfaces);
+
+  if (interfaces.size() > 0) {
+    mpInterfaceListWidget->item(0)->setSelected(true);
+  }
+
+  // Create the buttons
+  mpOkButton = new QPushButton(Helper::ok);
+  mpOkButton->setAutoDefault(true);
+  connect(mpOkButton, SIGNAL(clicked()), SLOT(alignInterfaces()));
+  mpCancelButton = new QPushButton(Helper::cancel);
+  mpCancelButton->setAutoDefault(false);
+  connect(mpCancelButton, SIGNAL(clicked()), SLOT(reject()));
+  // add buttons
+  mpButtonBox = new QDialogButtonBox(Qt::Horizontal);
+  mpButtonBox->addButton(mpOkButton, QDialogButtonBox::ActionRole);
+  mpButtonBox->addButton(mpCancelButton, QDialogButtonBox::ActionRole);
+  // Create a layout
+  QGridLayout *pMainLayout = new QGridLayout;
+  pMainLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pMainLayout->addWidget(mpAlignInterfacesHeading,      0, 0);
+  pMainLayout->addWidget(mpHorizontalLine,              1, 0);
+  pMainLayout->addWidget(new Label(tr("Interfaces")),   2, 0);
+  pMainLayout->addWidget(mpInterfaceListWidget,         3, 0);
+  pMainLayout->addWidget(mpButtonBox,                   4, 0, Qt::AlignRight);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief AlignInterfacesDialog::alignInterfaces
+ * Slot activated when mpOkButton clicked signal is raised.\n
+ * Calls the CompositeModelEditor::alignInterfaces() function.
+ */
+void AlignInterfacesDialog::alignInterfaces()
+{
+  CompositeModelEditor *pCompositeModelEditor = dynamic_cast<CompositeModelEditor*>(mpModelWidget->getEditor());
+  if (pCompositeModelEditor) {
+    QList<QListWidgetItem*> selectedItems = mpInterfaceListWidget->selectedItems();
+    if (!selectedItems.isEmpty()) {
+      QString fromInterface = selectedItems.first()->text().section("  ->  ",0,0);
+      QString toInterface = selectedItems.first()->text().section("  ->  ",1,1);
+      pCompositeModelEditor->alignInterfaces(fromInterface, toInterface);
+    }
+  }
+  accept();
+}

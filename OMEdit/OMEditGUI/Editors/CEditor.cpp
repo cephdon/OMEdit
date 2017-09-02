@@ -28,19 +28,49 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "CEditor.h"
+#include "Modeling/ModelWidgetContainer.h"
+#include "Options/OptionsDialog.h"
+#include <QCompleter>
+#include <QMenu>
 
-CEditor::CEditor(MainWindow *pMainWindow)
-  : BaseEditor(pMainWindow)
+CEditor::CEditor(QWidget *pParent)
+  : BaseEditor(pParent)
 {
+  QStringList keywords = CHighlighter::getKeywords();
+  QStringList types = CHighlighter::getTypes();
+  mpPlainTextEdit->insertCompleterKeywords(keywords);
+  mpPlainTextEdit->insertCompleterTypes(types);
+}
 
+/*!
+ * \brief CEditor::setPlainText
+ * Reimplementation of QPlainTextEdit::setPlainText method.
+ * Makes sure we dont update if the passed text is same.
+ * \param text the string to set.
+ */
+void CEditor::setPlainText(const QString &text)
+{
+  if (text != mpPlainTextEdit->toPlainText()) {
+    mForceSetPlainText = true;
+    mpPlainTextEdit->setPlainText(text);
+    mForceSetPlainText = false;
+  }
+}
+
+/*!
+ * \brief CEditor::popUpCompleter()
+ * \pop up the C keywords and types to the completer in the editor
+ */
+void CEditor::popUpCompleter()
+{
+  QCompleter *completer = mpPlainTextEdit->completer();
+  QRect cr = mpPlainTextEdit->cursorRect();
+  cr.setWidth(completer->popup()->sizeHintForColumn(0)+ completer->popup()->verticalScrollBar()->sizeHint().width());
+  completer->complete(cr);
 }
 
 /*!
@@ -55,17 +85,33 @@ void CEditor::showContextMenu(QPoint point)
   delete pMenu;
 }
 
+void CEditor::contentsHasChanged(int position, int charsRemoved, int charsAdded)
+{
+  Q_UNUSED(position);
+  if (mpModelWidget && mpModelWidget->isVisible()) {
+    if (charsRemoved == 0 && charsAdded == 0) {
+      return;
+    }
+    /* if user is changing the text. */
+    if (!mForceSetPlainText) {
+      mpModelWidget->updateModelText();
+    }
+  }
+}
+
 /*!
   * \class CHighlighter
-  *  \brief A syntax highlighter for CEditor.
+  * \brief A syntax highlighter for CEditor.
  */
 /*!
  * \brief CHighlighter::CHighlighter
- * \param pTextDocument
+ * \param pCEditorPage
+ * \param pPlainTextEdit
  */
-CHighlighter::CHighlighter(QPlainTextEdit *pPlainTextEdit)
+CHighlighter::CHighlighter(CEditorPage *pCEditorPage, QPlainTextEdit *pPlainTextEdit)
   : QSyntaxHighlighter(pPlainTextEdit->document())
 {
+  mpCEditorPage = pCEditorPage;
   mpPlainTextEdit = pPlainTextEdit;
   initializeSettings();
 }
@@ -74,21 +120,21 @@ CHighlighter::CHighlighter(QPlainTextEdit *pPlainTextEdit)
 void CHighlighter::initializeSettings()
 {
   QFont font;
-  font.setFamily(Helper::monospacedFontInfo.family());
+  font.setFamily(mpCEditorPage->getOptionsDialog()->getTextEditorPage()->getFontFamilyComboBox()->currentFont().family());
+  font.setPointSizeF(mpCEditorPage->getOptionsDialog()->getTextEditorPage()->getFontSizeSpinBox()->value());
   mpPlainTextEdit->document()->setDefaultFont(font);
-  mpPlainTextEdit->setTabStopWidth(4 * QFontMetrics(font).width(QLatin1Char(' ')));
+  mpPlainTextEdit->setTabStopWidth(mpCEditorPage->getOptionsDialog()->getTextEditorPage()->getTabSizeSpinBox()->value() * QFontMetrics(font).width(QLatin1Char(' ')));
   // set color highlighting
   mHighlightingRules.clear();
   HighlightingRule rule;
-  mTextFormat.setForeground(QColor(0, 0, 0));
-  mKeywordFormat.setForeground(QColor(139, 0, 0));
-  mTypeFormat.setForeground(QColor(255, 10, 10));
-  mSingleLineCommentFormat.setForeground(QColor(0, 150, 0));
-  mMultiLineCommentFormat.setForeground(QColor(0, 150, 0));
-  mFunctionFormat.setForeground(QColor(0, 0, 255));
-  mQuotationFormat.setForeground(QColor(0, 139, 0));
+  mTextFormat.setForeground(mpCEditorPage->getColor("Text"));
+  mKeywordFormat.setForeground(mpCEditorPage->getColor("Keyword"));
+  mTypeFormat.setForeground(mpCEditorPage->getColor("Type"));
+  mSingleLineCommentFormat.setForeground(mpCEditorPage->getColor("Comment"));
+  mMultiLineCommentFormat.setForeground(mpCEditorPage->getColor("Comment"));
+  mQuotationFormat.setForeground(QColor(mpCEditorPage->getColor("Quotes")));
   // Priority: keyword > func() > ident > number. Yes, the order matters :)
-  mNumberFormat.setForeground(QColor(139, 0, 139));
+  mNumberFormat.setForeground(mpCEditorPage->getColor("Number"));
   rule.mPattern = QRegExp("[0-9][0-9]*([.][0-9]*)?([eE][+-]?[0-9]*)?");
   rule.mFormat = mNumberFormat;
   mHighlightingRules.append(rule);
@@ -96,59 +142,68 @@ void CHighlighter::initializeSettings()
   rule.mFormat = mTextFormat;
   mHighlightingRules.append(rule);
   // keywords
-  QStringList keywordPatterns;
-  keywordPatterns << "\\bauto\\b"
-                  << "\\bbreak\\b"
-                  << "\\bcase\\b"
-                  << "\\bconst\\b"
-                  << "\\bcontinue\\b"
-                  << "\\bdefault\\b"
-                  << "\\bdo\\b"
-                  << "\\belse\\b"
-                  << "\\benum\\b"
-                  << "\\bextern\\b"
-                  << "\\bfor\\b"
-                  << "\\bgoto\\b"
-                  << "\\bif\\b"
-                  << "\\blong\\b"
-                  << "\\bregister\\b"
-                  << "\\breturn\\b"
-                  << "\\bshort\\b"
-                  << "\\bsigned\\b"
-                  << "\\bsizeof\\b"
-                  << "\\bstatic\\b"
-                  << "\\bclass\\b"
-                  << "\\bstruct\\b"
-                  << "\\bswitch\\b"
-                  << "\\btypedef\\b"
-                  << "\\bunion\\b"
-                  << "\\bunsigned\\b"
-                  << "\\bvoid\\b"
-                  << "\\bvolatile\\b"
-                  << "\\bwhile\\b";
-  foreach (const QString &pattern, keywordPatterns)
-  {
-    rule.mPattern = QRegExp(pattern);
+  QStringList keywordPatterns = getKeywords();
+  foreach (const QString &pattern, keywordPatterns) {
+    QString newPattern = QString("\\b%1\\b").arg(pattern);
+    rule.mPattern = QRegExp(newPattern);
     rule.mFormat = mKeywordFormat;
     mHighlightingRules.append(rule);
   }
-  // Modelica types
-  QStringList typePatterns;
-  typePatterns << "\\bchar\\b"
-               << "\\bdouble\\b"
-               << "\\bint\\b"
-               << "\\bdouble\\b"
-               << "\\bfloat\\b";
-  foreach (const QString &pattern, typePatterns)
-  {
-    rule.mPattern = QRegExp(pattern);
+  // types
+  QStringList typePatterns = getTypes();
+  foreach (const QString &pattern, typePatterns) {
+    QString newPattern = QString("\\b%1\\b").arg(pattern);
+    rule.mPattern = QRegExp(newPattern);
     rule.mFormat = mTypeFormat;
     mHighlightingRules.append(rule);
   }
+}
 
-  rule.mPattern = QRegExp("\\b[A-Za-z0-9_]+(?=\\()");
-  rule.mFormat = mFunctionFormat;
-  mHighlightingRules.append(rule);
+// Function which returns list of keywords for the highlighter
+QStringList CHighlighter::getKeywords()
+{
+  QStringList keywordsList;
+  keywordsList  << "auto"
+                << "break"
+                << "case"
+                << "const"
+                << "continue"
+                << "default"
+                << "do"
+                << "else"
+                << "enum"
+                << "extern"
+                << "for"
+                << "goto"
+                << "if"
+                << "long"
+                << "register"
+                << "return"
+                << "short"
+                << "signed"
+                << "sizeof"
+                << "static"
+                << "class"
+                << "struct"
+                << "switch"
+                << "typedef"
+                << "union"
+                << "unsigned"
+                << "void"
+                << "volatile"
+                << "while";
+  return keywordsList;
+}
+
+// Function which returns list of types for the highlighter
+QStringList CHighlighter::getTypes()
+{
+  QStringList typesList;
+  typesList  << "char"
+             << "double"
+             << "int"
+             << "float";
+  return typesList;
 }
 
 //! Highlights the multilines text.
@@ -158,8 +213,22 @@ void CHighlighter::highlightMultiLine(const QString &text)
   /* Hand-written recognizer beats the crap known as QRegEx ;) */
   int index = 0, startIndex = 0;
   int blockState = previousBlockState();
-  // fprintf(stderr, "%s with blockState %d\n", text.toStdString().c_str(), blockState);
-
+//  bool foldingState = false;
+//  QTextBlock previousTextBlck = currentBlock().previous();
+//  TextBlockUserData *pPreviousTextBlockUserData = BaseEditorDocumentLayout::userData(previousTextBlck);
+//  if (pPreviousTextBlockUserData) {
+//    foldingState = pPreviousTextBlockUserData->foldingState();
+//  }
+//  QRegExp annotationRegExp("\\bannotation\\b");
+//  int annotationIndex = annotationRegExp.indexIn(text);
+  // store parentheses info
+  Parentheses parentheses;
+  TextBlockUserData *pTextBlockUserData = BaseEditorDocumentLayout::userData(currentBlock());
+  if (pTextBlockUserData) {
+    pTextBlockUserData->clearParentheses();
+    pTextBlockUserData->setFoldingIndent(0);
+    pTextBlockUserData->setFoldingEndIncluded(false);
+  }
   while (index < text.length())
   {
     switch (blockState) {
@@ -199,7 +268,64 @@ void CHighlighter::highlightMultiLine(const QString &text)
           blockState = 3;
         }
     }
+    // if no single line comment, no multi line comment and no quotes then store the parentheses
+    if (pTextBlockUserData && (blockState < 1 || blockState > 3 || mpCEditorPage->getOptionsDialog()->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox()->isChecked())) {
+      if (text[index] == '(' || text[index] == '{' || text[index] == '[') {
+        parentheses.append(Parenthesis(Parenthesis::Opened, text[index], index));
+      } else if (text[index] == ')' || text[index] == '}' || text[index] == ']') {
+        parentheses.append(Parenthesis(Parenthesis::Closed, text[index], index));
+      }
+    }
+//    if (foldingState) {
+//      // if no single line comment, no multi line comment and no quotes then check for annotation end
+//      if (blockState < 1 || blockState > 3) {
+//        if (text[index] == ';') {
+//          if (index == text.length() - 1) { // if we have some text after closing the annotation then we don't want to fold it.
+//            if (annotationIndex < 0) { // if we have one line annotation, we don't want to fold it.
+//              pTextBlockUserData->setFoldingIndent(1);
+//            }
+//            pTextBlockUserData->setFoldingEndIncluded(true);
+//          } else {
+//            pTextBlockUserData->setFoldingIndent(0);
+//          }
+//          foldingState = false;
+//        } else if (annotationIndex < 0) { // if we have one line annotation, we don't want to fold it.
+//          pTextBlockUserData->setFoldingIndent(1);
+//        }
+//      } else if (annotationIndex < 0) { // if we have one line annotation, we don't want to fold it.
+//        pTextBlockUserData->setFoldingIndent(1);
+//      } else if (startIndex < annotationIndex) {  // if we have annotation word before quote or comment block is starting then fold.
+//        pTextBlockUserData->setFoldingIndent(1);
+//      }
+//    } else {
+//      // if no single line comment, no multi line comment and no quotes then check for annotation start
+//      if (blockState < 1 || blockState > 3) {
+//        if (text[index] == 'a' && index+9<text.length() && text[index+1] == 'n' && text[index+2] == 'n' && text[index+3] == 'o'
+//            && text[index+4] == 't' && text[index+5] == 'a' && text[index+6] == 't' && text[index+7] == 'i' && text[index+8] == 'o'
+//            && text[index+9] == 'n') {
+//          if (index+9 == text.length() - 1) { // if we just have annotation keyword in the line
+//            index = index + 8;
+//            foldingState = true;
+//          } else if (index+10<text.length() && (text[index+10] == '(' || text[index+10] == ' ')) { // if annotation keyword is followed by '(' or space.
+//            index = index + 9;
+//            foldingState = true;
+//          }
+//        }
+//      }
+//    }
     index++;
+  }
+  if (pTextBlockUserData) {
+    pTextBlockUserData->setParentheses(parentheses);
+//    if (foldingState) {
+//      pTextBlockUserData->setFoldingState(true);
+//      // Hanldle empty blocks inside annotaiton section
+//      if (text.isEmpty() && foldingState) {
+//        pTextBlockUserData->setFoldingIndent(1);
+//      }
+//    }
+    // set text block user data
+    setCurrentBlockUserData(pTextBlockUserData);
   }
   switch (blockState) {
     case 2:
@@ -228,4 +354,14 @@ void CHighlighter::highlightBlock(const QString &text)
     }
   }
   highlightMultiLine(text);
+}
+
+/*!
+ * \brief CHighlighter::settingsChanged
+ * Slot activated whenever ModelicaEditor text settings changes.
+ */
+void CHighlighter::settingsChanged()
+{
+  initializeSettings();
+  rehighlight();
 }

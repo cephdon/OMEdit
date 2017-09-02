@@ -29,11 +29,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 //! @brief Contains functions used for parsing results obtained from OpenModelica Compiler.
@@ -41,6 +37,16 @@
 #include "StringHandler.h"
 #include "Helper.h"
 #include "Utilities.h"
+
+#include <QtCore/qmath.h>
+#include <QDir>
+#include <QFileDialog>
+#include <QTextCodec>
+
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+#define toAscii toLatin1
+#endif
+
 
 QString StringHandler::mLastOpenDir;
 
@@ -59,6 +65,113 @@ StringHandler::~StringHandler()
 
 }
 
+/*!
+ * \brief StringHandler::getTLMCausality
+ * Returns the TLM causality as string.
+ * \param causality
+ * \return
+ */
+QString StringHandler::getTLMCausality(int causality)
+{
+  switch (causality) {
+    case TLMInput:
+      return "Input";
+    case TLMOutput:
+      return "Output";
+    case TLMBidirectional:
+    default:
+      return "Bidirectional";
+  }
+}
+
+/*!
+ * \brief StringHandler::getTLMDomain
+ * Returns the TLM domain as string.
+ * \param domain
+ * \return
+ */
+QString StringHandler::getTLMDomain(int domain)
+{
+  switch (domain) {
+    case Mechanical:
+      return "Mechanical";
+    case Electric:
+      return "Electric";
+    case Hydraulic:
+      return "Hydraulic";
+    case Pneumatic:
+      return "Pneumatic";
+    case Magnetic:
+      return "Magnetic";
+    default:
+      //Should never be reahed
+      return "";
+  }
+}
+
+QString StringHandler::getSimulationTool(int tool)
+{
+  switch (tool)
+  {
+    case StringHandler::Adams:
+      return "ADAMS";
+    case StringHandler::Beast:
+      return "BEAST";
+    case StringHandler::Dymola:
+      return "Dymola";
+    case StringHandler::OpenModelica:
+      return "OpenModelica";
+    case StringHandler::Simulink:
+      return "Simulink";
+    case StringHandler::WolframSystemModeler:
+      return "Wolfram SystemModeler";
+    case StringHandler::Other:
+      return "Other";
+    default:
+      // should never be reached
+      return "";
+  }
+}
+
+QString StringHandler::getSimulationToolStartCommand(QString tool, QString simulationToolStartCommand)
+{
+  if (tool.toLower().contains("adams"))
+    return "startTLMAdams";
+  else if (tool.toLower().contains("beast"))
+    return "startTLMBeast";
+  else if (tool.toLower().contains("dymola"))
+    return "startTLMDymola";
+  else if (tool.toLower().contains("openmodelica"))
+    return "startTLMOpenModelica";
+  else if (tool.toLower().contains("simulink"))
+    return "startTLMSimulink";
+  else if (tool.toLower().contains("wolfram systemmodeler"))
+    return "startTLMWSM";
+  else if (tool.toLower().contains("other"))
+    return simulationToolStartCommand;
+  else
+    // should never be reached
+    return "";
+}
+
+StringHandler::SimulationTools StringHandler::getSimulationTool(QString simulationToolStartCommand)
+{
+  if (simulationToolStartCommand.toLower().compare("starttlmadams")== 0)
+    return StringHandler::Adams;
+  else if (simulationToolStartCommand.toLower().compare("starttlmbeast")== 0)
+    return StringHandler::Beast;
+  else if (simulationToolStartCommand.toLower().compare("starttlmdymola")== 0)
+    return StringHandler::Dymola;
+  else if (simulationToolStartCommand.toLower().compare("starttlmopenmodelica")== 0)
+    return StringHandler::OpenModelica;
+  else if (simulationToolStartCommand.toLower().compare("starttlmsimulink")== 0)
+    return StringHandler::Simulink;
+  else if (simulationToolStartCommand.toLower().compare("starttlmwsm")== 0)
+    return StringHandler::WolframSystemModeler;
+  else
+    return StringHandler::Other;
+}
+
 QString StringHandler::getModelicaClassType(int type)
 {
   switch (type)
@@ -67,10 +180,10 @@ QString StringHandler::getModelicaClassType(int type)
       return "Model";
     case StringHandler::Class:
       return "Class";
-    case StringHandler::Connector:
-      return "Connector";
     case StringHandler::ExpandableConnector:
       return "Expandable Connector";
+    case StringHandler::Connector:
+      return "Connector";
     case StringHandler::Record:
       return "Record";
     case StringHandler::Block:
@@ -103,42 +216,51 @@ QString StringHandler::getModelicaClassType(int type)
   }
 }
 
+/*!
+ * \brief StringHandler::getModelicaClassType
+ * Returns the type of Modelica class.
+ * \param type
+ * \return
+ */
 StringHandler::ModelicaClasses StringHandler::getModelicaClassType(QString type)
 {
-  if (type.toLower().contains("model"))
+  if (type.toLower().contains("model")) {
     return StringHandler::Model;
-  else if (type.toLower().contains("class"))
+  } else if (type.toLower().contains("class")) {
     return StringHandler::Class;
-  else if (type.toLower().contains("connector"))
+  } else if (type.toLower().contains("expandable connector")) {
+    return StringHandler::ExpandableConnector;
+  } else if (type.toLower().contains("connector")) {
     return StringHandler::Connector;
-  else if (type.toLower().contains("operator record"))
+  } else if (type.toLower().contains("operator record")) {
     return StringHandler::OperatorRecord;
-  else if (type.toLower().contains("operator function"))
+  } else if (type.toLower().contains("operator function")) {
     return StringHandler::OperatorFunction;
-  else if (type.toLower().contains("record"))
+  } else if (type.toLower().contains("record")) {
     return StringHandler::Record;
-  else if (type.toLower().contains("block"))
+  } else if (type.toLower().contains("block")) {
     return StringHandler::Block;
-  else if (type.toLower().contains("function"))
+  } else if (type.toLower().contains("function")) {
     return StringHandler::Function;
-  else if (type.toLower().contains("package"))
+  } else if (type.toLower().contains("package")) {
     return StringHandler::Package;
-  else if (type.toLower().contains("type"))
+  } else if (type.toLower().contains("type")) {
     return StringHandler::Type;
-  else if (type.toLower().contains("operator"))
+  } else if (type.toLower().contains("operator")) {
     return StringHandler::Operator;
-  else if (type.toLower().contains("optimization"))
+  } else if (type.toLower().contains("optimization")) {
     return StringHandler::Optimization;
-  else if (type.toLower().contains("primitive"))
+  } else if (type.toLower().contains("primitive")) {
     return StringHandler::Primitive;
-  else if (type.toLower().contains("parameter"))
+  } else if (type.toLower().contains("parameter")) {
     return StringHandler::Parameter;
-  else if (type.toLower().contains("constant"))
+  } else if (type.toLower().contains("constant")) {
     return StringHandler::Constant;
-  else if (type.toLower().contains("protected"))
+  } else if (type.toLower().contains("protected")) {
     return StringHandler::Protected;
-  else
+  } else {
     return StringHandler::Model;
+  }
 }
 
 QString StringHandler::getViewType(int type)
@@ -533,40 +655,63 @@ QComboBox* StringHandler::getEndArrowComboBox()
   return pEndArrowComboBox;
 }
 
+/*!
+ * \brief StringHandler::getFontWeight
+ * \param styleList
+ * Returns the font weight
+ * \return
+ */
 int StringHandler::getFontWeight(QList<StringHandler::TextStyle> styleList)
 {
-  foreach (StringHandler::TextStyle textStyle, styleList)
-  {
-    if (textStyle == StringHandler::TextStyleBold)
+  foreach (StringHandler::TextStyle textStyle, styleList) {
+    if (textStyle == StringHandler::TextStyleBold) {
       return QFont::Bold;
+    }
   }
   return QFont::Normal;
 }
 
+/*!
+ * \brief StringHandler::getFontItalic
+ * \param styleList
+ * Returns true if font is italic.
+ * \return
+ */
 bool StringHandler::getFontItalic(QList<StringHandler::TextStyle> styleList)
 {
-  foreach (StringHandler::TextStyle textStyle, styleList)
-  {
-    if (textStyle == StringHandler::TextStyleItalic)
+  foreach (StringHandler::TextStyle textStyle, styleList) {
+    if (textStyle == StringHandler::TextStyleItalic) {
       return true;
+    }
   }
   return false;
 }
 
+/*!
+ * \brief StringHandler::getFontUnderline
+ * \param styleList
+ * Returns true is font is underline.
+ * \return
+ */
 bool StringHandler::getFontUnderline(QList<StringHandler::TextStyle> styleList)
 {
-  foreach (StringHandler::TextStyle textStyle, styleList)
-  {
-    if (textStyle == StringHandler::TextStyleUnderLine)
+  foreach (StringHandler::TextStyle textStyle, styleList) {
+    if (textStyle == StringHandler::TextStyleUnderLine) {
       return true;
+    }
   }
   return false;
 }
 
+/*!
+ * \brief StringHandler::getTextAlignment
+ * \param alignment
+ * Returns the text alignment
+ * \return
+ */
 Qt::Alignment StringHandler::getTextAlignment(StringHandler::TextAlignment alignment)
 {
-  switch (alignment)
-  {
+  switch (alignment) {
     case StringHandler::TextAlignmentLeft:
       return Qt::AlignLeft;
     case StringHandler::TextAlignmentCenter:
@@ -578,22 +723,34 @@ Qt::Alignment StringHandler::getTextAlignment(StringHandler::TextAlignment align
   }
 }
 
+/*!
+ * \brief StringHandler::getTextAlignmentType
+ * \param alignment
+ * Returns the text alignment type.
+ * \return
+ */
 StringHandler::TextAlignment StringHandler::getTextAlignmentType(QString alignment)
 {
-  if (alignment.compare("TextAlignment.Left") == 0)
+  if (alignment.compare("TextAlignment.Left") == 0) {
     return StringHandler::TextAlignmentLeft;
-  else if (alignment.compare("TextAlignment.Center") == 0)
+  } else if (alignment.compare("TextAlignment.Center") == 0) {
     return StringHandler::TextAlignmentCenter;
-  else if (alignment.compare("TextAlignment.Right") == 0)
+  } else if (alignment.compare("TextAlignment.Right") == 0) {
     return StringHandler::TextAlignmentRight;
-  else
+  } else {
     return StringHandler::TextAlignmentCenter;
+  }
 }
 
+/*!
+ * \brief StringHandler::getTextAlignmentString
+ * \param alignment
+ * Returns the text alignment as string.
+ * \return
+ */
 QString StringHandler::getTextAlignmentString(StringHandler::TextAlignment alignment)
 {
-  switch (alignment)
-  {
+  switch (alignment) {
     case StringHandler::TextAlignmentLeft:
       return "TextAlignment.Left";
     case StringHandler::TextAlignmentCenter:
@@ -605,10 +762,15 @@ QString StringHandler::getTextAlignmentString(StringHandler::TextAlignment align
   }
 }
 
+/*!
+ * \brief StringHandler::getTextStyleString
+ * \param textStyle
+ * Returns the text syle.
+ * \return
+ */
 QString StringHandler::getTextStyleString(StringHandler::TextStyle textStyle)
 {
-  switch (textStyle)
-  {
+  switch (textStyle) {
     case StringHandler::TextStyleBold:
       return "TextStyle.Bold";
     case StringHandler::TextStyleItalic:
@@ -625,8 +787,7 @@ QString StringHandler::getTextStyleString(StringHandler::TextStyle textStyle)
 QString StringHandler::removeFirstLastCurlBrackets(QString value)
 {
   value = value.trimmed();
-  if (value.length() > 1 && value.at(0) == '{' && value.at(value.length() - 1) == '}')
-  {
+  if (value.length() > 1 && value.at(0) == '{' && value.at(value.length() - 1) == '}') {
     value = value.mid(1, (value.length() - 2));
   }
   return value;
@@ -637,8 +798,7 @@ QString StringHandler::removeFirstLastCurlBrackets(QString value)
 QString StringHandler::removeFirstLastBrackets(QString value)
 {
   value = value.trimmed();
-  if (value.length() > 1 && value.at(0) == '(' && value.at(value.length() - 1) == ')')
-  {
+  if (value.length() > 1 && value.at(0) == '(' && value.at(value.length() - 1) == ')') {
     value = value.mid(1, (value.length() - 2));
   }
   return value;
@@ -649,28 +809,25 @@ QString StringHandler::removeFirstLastBrackets(QString value)
 QString StringHandler::removeFirstLastQuotes(QString value)
 {
   value = value.trimmed();
-  if (value.length() > 1 && value.at(0) == '\"' && value.at(value.length() - 1) == '\"')
-  {
+  if (value.length() > 1 && value.at(0) == '\"' && value.at(value.length() - 1) == '\"') {
     value = value.mid(1, (value.length() - 2));
   }
   return value;
 }
 
 /*!
- * \brief StringHandler::getSubStringBeforeDots
- * Returns the first word from a string.
- * \param value -  is the string which is parsed.
+ * \brief StringHandler::removeFirstLastSingleQuotes
+ * Removes the first and last single quotes from the string.
+ * \param value
  * \return
  */
-QString StringHandler::getSubStringBeforeDots(QString value)
+QString StringHandler::removeFirstLastSingleQuotes(QString value)
 {
-  if (value.isEmpty())
-  {
-    return "";
-  }
   value = value.trimmed();
-  QStringList list = value.split(".", QString::SkipEmptyParts);
-  return list.at(0);
+  if (value.length() > 1 && value.at(0) == '\'' && value.at(value.length() - 1) == '\'') {
+    value = value.mid(1, (value.length() - 2));
+  }
+  return value;
 }
 
 QStringList StringHandler::getStrings(QString value)
@@ -859,31 +1016,14 @@ QString StringHandler::removeFirstWordAfterDot(QString value)
   return wordsBeforeAfterFirstDot(value, false);
 }
 
-QString StringHandler::getModifierValue(QString value)
-{
-  int element = 0;
-  for(int i = 0 ; i < value.length() ; i++)
-  {
-    if (value.at(i) == '(')
-      element++;
-    else if (value.at(i) == ')')
-      element--;
-    else if (value.at(i) == '=')
-    {
-      if (element == 0)
-        return value.mid(i + 1);
-    }
-  }
-  return "";
-}
-
 QString StringHandler::escapeString(QString value)
 {
   QString res;
   value = value.trimmed();
   for (int i = 0; i < value.length(); i++) {
-    switch (value[i].toAscii()) {
-      case '"':  res.append('\"');     break;
+    switch (value[i].toAscii())
+	{
+      case '"':  res.append("\\\"");   break;
       case '\\': res.append("\\\\");   break;
       case '\a': res.append("\\a");    break;
       case '\b': res.append("\\b");    break;
@@ -892,6 +1032,20 @@ QString StringHandler::escapeString(QString value)
       case '\r': res.append("\\r");    break;
       case '\t': res.append("\\t");    break;
       case '\v': res.append("\\v");    break;
+      default:   res.append(value[i]); break;
+    }
+  }
+  return res;
+}
+
+QString StringHandler::escapeStringQuotes(QString value)
+{
+  QString res;
+  value = value.trimmed();
+  for (int i = 0; i < value.length(); i++) {
+    switch (value[i].toAscii())
+    {
+      case '"':  res.append("\\\"");   break;
       default:   res.append(value[i]); break;
     }
   }
@@ -968,7 +1122,7 @@ QStringList StringHandler::unparseStrings(QString value)
         i++;
       continue;
     }
-    while (value[i] != '"' && value[i] != '\0') {
+    while (value[i] != '"' && !value[i].isNull()) {
       i++;
       fprintf(stderr, "error? malformed string-list. skipping: %c\n", value[i].toAscii());
     }
@@ -1010,16 +1164,12 @@ QStringList StringHandler::unparseArrays(QString value)
     }
 
     /* skip the whole quotes section */
-    if (value.at(i) == '"')
-    {
+    if (value.at(i) == '"') {
       i++;
-      while (value.at(i) != '"')
-      {
+      while (value.at(i) != '"') {
         i++;
-        if (value.at(i) == '"' && value.at(i+1) != ',') {
-          if (value.at(i+1) != '}') {
-            i+=2;
-          }
+        if (value.at(i-1) == '\\' && value.at(i) == '"') {
+            i+=1;
         }
       }
     }
@@ -1034,7 +1184,7 @@ bool StringHandler::unparseBool(QString value)
 }
 
 QString StringHandler::getSaveFileName(QWidget* parent, const QString &caption, QString * dir, const QString &filter, QString * selectedFilter,
-                                       const QString &defaultSuffix, const QString *purposedName)
+                                       const QString &defaultSuffix, const QString *proposedName)
 {
   QString dir_str;
   QString fileName;
@@ -1051,12 +1201,16 @@ QString StringHandler::getSaveFileName(QWidget* parent, const QString &caption, 
   /* Add the extension with purposedName because if the directory with the same name exists then
    * QFileDialog::getSaveFileName takes the user to that directory and does not show the purposedName.
    */
-  QString purposedFileName = *purposedName;
-  if (!purposedFileName.isEmpty() && !defaultSuffix.isEmpty())
-    purposedFileName = QString(purposedFileName).append(".").append(defaultSuffix);
+  QString proposedFileName = "";
+  if (proposedName) {
+    proposedFileName = *proposedName;
+    if (!proposedFileName.isEmpty() && !defaultSuffix.isEmpty()) {
+      proposedFileName = QString(proposedFileName).append(".").append(defaultSuffix);
+    }
+  }
 
-  if (!purposedFileName.isEmpty()) {
-    fileName = QFileDialog::getSaveFileName(parent, caption, QString(dir_str).append("/").append(purposedFileName), filter, selectedFilter);
+  if (!proposedFileName.isEmpty()) {
+    fileName = QFileDialog::getSaveFileName(parent, caption, QString(dir_str).append("/").append(proposedFileName), filter, selectedFilter);
   } else {
     fileName = QFileDialog::getSaveFileName(parent, caption, dir_str, filter, selectedFilter);
   }
@@ -1076,7 +1230,28 @@ QString StringHandler::getSaveFileName(QWidget* parent, const QString &caption, 
     mLastOpenDir = fileInfo.absolutePath();
     return fileName;
   }
-  return QString();
+  return "";
+}
+
+QString StringHandler::getSaveFolderName(QWidget* parent, const QString &caption, QString * dir, const QString &filter,
+                                         QString * selectedFilter, const QString *proposedName)
+{
+  QString dir_str;
+  QString folderName;
+
+  if (dir) {
+    dir_str = *dir;
+  } else {
+    dir_str = mLastOpenDir.isEmpty() ? QDir::homePath() : mLastOpenDir;
+  }
+
+  QString proposedFileName = *proposedName;
+  if (!proposedFileName.isEmpty()) {
+    folderName = QFileDialog::getSaveFileName(parent, caption, QString(dir_str).append("/").append(proposedFileName), filter, selectedFilter);
+  } else {
+    folderName = QFileDialog::getSaveFileName(parent, caption, dir_str, filter, selectedFilter);
+  }
+  return folderName;
 }
 
 QString StringHandler::getOpenFileName(QWidget* parent, const QString &caption, QString * dir, const QString &filter, QString * selectedFilter)
@@ -1089,7 +1264,7 @@ QString StringHandler::getOpenFileName(QWidget* parent, const QString &caption, 
     dir_str = mLastOpenDir.isEmpty() ? QDir::homePath() : mLastOpenDir;
   }
 
-  QString fileName = QString();
+  QString fileName = "";
 #ifdef WIN32
   fileName = QFileDialog::getOpenFileName(parent, caption, dir_str, filter, selectedFilter);
 #else
@@ -1097,7 +1272,7 @@ QString StringHandler::getOpenFileName(QWidget* parent, const QString &caption, 
   QFileDialog *dialog;
   dialog = new QFileDialog(parent, caption, dir_str, filter);
   QList<QUrl> urls = dialog->sidebarUrls();
-  urls << QUrl("file://" + OpenModelica::tempDirectory());
+  urls << QUrl("file://" + Utilities::tempDirectory());
   dialog->setSidebarUrls(urls);
   dialog->setFileMode(QFileDialog::ExistingFile);
   if (dialog->exec()) {
@@ -1130,7 +1305,7 @@ QStringList StringHandler::getOpenFileNames(QWidget* parent, const QString &capt
   QFileDialog *dialog;
   dialog = new QFileDialog(parent, caption, dir_str, filter);
   QList<QUrl> urls = dialog->sidebarUrls();
-  urls << QUrl("file://" + OpenModelica::tempDirectory());
+  urls << QUrl("file://" + Utilities::tempDirectory());
   dialog->setSidebarUrls(urls);
   dialog->setFileMode(QFileDialog::ExistingFiles);
   if (dialog->exec()) {
@@ -1160,7 +1335,7 @@ QString StringHandler::getExistingDirectory(QWidget *parent, const QString &capt
     mLastOpenDir = dirName;
     return dirName;
   }
-  return QString();
+  return "";
 }
 
 void StringHandler::setLastOpenDirectory(QString lastOpenDirectory)
@@ -1173,21 +1348,22 @@ QString StringHandler::getLastOpenDirectory()
   return mLastOpenDir;
 }
 
-QStringList StringHandler::getDialogAnnotation(QString componentAnnotation)
+QStringList StringHandler::getAnnotation(QString componentAnnotation, QString annotationName)
 {
-  if (componentAnnotation.toLower().contains("error")) {
-    return QStringList();
-  }
   componentAnnotation = StringHandler::removeFirstLastCurlBrackets(componentAnnotation);
   if (componentAnnotation.isEmpty()) {
     return QStringList();
   }
   QStringList annotations = StringHandler::getStrings(componentAnnotation, '(', ')');
   foreach (QString annotation, annotations) {
-    if (annotation.startsWith("Dialog")) {
-      annotation = annotation.mid(QString("Dialog").length());
+    if (annotation.startsWith(annotationName)) {
+      annotation = annotation.mid(QString(annotationName).length());
       annotation = StringHandler::removeFirstLastBrackets(annotation);
-      return StringHandler::getStrings(annotation);
+      if (annotation.toLower().contains("error")) {
+        return QStringList();
+      } else {
+        return StringHandler::getStrings(annotation);
+      }
     }
   }
   return QStringList();
@@ -1195,37 +1371,40 @@ QStringList StringHandler::getDialogAnnotation(QString componentAnnotation)
 
 QString StringHandler::getPlacementAnnotation(QString componentAnnotation)
 {
-  if (componentAnnotation.toLower().contains("error")) {
-    return QString();
-  }
   componentAnnotation = StringHandler::removeFirstLastCurlBrackets(componentAnnotation);
   if (componentAnnotation.isEmpty()) {
-    return QString();
+    return "";
   }
   QStringList annotations = StringHandler::getStrings(componentAnnotation, '(', ')');
   foreach (QString annotation, annotations) {
     if (annotation.startsWith("Placement")) {
-      return StringHandler::removeFirstLastBrackets(annotation);
+      QString placementAnnotation = StringHandler::removeFirstLastBrackets(annotation);
+      if (placementAnnotation.toLower().contains("error")) {
+        return "";
+      } else {
+        return placementAnnotation;
+      }
     }
   }
-  return QString();
+  return "";
 }
 
 /*!
-  Reduces Angle to useful values. Finds the angle between 0° and 360°.\n
-  This functin is useful for performing shapes and components flipping.\n\n
-  <B>Find the angle between 0° and 360° that corresponds to 1275°</B>\n\n
-  1275 ÷ 360 = 3.541 the only part we care about is the "3", which tells us that 360° fits into 1275° three times,\n
-  1275° – 3×360° = 1275° – 1080° = 195°\n\n
-  <B>Find an angle between 0° and 360° that corresponds to –3742°</B>\n\n
-  This works somewhat similarly to the previous examples. First we will find how often 360° fits inside 3742°,\n
-  3742 ÷ 360 = 10.394\n
-  But since this angle was negative, so we actually need one extra round to carry us into the positive angle values,
-  so we will use 11 instead of 10,\n
-  –3742 + 11 × 360 = –3742 + 3960 = 218.
-  \param angle - the angle to be normalized.
-  \return the normalized angle.
-  */
+ * \brief StringHandler::getNormalizedAngle
+ * Reduces Angle to useful values. Finds the angle between 0° and 360°.\n
+ * This function is useful for performing shapes and components flipping.\n\n
+ * <B>Find the angle between 0° and 360° that corresponds to 1275°</B>\n\n
+ * 1275 ÷ 360 = 3.541 the only part we care about is the "3", which tells us that 360° fits into 1275° three times,\n
+ * 1275° – 3×360° = 1275° – 1080° = 195°\n\n
+ * <B>Find an angle between 0° and 360° that corresponds to –3742°</B>\n\n
+ * This works somewhat similarly to the previous examples. First we will find how often 360° fits inside 3742°,\n
+ * 3742 ÷ 360 = 10.394\n
+ * But since this angle was negative, so we actually need one extra round to carry us into the positive angle values,
+ * so we will use 11 instead of 10,\n
+ * –3742 + 11 × 360 = –3742 + 3960 = 218.
+ * \param angle - the angle to be normalized.
+ * \return the normalized angle.
+ */
 qreal StringHandler::getNormalizedAngle(qreal angle)
 {
   qreal multiplier = fabs(angle)/360;
@@ -1306,25 +1485,27 @@ QStringList StringHandler::makeVariableParts(QString variable)
   return variable.split(QRegExp("\\.(?![^\\[\\]]*\\])"), QString::SkipEmptyParts);
 }
 
-bool StringHandler::isCFile(QString extension)
+#include <iostream>
+using namespace std;
+
+QStringList StringHandler::makeVariablePartsWithInd(QString variable)
 {
-  if (extension.compare("c") == 0 ||
-      extension.compare("cpp") == 0 ||
-      extension.compare("cc") == 0 ||
-      extension.compare("h") == 0 ||
-      extension.compare("hpp") == 0)
-    return true;
-  else
-    return false;
+  QStringList varParts = makeVariableParts(variable);
+  //if the last part is array with index, split it into the name and index parts:
+
+  if (!varParts.isEmpty()) {
+	  QString* lastStr = &(varParts.last());
+	  int i = lastStr->lastIndexOf(QRegExp("\\[\\d+\\]"));
+	  if(i>=0){
+		  QString indexPart = *lastStr;
+		  indexPart.remove(0,i);
+		  lastStr->truncate(i);
+		  varParts.append(indexPart);
+	  }
+  }
+  return varParts;
 }
 
-bool StringHandler::isModelicaFile(QString extension)
-{
-  if (extension.compare("mo") == 0)
-    return true;
-  else
-    return false;
-}
 
 bool StringHandler::naturalSort(const QString &s1, const QString &s2) {
   int i1 = 0; // index in string
@@ -1373,39 +1554,17 @@ bool StringHandler::naturalSort(const QString &s1, const QString &s2) {
 }
 
 #ifdef WIN32
-QProcessEnvironment StringHandler::compilationProcessEnvironment(QString *pCompilationProcessPath)
-{
-  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-  const char *OMDEV = getenv("OMDEV");
-  if (QString(OMDEV).isEmpty()) {
-    QString OMHOME = QString(Helper::OpenModelicaHome).replace("/", "\\");
-    QString MinGWBin = OMHOME + "\\MinGW\\bin";
-    QString MinGWLibExec = OMHOME + "\\MinGW\\libexec\\gcc\\mingw32\\4.4.0";
-    environment.insert("PATH", MinGWBin + ";" + MinGWLibExec);
-    *pCompilationProcessPath = "\"" + OMHOME + "\\MinGW\\bin\\mingw32-make.exe" + "\"";
-  } else {
-    QString qOMDEV = QString(OMDEV).replace("/", "\\");
-    QString MinGWBin = qOMDEV + "\\tools\\mingw\\bin";
-    QString MinGWLibExec = qOMDEV + "\\tools\\mingw\\libexec\\gcc\\mingw32\\4.4.0";
-    environment.insert("PATH", MinGWBin + ";" + MinGWLibExec);
-    *pCompilationProcessPath = "\"" + qOMDEV + "\\tools\\mingw\\bin\\mingw32-make.exe" + "\"";
-  }
-  return environment;
-}
-
+/*!
+ * \brief StringHandler::simulationProcessEnvironment
+ * Returns the environment for simulation process.
+ * \return
+ */
 QProcessEnvironment StringHandler::simulationProcessEnvironment()
 {
   QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-  const char *OMDEV = getenv("OMDEV");
-  if (QString(OMDEV).isEmpty()) {
-    QString OMHOME = QString(Helper::OpenModelicaHome).replace("/", "\\");
-    QString MinGWBin = OMHOME + "\\MinGW\\bin";
-    environment.insert("PATH", MinGWBin + ";" + environment.value("PATH"));
-  } else {
-    QString qOMDEV = QString(OMDEV).replace("/", "\\");
-    QString MinGWBin = qOMDEV + "\\tools\\mingw\\bin";
-    environment.insert("PATH", MinGWBin + ";" + environment.value("PATH"));
-  }
+  QString OMHOME = QString(Helper::OpenModelicaHome).replace("/", "\\");
+  QString OMHOMEBin = OMHOME + "\\bin;" + OMHOME + "\\lib\\omc\\msvc;" + OMHOME + "\\lib\\omc\\cpp;" + OMHOME + "\\lib\\omc\\cpp\\msvc";
+  environment.insert("PATH", OMHOMEBin + ";" + environment.value("PATH"));
   return environment;
 }
 #endif
@@ -1457,8 +1616,8 @@ QColor StringHandler::getSimulationMessageTypeColor(StringHandler::SimulationMes
     case StringHandler::SMWarning:
     case StringHandler::Error:
     case StringHandler::Assert:
-    case StringHandler::Debug:
       return Qt::red;
+    case StringHandler::Debug:
     case StringHandler::Info:
     case StringHandler::Unknown:
     default:
@@ -1491,7 +1650,100 @@ QString StringHandler::makeClassNameRelative(QString draggedClassName, QString d
  */
 QString StringHandler::toCamelCase(QString str)
 {
+  // if the name is all caps then convert it to lower and return it.
+  if (str.toUpper().compare(str, Qt::CaseSensitive) == 0) {
+    return str.toLower();
+  }
   QString s = str;
   s[0] = s[0].toLower();
   return s;
+}
+
+/*!
+ * \brief StringHandler::getLeadingSpaces
+ * Returns a map with line number and number of leading spaces in that line.
+ * \param contents
+ * \return
+ */
+QMap<int, int> StringHandler::getLeadingSpaces(QString contents)
+{
+  QMap<int, int> leadingSpacesMap;
+  int startLeadingSpaces, leadingSpaces = 0;
+  QTextStream textStream(&contents);
+  int lineNumber = 1;
+  while (!textStream.atEnd()) {
+    QString currentLine = textStream.readLine();
+    if (lineNumber == 1) {  // the first line
+      startLeadingSpaces = StringHandler::getLeadingSpacesSize(currentLine);
+      leadingSpaces = startLeadingSpaces;
+    } else {
+      leadingSpaces = qMin(startLeadingSpaces, StringHandler::getLeadingSpacesSize(currentLine));
+    }
+    leadingSpacesMap.insert(lineNumber, leadingSpaces);
+    lineNumber++;
+  }
+  return leadingSpacesMap;
+}
+
+/*!
+ * \brief StringHandler::getLeadingSpacesSize
+ * \param str
+ * \return the number of leading spaces in a string.
+ */
+int StringHandler::getLeadingSpacesSize(QString str)
+{
+  int i = 0;
+  while (i < str.size()) {
+    if (!str.at(i).isSpace()) {
+      break;
+    }
+    i++;
+  }
+  return i;
+}
+
+/*!
+ * \brief StringHandler::isFileWritAble
+ * Checks if file is writable or not.
+ * \param filePath
+ * \return
+ */
+bool StringHandler::isFileWritAble(QString filePath)
+{
+  QFile file(filePath);
+  if (file.exists()) {
+    return file.permissions().testFlag(QFile::WriteUser);
+  } else {
+    return true;
+  }
+}
+
+/*!
+ * \brief StringHandler::containsSpace
+ * Returns true if string contains a space.
+ * \param str
+ * \return
+ */
+bool StringHandler::containsSpace(QString str)
+{
+  for (int i = 0 ; i < str.size() ; i++) {
+    if (str.at(i).isSpace()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/*!
+ * \brief StringHandler::joinDerivativeAndPreviousVariable
+ * Joins the variable. For example, if we have variable like der(der(mass.flange_a.s)) we need to display der(der(s)).
+ * \param fullVariableName
+ * \param variableName
+ * \param derivativeOrPrevious
+ * \return
+ */
+QString StringHandler::joinDerivativeAndPreviousVariable(QString fullVariableName, QString variableName, QString derivativeOrPrevious)
+{
+  int times = (fullVariableName.lastIndexOf(derivativeOrPrevious) / derivativeOrPrevious.size()) + 1;
+  return QString("%1%2%3").arg(QString(derivativeOrPrevious).repeated(times), variableName, QString(")").repeated(times));
 }

@@ -28,16 +28,19 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: StackFramesWidget.cpp 23058 2014-10-29 23:00:02Z adeas31 $
- *
  */
 
-#include "StackFramesWidget.h"
-#include "GDBAdapter.h"
-#include "CommandFactory.h"
+#include "Debugger/StackFrames/StackFramesWidget.h"
+#include "Options/OptionsDialog.h"
+#include "MainWindow.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Debugger/GDB/GDBAdapter.h"
+#include "Debugger/GDB/CommandFactory.h"
+#include "Debugger/Locals/LocalsWidget.h"
+
+#include <QMenu>
+#include <QMessageBox>
 
 StackFrameItem::StackFrameItem(QString level, QString address, QString function, QString line, QString file, QString fullName, StackFramesTreeWidget *pStackFramesTreeWidget)
   : QTreeWidgetItem(pStackFramesTreeWidget)
@@ -65,27 +68,25 @@ QString StackFrameItem::getFileName()
 
 void StackFrameItem::filterStackFrame()
 {
-  OptionsDialog *pOptionsDialog = mpStackFramesTreeWidget->getStackFramesWidget()->getDebuggerMainWindow()->getMainWindow()->getOptionsDialog();
+  OptionsDialog *pOptionsDialog = OptionsDialog::instance();
   /* If file is not readable then disable the frame. */
   QFileInfo fileInfo(getFileName());
-  if (StringHandler::isCFile(fileInfo.suffix()) || !fileInfo.isReadable()) {
+  if (Utilities::isCFile(fileInfo.suffix()) || !fileInfo.isReadable()) {
     setDisabled(true);
   } else {
     setDisabled(false);
   }
   /* check display of C Frames */
-  if (!pOptionsDialog->getDebuggerPage()->getDisplayCFramesCheckBox()->isChecked())
-  {
-    if (StringHandler::isCFile(fileInfo.suffix()))
-    {
+  if (!pOptionsDialog->getDebuggerPage()->getDisplayCFramesCheckBox()->isChecked()) {
+    if (Utilities::isCFile(fileInfo.suffix())) {
       setHidden(true);
       return;
     }
   }
-  if (!pOptionsDialog->getDebuggerPage()->getDisplayUnknownFramesCheckBox()->isChecked())
-  {
-    if (!(StringHandler::isModelicaFile(fileInfo.suffix()) && StringHandler::isCFile(fileInfo.suffix())))
+  if (!pOptionsDialog->getDebuggerPage()->getDisplayUnknownFramesCheckBox()->isChecked()) {
+    if (!(Utilities::isModelicaFile(fileInfo.suffix()) && Utilities::isCFile(fileInfo.suffix()))) {
       setHidden(true);
+    }
   }
   setHidden(false);
 }
@@ -96,11 +97,13 @@ QString StackFrameItem::cleanupFileName(const QString &fileName)
   // Gdb running on windows often delivers "fullnames" which
   // (a) have no drive letter and (b) are not normalized.
 #ifdef Q_OS_WIN
-  if (fileName.isEmpty())
-    return QString();
+  if (fileName.isEmpty()) {
+    return "";
+  }
   QFileInfo fileInfo(fileName);
-  if (fileInfo.isReadable())
+  if (fileInfo.isReadable()) {
     cleanFilePath = QDir::cleanPath(fileInfo.absoluteFilePath());
+  }
 #endif
   return cleanFilePath;
 }
@@ -109,16 +112,11 @@ QString StackFrameItem::cleanupFunction(const QString &function)
 {
   QString cleanFunction = function;
   QFileInfo fileInfo(getFileName());
-  if (StringHandler::isModelicaFile(fileInfo.suffix()))
-  {
+  if (Utilities::isModelicaFile(fileInfo.suffix())) {
     /* if the function name starts with omc_ then remove the first 4 characters. */
-    if (function.startsWith("omc_"))
-    {
+    if (function.startsWith("omc_")) {
       cleanFunction = function.mid(4);
-    }
-    /* if the names are converted to hex values */
-    else if (function.startsWith("_omcQuot_"))
-    {
+    } else if (function.startsWith("_omcQuot_")) { /* if the names are converted to hex values */
       char* hexString = omcHexToString(function.toStdString().c_str());
       cleanFunction = QString(hexString);
       if (hexString) free(hexString);
@@ -166,14 +164,14 @@ StackFramesTreeWidget::StackFramesTreeWidget(StackFramesWidget *pStackFramesWidg
   setIconSize(Helper::iconSize);
   setColumnCount(3);
   QStringList headers;
-  headers << tr("Function") << Helper::line << tr("File");
+  headers << tr("Function") << Helper::line << Helper::file;
   setHeaderLabels(headers);
   setIndentation(0);
   setExpandsOnDoubleClick(false);
   setContextMenuPolicy(Qt::CustomContextMenu);
   createActions();
-  connect(mpStackFramesWidget->getDebuggerMainWindow()->getGDBAdapter(), SIGNAL(stackListFrames(GDBMIValue*)), SLOT(createStackFrames(GDBMIValue*)));
-  connect(this, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)), mpStackFramesWidget, SLOT(stackItemDoubleClicked(QTreeWidgetItem*)));
+  connect(GDBAdapter::instance(), SIGNAL(stackListFrames(GDBMIValue*)), SLOT(createStackFrames(GDBMIValue*)));
+  connect(this, SIGNAL(currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)), mpStackFramesWidget, SLOT(stackCurrentItemChanged(QTreeWidgetItem*)));
   connect(this, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showContextMenu(QPoint)));
 }
 
@@ -185,8 +183,7 @@ StackFramesWidget* StackFramesTreeWidget::getStackFramesWidget()
 void StackFramesTreeWidget::clearStackFrames()
 {
   int i = 0;
-  while(i < topLevelItemCount())
-  {
+  while(i < topLevelItemCount()) {
     qDeleteAll(topLevelItem(i)->takeChildren());
     delete topLevelItem(i);
     i = 0;   //Restart iteration
@@ -196,11 +193,9 @@ void StackFramesTreeWidget::clearStackFrames()
 void StackFramesTreeWidget::updateStackFrames()
 {
   QTreeWidgetItemIterator it(this);
-  while (*it)
-  {
+  while (*it) {
     StackFrameItem *pStackFrameItem = dynamic_cast<StackFrameItem*>((*it));
-    if (pStackFrameItem)
-    {
+    if (pStackFrameItem) {
       pStackFrameItem->filterStackFrame();
     }
     ++it;
@@ -210,21 +205,17 @@ void StackFramesTreeWidget::updateStackFrames()
 void StackFramesTreeWidget::setCurrentStackFrame(QTreeWidgetItem *pQTreeWidgetItem)
 {
   StackFrameItem *pStackFrameItem = dynamic_cast<StackFrameItem*>(pQTreeWidgetItem);
-  if (pStackFrameItem)
-  {
+  if (pStackFrameItem) {
     /* Clear the icon of all stack frames items */
     QTreeWidgetItemIterator it(this);
-    while (*it)
-    {
+    while (*it) {
       QPixmap pixmap(Helper::iconSize);
       pixmap.fill(QColor(Qt::transparent));
       (*it)->setIcon(0, QIcon(pixmap));
       ++it;
     }
     /* set the current item and add icon to it */
-    QByteArray cmd = CommandFactory::stackSelectFrame(pStackFrameItem->getLevel().toInt());
-    mpStackFramesWidget->getDebuggerMainWindow()->getGDBAdapter()->postCommand(cmd);
-    setCurrentItem(pStackFrameItem);
+    mpStackFramesWidget->setSelectedFrame(pStackFrameItem->getLevel().toInt());
     pStackFrameItem->setIcon(0, QIcon(":/Resources/icons/next.svg"));
   }
 }
@@ -255,18 +246,14 @@ void StackFramesTreeWidget::createStackFrames(GDBMIValue *pGDBMIValue)
   /* Clear the StackFramesTreeWidget items */
   clearStackFrames();
   /* create the StackFramesTreeWidget items */
-  if(pGDBMIValue->type == GDBMIValue::ListValue)
-  {
+  if(pGDBMIValue->type == GDBMIValue::ListValue) {
     GDBMIResultList::iterator resultListIterator;
-    for (resultListIterator = pGDBMIValue->miList->miResultsList.begin(); resultListIterator != pGDBMIValue->miList->miResultsList.end(); ++resultListIterator)
-    {
+    for (resultListIterator = pGDBMIValue->miList->miResultsList.begin(); resultListIterator != pGDBMIValue->miList->miResultsList.end(); ++resultListIterator) {
       GDBMIResult *pGDBMIResult = *resultListIterator;
-      if (pGDBMIResult->variable.compare("frame") == 0)
-      {
+      if (pGDBMIResult->variable.compare("frame") == 0) {
         QString level, address, function, line, file, fullName;
-        if (pGDBMIResult->miValue->type == GDBMIValue::TupleValue)
-        {
-          GDBAdapter *pGDBAdapter = mpStackFramesWidget->getDebuggerMainWindow()->getGDBAdapter();
+        if (pGDBMIResult->miValue->type == GDBMIValue::TupleValue) {
+          GDBAdapter *pGDBAdapter = GDBAdapter::instance();
           GDBMIResultList resultsList = pGDBMIResult->miValue->miTuple->miResultsList;
           level = pGDBAdapter->getGDBMIConstantValue(pGDBAdapter->getGDBMIResult("level", resultsList));
           address = pGDBAdapter->getGDBMIConstantValue(pGDBAdapter->getGDBMIResult("addr", resultsList));
@@ -280,21 +267,25 @@ void StackFramesTreeWidget::createStackFrames(GDBMIValue *pGDBMIValue)
       }
     }
   }
-  /* if we get some frames then make the first one selected and fetch the variables for it. */
-  if (topLevelItem(0)) {
-    if (!mpStackFramesWidget->stackItemDoubleClicked(topLevelItem(0))) {
-      /* if we reach here we should suspend the debugger. Otherwise the debugger is suspended in GDBAdapter::stackListVariablesCB */
-      mpStackFramesWidget->getDebuggerMainWindow()->getGDBAdapter()->suspendDebugger();
+  /* if we get some frames then make the first enabled one selected and fetch the variables for it. */
+  for (int i = 0 ; i < topLevelItemCount() ; i++) {
+    if (!topLevelItem(i)->isDisabled()) {
+      mpStackFramesWidget->stackCurrentItemChanged(topLevelItem(i));
+      return;
     }
   }
+  // if there are no stack frames or no enabled stack frames then we need to clear locals browser.
+  QList<QVector<QVariant> > locals;
+  MainWindow::instance()->getLocalsWidget()->getLocalsTreeModel()->insertLocalsList(locals);
+  /* if we reach here we should suspend the debugger. Otherwise the debugger is suspended in GDBAdapter::stackListVariablesCB */
+  GDBAdapter::instance()->suspendDebugger();
 }
 
 void StackFramesTreeWidget::showContextMenu(QPoint point)
 {
   int adjust = 24;
-  StackFrameItem *pLibraryTreeNode = dynamic_cast<StackFrameItem*>(itemAt(point));
-  if (pLibraryTreeNode)
-  {
+  StackFrameItem *pStackFrameItem = dynamic_cast<StackFrameItem*>(itemAt(point));
+  if (pStackFrameItem) {
     QMenu menu(this);
     menu.addAction(mpCreateFullBacktraceAction);
     point.setY(point.y() + adjust);
@@ -305,27 +296,25 @@ void StackFramesTreeWidget::showContextMenu(QPoint point)
 void StackFramesTreeWidget::createFullBacktrace()
 {
   QByteArray cmd = CommandFactory::createFullBacktrace();
-  GDBAdapter *pGDBAdapter = mpStackFramesWidget->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(cmd, GDBAdapter::ConsoleCommand, &GDBAdapter::createFullBacktraceCB);
+  GDBAdapter::instance()->postCommand(cmd, GDBAdapter::ConsoleCommand, &GDBAdapter::createFullBacktraceCB);
 }
 
 /*!
-  \class StackFramesWidget
-  \brief A widget containing debugger manipulation buttons and StackFramesTreeWidget.
-  */
+ * \class StackFramesWidget
+ * \brief A widget containing debugger manipulation buttons and StackFramesTreeWidget.
+ */
 /*!
-  \param pMainWindow - pointer to MainWindow
-  */
-StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
-  : QWidget(pDebuggerMainWindow)
+ * \brief StackFramesWidget::StackFramesWidget
+ * \param pParent
+ */
+StackFramesWidget::StackFramesWidget(QWidget *pParent)
+  : QWidget(pParent)
 {
-  mpDebuggerMainWindow = pDebuggerMainWindow;
   /* continue tool button */
   mpResumeToolButton = new QToolButton;
   mpResumeToolButton->setEnabled(false);
   mpResumeToolButton->setText(Helper::resume);
   mpResumeToolButton->setIcon(QIcon(":/Resources/icons/resume.svg"));
-  mpResumeToolButton->setIconSize(Helper::buttonIconSize);
   mpResumeToolButton->setToolTip(Helper::resume);
   mpResumeToolButton->setAutoRaise(true);
   connect(mpResumeToolButton, SIGNAL(clicked()), SLOT(resumeButtonClicked()));
@@ -334,7 +323,6 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   mpInterruptToolButton->setEnabled(false);
   mpInterruptToolButton->setText(Helper::interrupt);
   mpInterruptToolButton->setIcon(QIcon(":/Resources/icons/interrupt.svg"));
-  mpInterruptToolButton->setIconSize(Helper::buttonIconSize);
   mpInterruptToolButton->setToolTip(Helper::interrupt);
   mpInterruptToolButton->setAutoRaise(true);
   connect(mpInterruptToolButton, SIGNAL(clicked()), SLOT(interruptButtonClicked()));
@@ -343,7 +331,6 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   mpExitToolButton->setEnabled(false);
   mpExitToolButton->setText(Helper::exit);
   mpExitToolButton->setIcon(QIcon(":/Resources/icons/exit.svg"));
-  mpExitToolButton->setIconSize(Helper::buttonIconSize);
   mpExitToolButton->setToolTip(Helper::exit);
   mpExitToolButton->setAutoRaise(true);
   connect(mpExitToolButton, SIGNAL(clicked()), SLOT(exitButtonClicked()));
@@ -356,30 +343,27 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   pControlButtonsHorizontalLayout->addWidget(mpInterruptToolButton);
   pControlButtonsHorizontalLayout->addWidget(mpExitToolButton);
   pControlButtonsFrame->setLayout(pControlButtonsHorizontalLayout);
-  /* continue tool button */
-  mpStepOverToolButton = new QToolButton;
-  mpStepOverToolButton->setEnabled(false);
-  mpStepOverToolButton->setText(Helper::stepOver);
-  mpStepOverToolButton->setIcon(QIcon(":/Resources/icons/step-over.svg"));
-  mpStepOverToolButton->setIconSize(Helper::buttonIconSize);
-  mpStepOverToolButton->setToolTip(Helper::stepOver);
-  mpStepOverToolButton->setAutoRaise(true);
-  connect(mpStepOverToolButton, SIGNAL(clicked()), SLOT(stepOverButtonClicked()));
-  /* continue tool button */
+  /* step-into tool button */
   mpStepIntoToolButton = new QToolButton;
   mpStepIntoToolButton->setEnabled(false);
   mpStepIntoToolButton->setText(Helper::stepInto);
   mpStepIntoToolButton->setIcon(QIcon(":/Resources/icons/step-into.svg"));
-  mpStepIntoToolButton->setIconSize(Helper::buttonIconSize);
   mpStepIntoToolButton->setToolTip(Helper::stepInto);
   mpStepIntoToolButton->setAutoRaise(true);
   connect(mpStepIntoToolButton, SIGNAL(clicked()), SLOT(stepIntoButtonClicked()));
-  /* continue tool button */
+  /* step-over tool button */
+  mpStepOverToolButton = new QToolButton;
+  mpStepOverToolButton->setEnabled(false);
+  mpStepOverToolButton->setText(Helper::stepOver);
+  mpStepOverToolButton->setIcon(QIcon(":/Resources/icons/step-over.svg"));
+  mpStepOverToolButton->setToolTip(Helper::stepOver);
+  mpStepOverToolButton->setAutoRaise(true);
+  connect(mpStepOverToolButton, SIGNAL(clicked()), SLOT(stepOverButtonClicked()));
+  /* step-return tool button */
   mpStepReturnToolButton = new QToolButton;
   mpStepReturnToolButton->setEnabled(false);
   mpStepReturnToolButton->setText(Helper::stepReturn);
   mpStepReturnToolButton->setIcon(QIcon(":/Resources/icons/step-return.svg"));
-  mpStepReturnToolButton->setIconSize(Helper::buttonIconSize);
   mpStepReturnToolButton->setToolTip(Helper::stepReturn);
   mpStepReturnToolButton->setAutoRaise(true);
   connect(mpStepReturnToolButton, SIGNAL(clicked()), SLOT(stepReturnButtonClicked()));
@@ -388,8 +372,8 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   QHBoxLayout *pFlowButtonsHorizontalLayout = new QHBoxLayout;
   pFlowButtonsHorizontalLayout->setContentsMargins(0, 0, 0, 0);
   pFlowButtonsHorizontalLayout->setSpacing(0);
-  pFlowButtonsHorizontalLayout->addWidget(mpStepOverToolButton);
   pFlowButtonsHorizontalLayout->addWidget(mpStepIntoToolButton);
+  pFlowButtonsHorizontalLayout->addWidget(mpStepOverToolButton);
   pFlowButtonsHorizontalLayout->addWidget(mpStepReturnToolButton);
   pFlowButtonsFrame->setLayout(pFlowButtonsHorizontalLayout);
   /* Threads Label */
@@ -398,7 +382,7 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   mpThreadsComboBox = new QComboBox;
   mpThreadsComboBox->setEnabled(false);
   connect(mpThreadsComboBox, SIGNAL(currentIndexChanged(int)), SLOT(threadChanged(int)));
-  connect(mpDebuggerMainWindow->getGDBAdapter(), SIGNAL(threadInfo(GDBMIValue*,QString)), SLOT(fillThreadComboBox(GDBMIValue*,QString)));
+  connect(GDBAdapter::instance(), SIGNAL(threadInfo(GDBMIValue*,QString)), SLOT(fillThreadComboBox(GDBMIValue*,QString)));
   /* Thread frame */
   QFrame *pThreadFrame = new QFrame;
   QHBoxLayout *pThreadHorizontalLayout = new QHBoxLayout;
@@ -421,6 +405,8 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   mpStatusBar->addPermanentWidget(mpStatusLabel, 1);
   /* Stack Frames Tree Widget */
   mpStackFramesTreeWidget = new StackFramesTreeWidget(this);
+  setSelectedThread(1);
+  setSelectedFrame(0);
   /* set layout */
   QGridLayout *pMainLayout = new QGridLayout;
   pMainLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -430,10 +416,10 @@ StackFramesWidget::StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow)
   pMainLayout->addWidget(mpStackFramesTreeWidget, 1, 0);
   setLayout(pMainLayout);
   /* Make connections to control the enable/disable of tool buttons */
-  connect(mpDebuggerMainWindow->getGDBAdapter(), SIGNAL(GDBProcessStarted()), SLOT(handleGDBProcessStarted()));
-  connect(mpDebuggerMainWindow->getGDBAdapter(), SIGNAL(GDBProcessFinished()), SLOT(handleGDBProcessFinished()));
-  connect(mpDebuggerMainWindow->getGDBAdapter(), SIGNAL(inferiorSuspended()), SLOT(handleInferiorSuspended()));
-  connect(mpDebuggerMainWindow->getGDBAdapter(), SIGNAL(inferiorResumed()), SLOT(handleInferiorResumed()));
+  connect(GDBAdapter::instance(), SIGNAL(GDBProcessStarted()), SLOT(handleGDBProcessStarted()));
+  connect(GDBAdapter::instance(), SIGNAL(GDBProcessFinished()), SLOT(handleGDBProcessFinished()));
+  connect(GDBAdapter::instance(), SIGNAL(inferiorSuspended()), SLOT(handleInferiorSuspended()));
+  connect(GDBAdapter::instance(), SIGNAL(inferiorResumed()), SLOT(handleInferiorResumed()));
 }
 
 void StackFramesWidget::setStatusMessage(QString statusMessage)
@@ -447,7 +433,7 @@ void StackFramesWidget::setStatusMessage(QString statusMessage)
   */
 void StackFramesWidget::resumeButtonClicked()
 {
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::execContinue());
+  GDBAdapter::instance()->postCommand(CommandFactory::execContinue());
 }
 
 /*!
@@ -456,7 +442,7 @@ void StackFramesWidget::resumeButtonClicked()
   */
 void StackFramesWidget::interruptButtonClicked()
 {
-
+  QMessageBox::information(this, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::information), tr("Not yet supported."), Helper::ok);
 }
 
 /*!
@@ -465,9 +451,9 @@ void StackFramesWidget::interruptButtonClicked()
   */
 void StackFramesWidget::exitButtonClicked()
 {
-  mpDebuggerMainWindow->getGDBAdapter()->deleteCatchOMCBreakpoint();
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::GDBExit());
-  mpDebuggerMainWindow->getGDBAdapter()->setGDBKilled(true);
+  GDBAdapter::instance()->deleteCatchOMCBreakpoint();
+  GDBAdapter::instance()->postCommand(CommandFactory::GDBExit());
+  GDBAdapter::instance()->setGDBKilled(true);
 }
 
 /*!
@@ -482,8 +468,8 @@ void StackFramesWidget::stepOverButtonClicked()
   mpStepIntoToolButton->setEnabled(false);
   mpStepReturnToolButton->setEnabled(false);
   mpThreadsComboBox->setEnabled(false);
-  mpDebuggerMainWindow->getGDBAdapter()->enableCatchOMCBreakpoint();
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::execNext());
+  GDBAdapter::instance()->enableCatchOMCBreakpoint();
+  GDBAdapter::instance()->postCommand(CommandFactory::execNext());
 }
 
 /*!
@@ -498,8 +484,8 @@ void StackFramesWidget::stepIntoButtonClicked()
   mpStepIntoToolButton->setEnabled(false);
   mpStepReturnToolButton->setEnabled(false);
   mpThreadsComboBox->setEnabled(false);
-  mpDebuggerMainWindow->getGDBAdapter()->enableCatchOMCBreakpoint();
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::execStep());
+  GDBAdapter::instance()->enableCatchOMCBreakpoint();
+  GDBAdapter::instance()->postCommand(CommandFactory::execStep());
 }
 
 /*!
@@ -514,7 +500,7 @@ void StackFramesWidget::stepReturnButtonClicked()
   mpStepIntoToolButton->setEnabled(false);
   mpStepReturnToolButton->setEnabled(false);
   mpThreadsComboBox->setEnabled(false);
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::execFinish());
+  GDBAdapter::instance()->postCommand(CommandFactory::execFinish());
 }
 
 /*!
@@ -575,54 +561,56 @@ void StackFramesWidget::handleInferiorResumed()
 }
 
 /*!
-  Slot activated when currentIndexChanged signal of mpThreadsComboBox is raised.
-  Marks the selected thread as current thread in GDB.
-  */
+ * \brief StackFramesWidget::threadChanged
+ * Slot activated when currentIndexChanged signal of mpThreadsComboBox is raised.
+ * Requests the new list of stacks for the current thread.
+ * \param threadIndex
+ */
 void StackFramesWidget::threadChanged(int threadIndex)
 {
-  if (threadIndex < 0)
+  if (threadIndex < 0) {
     return;
-
-  QByteArray cmd = CommandFactory::threadSelect(mpThreadsComboBox->itemText(threadIndex).toInt());
-  mpDebuggerMainWindow->getGDBAdapter()->postCommand(cmd, &GDBAdapter::threadSelectCB);
+  }
+  GDBAdapter::instance()->resumeDebugger();
+  setSelectedThread(mpThreadsComboBox->currentText().toInt());
+  GDBAdapter::instance()->postCommand(CommandFactory::stackListFrames(getSelectedThread()), &GDBAdapter::stackListFramesCB);
 }
 
 /*!
-  Slot activated when threadInfo signal of GDBAdapter is raised.
-  Populates the mpThreadsComboBox with the number of threads.
-  */
+ * \brief StackFramesWidget::fillThreadComboBox
+ * Slot activated when threadInfo signal of GDBAdapter is raised.
+ * Populates the mpThreadsComboBox with the number of threads.
+ * \param pThreadsGDBMIValue
+ * \param currentThreadId
+ */
 /*
-  -thread-info
-   ^done,threads=[
-   {id="2",target-id="Thread 0xb7e14b90 (LWP 21257)",
-      frame={level="0",addr="0xffffe410",func="__kernel_vsyscall",
-              args=[]},state="running"},
-   {id="1",target-id="Thread 0xb7e156b0 (LWP 21254)",
-      frame={level="0",addr="0x0804891f",func="foo",
-              args=[{name="i",value="10"}],
-              file="/tmp/a.c",fullname="/tmp/a.c",line="158"},
-              state="running"}],
-   current-thread-id="1"
-  */
+-thread-info
+ ^done,threads=[
+ {id="2",target-id="Thread 0xb7e14b90 (LWP 21257)",
+    frame={level="0",addr="0xffffe410",func="__kernel_vsyscall",
+            args=[]},state="running"},
+ {id="1",target-id="Thread 0xb7e156b0 (LWP 21254)",
+    frame={level="0",addr="0x0804891f",func="foo",
+            args=[{name="i",value="10"}],
+            file="/tmp/a.c",fullname="/tmp/a.c",line="158"},
+            state="running"}],
+ current-thread-id="1"
+*/
 void StackFramesWidget::fillThreadComboBox(GDBMIValue *pThreadsGDBMIValue, QString currentThreadId)
 {
   const bool state = mpThreadsComboBox->blockSignals(true);
   /* Clear the mpThreadsComboBox items */
   mpThreadsComboBox->clear();
   /* fill the mpThreadsComboBox the threads */
-  if(pThreadsGDBMIValue->type == GDBMIValue::ListValue)
-  {
+  if(pThreadsGDBMIValue->type == GDBMIValue::ListValue) {
     GDBMIValueList::iterator valuesListiterator;
-    for (valuesListiterator = pThreadsGDBMIValue->miList->miValuesList.begin(); valuesListiterator != pThreadsGDBMIValue->miList->miValuesList.end(); ++valuesListiterator)
-    {
+    for (valuesListiterator = pThreadsGDBMIValue->miList->miValuesList.begin(); valuesListiterator != pThreadsGDBMIValue->miList->miValuesList.end(); ++valuesListiterator) {
       GDBMIValue *pGDBMIValue = *valuesListiterator;
       QString threadId;
-      if (pGDBMIValue->type == GDBMIValue::TupleValue)
-      {
+      if (pGDBMIValue->type == GDBMIValue::TupleValue) {
         GDBMIResultList resultsList = pGDBMIValue->miTuple->miResultsList;
-        threadId = mpDebuggerMainWindow->getGDBAdapter()->getGDBMIConstantValue(mpDebuggerMainWindow->getGDBAdapter()->getGDBMIResult("id", resultsList));
-        if (!threadId.isEmpty())
-        {
+        threadId = GDBAdapter::instance()->getGDBMIConstantValue(GDBAdapter::instance()->getGDBMIResult("id", resultsList));
+        if (!threadId.isEmpty()) {
           mpThreadsComboBox->addItem(threadId);
         }
       }
@@ -631,27 +619,27 @@ void StackFramesWidget::fillThreadComboBox(GDBMIValue *pThreadsGDBMIValue, QStri
   }
   /* select the current thread id */
   int currentIndex = mpThreadsComboBox->findText(currentThreadId, Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpThreadsComboBox->setCurrentIndex(currentIndex);
+  }
   mpThreadsComboBox->blockSignals(state);
 }
 
 /*!
-  Slot activated when itemDoubleClicked signal of StackFramesTreeWidget is raised.
-  Sends the -stack-list-variables command.
-  */
-bool StackFramesWidget::stackItemDoubleClicked(QTreeWidgetItem *pQTreeWidgetItem)
+ * \brief StackFramesWidget::stackCurrentItemChanged
+ * Slot activated when currentItemChanged signal of StackFramesTreeWidget is raised.
+ * Sends the -stack-list-variables command.
+ * \param pQTreeWidgetItem
+ * \return
+ */
+void StackFramesWidget::stackCurrentItemChanged(QTreeWidgetItem *pTreeWidgetItem)
 {
-  StackFrameItem *pStackFrameItem = dynamic_cast<StackFrameItem*>(pQTreeWidgetItem);
-  if (pStackFrameItem)
-  {
-    if (pStackFrameItem->isDisabled())
-      return false;
+  StackFrameItem *pStackFrameItem = dynamic_cast<StackFrameItem*>(pTreeWidgetItem);
+  if (pStackFrameItem && !pStackFrameItem->isDisabled()) {
     mpStackFramesTreeWidget->setCurrentStackFrame(pStackFrameItem);
-    mpDebuggerMainWindow->getGDBAdapter()->postCommand(CommandFactory::stackListVariables("--simple-values"), &GDBAdapter::stackListVariablesCB);
+    QByteArray cmd = CommandFactory::stackListVariables(getSelectedThread(), getSelectedFrame(), "--simple-values");
+    GDBAdapter::instance()->postCommand(cmd, &GDBAdapter::stackListVariablesCB);
     /* Get the stack frame location and mark the line highlighted. */
-    mpDebuggerMainWindow->readFileAndNavigateToLine(pStackFrameItem->getFile(), pStackFrameItem->getLine());
-    return true;
+    MainWindow::instance()->findFileAndGoToLine(pStackFrameItem->getFile(), pStackFrameItem->getLine());
   }
-  return false;
 }

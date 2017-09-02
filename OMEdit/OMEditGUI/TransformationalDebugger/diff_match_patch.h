@@ -66,15 +66,20 @@
 
  */
 
+enum HtmlDiff {
+  Insertion,
+  Deletion,
+  Both
+};
 
 /**-
 * The data structure representing a diff is a Linked list of Diff objects:
-* {Diff(Operation.DELETE, "Hello"), Diff(Operation.INSERT, "Goodbye"),
-*  Diff(Operation.EQUAL, " world.")}
+* {Diff(Operation.OMC_OP_DELETE, "Hello"), Diff(Operation.OMC_OP_INSERT, "Goodbye"),
+*  Diff(Operation.OMC_OP_EQUAL, " world.")}
 * which means: delete "Hello", add "Goodbye" and keep " world."
 */
 enum Operation {
-  DELETE, INSERT, EQUAL
+  OMC_OP_DELETE, OMC_OP_INSERT, OMC_OP_EQUAL
 };
 
 
@@ -84,13 +89,13 @@ enum Operation {
 class Diff {
  public:
   Operation operation;
-  // One of: INSERT, DELETE or EQUAL.
+  // One of: OMC_OP_INSERT, OMC_OP_DELETE or OMC_OP_EQUAL.
   QString text;
   // The text associated with this diff operation.
 
   /**
    * Constructor.  Initializes the diff with the provided values.
-   * @param operation One of INSERT, DELETE or EQUAL.
+   * @param operation One of OMC_OP_INSERT, OMC_OP_DELETE or OMC_OP_EQUAL.
    * @param text The text being applied.
    */
   Diff(Operation _operation, const QString &_text);
@@ -403,7 +408,7 @@ class diff_match_patch {
    * @return HTML representation.
    */
  public:
-  QString diff_prettyHtml(const QList<Diff> &diffs);
+  QString diff_prettyHtml(const QList<Diff> &diffs, HtmlDiff htmlDiff);
 
   /**
    * Compute and return the source text (all equalities and deletions).
@@ -608,7 +613,7 @@ class diff_match_patch {
 
   /**
    * A safer version of QString.mid(pos).  This one returns "" instead of
-   * null when the postion equals the string length.
+   * null when the position equals the string length.
    * @param str String to take a substring from.
    * @param pos Position to start the substring from.
    * @return Substring.
@@ -620,7 +625,7 @@ class diff_match_patch {
 
   /**
    * A safer version of QString.mid(pos, len).  This one returns "" instead of
-   * null when the postion equals the string length.
+   * null when the position equals the string length.
    * @param str String to take a substring from.
    * @param pos Position to start the substring from.
    * @param len Length of substring.

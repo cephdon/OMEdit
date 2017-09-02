@@ -28,13 +28,12 @@
  *
  */
 /*
- *
- * RCS: $Id: BreakpointMarker.cpp 22254 2014-09-10 12:36:43Z adeas31 $
- *
+ * @author Adeel Asghar <adeel.asghar@liu.se>
  */
 
 #include "BreakpointMarker.h"
 #include "BreakpointsWidget.h"
+#include "Editors/BaseEditor.h"
 
 BreakpointMarker::BreakpointMarker(const QString &fileName, int lineNumber, BreakpointsTreeModel *pBreakpointsTreeModel)
     : ITextMark()
@@ -55,8 +54,7 @@ QIcon BreakpointMarker::icon() const
 
 void BreakpointMarker::updateLineNumber(int lineNumber)
 {
-  if (lineNumber != mpLineNumber)
-  {
+  if (lineNumber != mpLineNumber) {
     mpBreakpointsTreeModel->updateBreakpoint(this, lineNumber);
     mpLineNumber = lineNumber;
   }
@@ -64,8 +62,7 @@ void BreakpointMarker::updateLineNumber(int lineNumber)
 
 void BreakpointMarker::updateBlock(const QTextBlock &block)
 {
-  if (mpLineText != block.text())
-  {
+  if (mpLineText != block.text()) {
     mpLineText = block.text();
   }
 }
@@ -77,54 +74,31 @@ void BreakpointMarker::removeFromEditor()
 
 void BreakpointMarker::documentClosing()
 {
-    // todo: impl
-}
-
-TextBlockUserData::~TextBlockUserData()
-{
-  TextMarks marks = _marks;
-  _marks.clear();
-  foreach (ITextMark *mk, marks)
-    mk->removeFromEditor();
-}
-
-//! @class ModelicaTextDocumentLayout
-ModelicaTextDocumentLayout::ModelicaTextDocumentLayout(QTextDocument *doc)
-    : QPlainTextDocumentLayout(doc)
-    , mpHasBreakpoint(false)
-{
-
-}
-
-ModelicaTextDocumentLayout::~ModelicaTextDocumentLayout()
-{
-
+  // todo: impl
 }
 
 //! @class DocumentMarker
 DocumentMarker::DocumentMarker(QTextDocument *doc)
-    : ITextMarkable(doc)
-    , mpTextDocument(doc)
+  : ITextMarkable(doc) , mpTextDocument(doc)
 {
 
 }
 
 bool DocumentMarker::addMark(ITextMark *mark, int line)
 {
-  if (line >= 1)
-  {
+  if (line >= 1) {
     int blockNumber = line - 1;
-    ModelicaTextDocumentLayout *docLayout = qobject_cast<ModelicaTextDocumentLayout*>(mpTextDocument->documentLayout());
-    if (!docLayout)
+    BaseEditorDocumentLayout *docLayout = qobject_cast<BaseEditorDocumentLayout*>(mpTextDocument->documentLayout());
+    if (!docLayout) {
       return false;
+    }
     QTextBlock block = mpTextDocument->findBlockByNumber(blockNumber);
-    if (block.isValid())
-    {
-      TextBlockUserData *userData = ModelicaTextDocumentLayout::userData(block);
+    if (block.isValid()) {
+      TextBlockUserData *userData = BaseEditorDocumentLayout::userData(block);
       userData->addMark(mark);
       mark->updateLineNumber(blockNumber + 1);
       mark->updateBlock(block);
-      docLayout->mpHasBreakpoint = true;
+      docLayout->mHasBreakpoint = true;
       docLayout->requestUpdate();
       return true;
     }
@@ -134,14 +108,13 @@ bool DocumentMarker::addMark(ITextMark *mark, int line)
 
 TextMarks DocumentMarker::marksAt(int line) const
 {
-  if (line >= 1)
-  {
+  if (line >= 1) {
     int blockNumber = line - 1;
     QTextBlock block = mpTextDocument->findBlockByNumber(blockNumber);
-    if (block.isValid())
-    {
-      if (TextBlockUserData *userData = ModelicaTextDocumentLayout::testUserData(block))
+    if (block.isValid()) {
+      if (TextBlockUserData *userData = BaseEditorDocumentLayout::testUserData(block)) {
         return userData->marks();
+      }
     }
   }
   return TextMarks();
@@ -151,27 +124,27 @@ void DocumentMarker::removeMark(ITextMark *mark)
 {
   bool needUpdate = false;
   QTextBlock block = mpTextDocument->begin();
-  while (block.isValid())
-  {
-    if (TextBlockUserData *data = static_cast<TextBlockUserData *>(block.userData()))
+  while (block.isValid()) {
+    if (TextBlockUserData *data = static_cast<TextBlockUserData *>(block.userData())) {
       needUpdate |= data->removeMark(mark);
+    }
     block = block.next();
   }
-  if (needUpdate)
+  if (needUpdate) {
     updateMark(0);
+  }
 }
 
 bool DocumentMarker::hasMark(ITextMark *mark) const
 {
   QTextBlock block = mpTextDocument->begin();
-  while (block.isValid())
-  {
-    if (TextBlockUserData *data = static_cast<TextBlockUserData *>(block.userData()))
-    {
-      if (data->hasMark(mark))
+  while (block.isValid()) {
+    if (TextBlockUserData *data = static_cast<TextBlockUserData *>(block.userData())) {
+      if (data->hasMark(mark)) {
         return true;
-     }
-     block = block.next();
+      }
+    }
+    block = block.next();
   }
   return false;
 }
@@ -179,29 +152,28 @@ bool DocumentMarker::hasMark(ITextMark *mark) const
 void DocumentMarker::updateMark(ITextMark *mark)
 {
   Q_UNUSED(mark)
-  ModelicaTextDocumentLayout *docLayout = qobject_cast<ModelicaTextDocumentLayout*>(mpTextDocument->documentLayout());
+  BaseEditorDocumentLayout *docLayout = qobject_cast<BaseEditorDocumentLayout*>(mpTextDocument->documentLayout());
   if (docLayout)
     docLayout->requestUpdate();
 }
 
 void DocumentMarker::updateBreakpointsLineNumber()
 {
-    QTextBlock block = mpTextDocument->begin();
-    int blockNumber = 0;
-    while (block.isValid()) {
-        if (const TextBlockUserData *userData = ModelicaTextDocumentLayout::testUserData(block))
-            foreach (ITextMark *mrk, userData->marks()) {
-                mrk->updateLineNumber(blockNumber + 1);
-            }
-        block = block.next();
-        ++blockNumber;
-    }
+  QTextBlock block = mpTextDocument->begin();
+  int blockNumber = 0;
+  while (block.isValid()) {
+    if (const TextBlockUserData *userData = BaseEditorDocumentLayout::testUserData(block))
+      foreach (ITextMark *mrk, userData->marks()) {
+        mrk->updateLineNumber(blockNumber + 1);
+      }
+    block = block.next();
+    ++blockNumber;
+  }
 }
 
 void DocumentMarker::updateBreakpointsBlock(const QTextBlock &block)
 {
-    if (const TextBlockUserData *userData = ModelicaTextDocumentLayout::testUserData(block))
-        foreach (ITextMark *mrk, userData->marks())
-            mrk->updateBlock(block);
+  if (const TextBlockUserData *userData = BaseEditorDocumentLayout::testUserData(block))
+    foreach (ITextMark *mrk, userData->marks())
+      mrk->updateBlock(block);
 }
-

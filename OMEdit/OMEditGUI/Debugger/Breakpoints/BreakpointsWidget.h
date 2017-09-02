@@ -28,32 +28,29 @@
  *
  */
 /*
- *
- * RCS: $Id: BreakpointsWidget.h 22254 2014-09-10 12:36:43Z adeas31 $
- *
+ * @author Adeel Asghar <adeel.asghar@liu.se>
  */
 
 #ifndef BREAKPOINTSWIDGET_H
 #define BREAKPOINTSWIDGET_H
 
-#include "DebuggerMainWindow.h"
+#include <QTreeView>
+#include <QAction>
 
-class MainWindow;
-class DebuggerMainWindow;
 class BreakpointsTreeView;
 class BreakpointsTreeModel;
+class BreakpointMarker;
 class BreakpointTreeItem;
+class LibraryTreeItem;
 
 class BreakpointsWidget : public QWidget
 {
   Q_OBJECT
 public:
-  BreakpointsWidget(DebuggerMainWindow *pDebuggerMainWindow);
+  BreakpointsWidget(QWidget *pParent = 0);
   BreakpointsTreeView* getBreakpointsTreeView() {return mpBreakpointsTreeView;}
   BreakpointsTreeModel* getBreakpointsTreeModel() {return mpBreakpointsTreeModel;}
-  DebuggerMainWindow* getDebuggerMainWindow() {return mpDebuggerMainWindow;}
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   BreakpointsTreeView *mpBreakpointsTreeView;
   BreakpointsTreeModel *mpBreakpointsTreeModel;
 };
@@ -104,7 +101,7 @@ public:
   QModelIndex breakpointTreeItemIndex(const BreakpointTreeItem *pBreakpointTreeItem) const;
   QModelIndex breakpointTreeItemIndexHelper(const BreakpointTreeItem *pBreakpointTreeItem, const BreakpointTreeItem *pParentBreakpointTreeItem,
                                             const QModelIndex &parentIndex) const;
-  void insertBreakpoint(BreakpointMarker *pBreakpointMarker, LibraryTreeNode *pLibraryTreeNode, BreakpointTreeItem *pParentBreakpointTreeItem);
+  void insertBreakpoint(BreakpointMarker *pBreakpointMarker, LibraryTreeItem *pLibraryTreeItem, BreakpointTreeItem *pParentBreakpointTreeItem);
   void updateBreakpoint(BreakpointMarker *pBreakpointMarker, int lineNumber);
   void updateBreakpoint(BreakpointTreeItem *pBreakpointTreeItem, QString filePath, int lineNumber, bool enabled, int ignoreCount,
                         QString condition);
@@ -120,11 +117,11 @@ class BreakpointTreeItem : public QObject
 {
   Q_OBJECT
 public:
-  BreakpointTreeItem(const QVector<QVariant> &breakpointItemData, LibraryTreeNode *pLibraryTreeNode = 0, BreakpointTreeItem *pParent = 0);
+  BreakpointTreeItem(const QVector<QVariant> &breakpointItemData, LibraryTreeItem *pLibraryTreeItem = 0, BreakpointTreeItem *pParent = 0);
   ~BreakpointTreeItem();
   QList<BreakpointTreeItem*> getChildren() const {return mChildren;}
-  void setLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode) {mpLibraryTreeNode = pLibraryTreeNode;}
-  LibraryTreeNode* getLibraryTreeNode() {return mpLibraryTreeNode;}
+  void setLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem) {mpLibraryTreeItem = pLibraryTreeItem;}
+  LibraryTreeItem* getLibraryTreeItem() {return mpLibraryTreeItem;}
   void setIsRootItem(bool isRootItem) {mIsRootItem = isRootItem;}
   bool isRootItem() {return mIsRootItem;}
   void setFilePath(QString filePath) {mFilePath = filePath;}
@@ -149,7 +146,7 @@ public:
   BreakpointTreeItem *parent() {return mpParentBreakpointTreeItem;}
 private:
   QList<BreakpointTreeItem*> mChildren;
-  LibraryTreeNode *mpLibraryTreeNode;
+  LibraryTreeItem *mpLibraryTreeItem;
   BreakpointTreeItem *mpParentBreakpointTreeItem;
   bool mIsRootItem;
   QString mFilePath;

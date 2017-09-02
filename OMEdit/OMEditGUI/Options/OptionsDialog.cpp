@@ -29,30 +29,62 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "OptionsDialog.h"
+#include "MainWindow.h"
+#include "OMC/OMCProxy.h"
+#include "Modeling/MessagesWidget.h"
+#include "Plotting/PlotWindowContainer.h"
+#include "Debugger/StackFrames/StackFramesWidget.h"
+#include "Editors/HTMLEditor.h"
 #include <limits>
 
-//! @class OptionsDialog
-//! @brief Creates an interface with options like Modelica Text, Pen Styles, Libraries etc.
+/*!
+ * \class OptionsDialog
+ * \brief Creates an interface with options like Modelica Text, Pen Styles, Libraries etc.
+ */
 
-//! Constructor
-//! @param pMainWindow is the pointer to MainWindow
-OptionsDialog::OptionsDialog(MainWindow *pMainWindow)
-  : QDialog(pMainWindow, Qt::WindowTitleHint), mpSettings(OpenModelica::getApplicationSettings())
+OptionsDialog *OptionsDialog::mpInstance = 0;
+
+/*!
+ * \brief OptionsDialog::create
+ */
+void OptionsDialog::create()
+{
+  if (!mpInstance) {
+    mpInstance = new OptionsDialog;
+  }
+}
+
+/*!
+ * \brief OptionsDialog::destroy
+ */
+void OptionsDialog::destroy()
+{
+  mpInstance->deleteLater();
+}
+
+/*!
+ * \brief OptionsDialog::OptionsDialog
+ * \param pParent
+ */
+OptionsDialog::OptionsDialog(QWidget *pParent)
+  : QDialog(pParent), mpSettings(Utilities::getApplicationSettings())
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::options));
   setModal(true);
-  mpMainWindow = pMainWindow;
   mpGeneralSettingsPage = new GeneralSettingsPage(this);
   mpLibrariesPage = new LibrariesPage(this);
-  mpModelicaTextEditorPage = new ModelicaTextEditorPage(this);
+  mpTextEditorPage = new TextEditorPage(this);
+  mpModelicaEditorPage = new ModelicaEditorPage(this);
+  connect(mpTextEditorPage->getFontFamilyComboBox(), SIGNAL(currentFontChanged(QFont)), mpModelicaEditorPage, SIGNAL(updatePreview()));
+  connect(mpTextEditorPage->getFontSizeSpinBox(), SIGNAL(valueChanged(double)), mpModelicaEditorPage, SIGNAL(updatePreview()));
+  mpMetaModelicaEditorPage = new MetaModelicaEditorPage(this);
+  mpCompositeModelEditorPage = new CompositeModelEditorPage(this);
+  mpCEditorPage = new CEditorPage(this);
+  mpHTMLEditorPage = new HTMLEditorPage(this);
   mpGraphicalViewsPage = new GraphicalViewsPage(this);
   mpSimulationPage = new SimulationPage(this);
   mpMessagesPage = new MessagesPage(this);
@@ -64,7 +96,7 @@ OptionsDialog::OptionsDialog(MainWindow *pMainWindow)
   mpDebuggerPage = new DebuggerPage(this);
   mpFMIPage = new FMIPage(this);
   mpTLMPage = new TLMPage(this);
-  mpTLMEditorPage = new TLMEditorPage(this);
+  mpTraceabilityPage = new TraceabilityPage(this);
   // get the settings
   readSettings();
   // set up the Options Dialog
@@ -77,8 +109,22 @@ void OptionsDialog::readSettings()
   mpSettings->sync();
   readGeneralSettings();
   readLibrariesSettings();
-  readModelicaTextSettings();
-  emit modelicaTextSettingsChanged();
+  readTextEditorSettings();
+  readModelicaEditorSettings();
+  emit modelicaEditorSettingsChanged();
+  mpModelicaEditorPage->emitUpdatePreview();
+  readMetaModelicaEditorSettings();
+  emit metaModelicaEditorSettingsChanged();
+  mpMetaModelicaEditorPage->emitUpdatePreview();
+  readCompositeModelEditorSettings();
+  emit compositeModelEditorSettingsChanged();
+  mpCompositeModelEditorPage->emitUpdatePreview();
+  readCEditorSettings();
+  emit cEditorSettingsChanged();
+  mpCEditorPage->emitUpdatePreview();
+  readHTMLEditorSettings();
+  emit HTMLEditorSettingsChanged();
+  mpHTMLEditorPage->emitUpdatePreview();
   readGraphicalViewsSettings();
   readSimulationSettings();
   readMessagesSettings();
@@ -90,8 +136,7 @@ void OptionsDialog::readSettings()
   readDebuggerSettings();
   readFMISettings();
   readTLMSettings();
-  readTLMEditorSettings();
-  emit TLMEditorSettingsChanged();
+  readTraceabilitySettings();
 }
 
 //! Reads the General section settings from omedit.ini
@@ -108,9 +153,9 @@ void OptionsDialog::readGeneralSettings()
   }
   // read the working directory
   if (mpSettings->contains("workingDirectory")) {
-    mpMainWindow->getOMCProxy()->changeDirectory(mpSettings->value("workingDirectory").toString());
+    MainWindow::instance()->getOMCProxy()->changeDirectory(mpSettings->value("workingDirectory").toString());
   }
-  mpGeneralSettingsPage->setWorkingDirectory(mpMainWindow->getOMCProxy()->changeDirectory());
+  mpGeneralSettingsPage->setWorkingDirectory(MainWindow::instance()->getOMCProxy()->changeDirectory());
   // read toolbar icon size
   if (mpSettings->contains("toolbarIconSize")) {
     mpGeneralSettingsPage->getToolbarIconSizeSpinBox()->setValue(mpSettings->value("toolbarIconSize").toInt());
@@ -118,6 +163,18 @@ void OptionsDialog::readGeneralSettings()
   // read the user customizations
   if (mpSettings->contains("userCustomizations")) {
     mpGeneralSettingsPage->setPreserveUserCustomizations(mpSettings->value("userCustomizations").toBool());
+  }
+  // read the terminal command
+  if (mpSettings->contains("terminalCommand")) {
+    mpGeneralSettingsPage->setTerminalCommand(mpSettings->value("terminalCommand").toString());
+  }
+  // read the terminal command arguments
+  if (mpSettings->contains("terminalCommandArgs")) {
+    mpGeneralSettingsPage->setTerminalCommandArguments(mpSettings->value("terminalCommandArgs").toString());
+  }
+  // read hide variables browser
+  if (mpSettings->contains("hideVariablesBrowser")) {
+    mpGeneralSettingsPage->getHideVariablesBrowserCheckBox()->setChecked(mpSettings->value("hideVariablesBrowser").toBool());
   }
   // read library icon size
   if (mpSettings->contains("libraryIconSize")) {
@@ -142,12 +199,6 @@ void OptionsDialog::readGeneralSettings()
   if (mpSettings->contains("autoSave/interval")) {
     mpGeneralSettingsPage->getAutoSaveIntervalSpinBox()->setValue(mpSettings->value("autoSave/interval").toInt());
   }
-  if (mpSettings->contains("autoSave/enableSingleClasses")) {
-    mpGeneralSettingsPage->getEnableAutoSaveForSingleClassesCheckBox()->setChecked(mpSettings->value("autoSave/enableSingleClasses").toBool());
-  }
-  if (mpSettings->contains("autoSave/enableOneFilePackages")) {
-    mpGeneralSettingsPage->getEnableAutoSaveForOneFilePackagesCheckBox()->setChecked(mpSettings->value("autoSave/enableOneFilePackages").toBool());
-  }
   // read welcome page
   if (mpSettings->contains("welcomePage/view")) {
     mpGeneralSettingsPage->setWelcomePageView(mpSettings->value("welcomePage/view").toInt());
@@ -162,8 +213,7 @@ void OptionsDialog::readLibrariesSettings()
 {
   // read the system libraries
   int i = 0;
-  while(i < mpLibrariesPage->getSystemLibrariesTree()->topLevelItemCount())
-  {
+  while(i < mpLibrariesPage->getSystemLibrariesTree()->topLevelItemCount()) {
     qDeleteAll(mpLibrariesPage->getSystemLibrariesTree()->topLevelItem(i)->takeChildren());
     delete mpLibrariesPage->getSystemLibrariesTree()->topLevelItem(i);
     i = 0;   //Restart iteration
@@ -171,20 +221,23 @@ void OptionsDialog::readLibrariesSettings()
   // read the settings and add libraries
   mpSettings->beginGroup("libraries");
   QStringList systemLibraries = mpSettings->childKeys();
-  foreach (QString systemLibrary, systemLibraries)
-  {
+  foreach (QString systemLibrary, systemLibraries) {
     QStringList values;
     values << systemLibrary << mpSettings->value(systemLibrary).toString();
     mpLibrariesPage->getSystemLibrariesTree()->addTopLevelItem(new QTreeWidgetItem(values));
   }
   mpSettings->endGroup();
   // read the forceModelicaLoad
-  if (mpSettings->contains("forceModelicaLoad"))
+  if (mpSettings->contains("forceModelicaLoad")) {
     mpLibrariesPage->getForceModelicaLoadCheckBox()->setChecked(mpSettings->value("forceModelicaLoad").toBool());
+  }
+  // read load OpenModelica library on startup
+  if (mpSettings->contains("loadOpenModelicaOnStartup")) {
+    mpLibrariesPage->getLoadOpenModelicaLibraryCheckBox()->setChecked(mpSettings->value("loadOpenModelicaOnStartup").toBool());
+  }
   // read user libraries
   i = 0;
-  while(i < mpLibrariesPage->getUserLibrariesTree()->topLevelItemCount())
-  {
+  while(i < mpLibrariesPage->getUserLibrariesTree()->topLevelItemCount()) {
     qDeleteAll(mpLibrariesPage->getUserLibrariesTree()->topLevelItem(i)->takeChildren());
     delete mpLibrariesPage->getUserLibrariesTree()->topLevelItem(i);
     i = 0;   //Restart iteration
@@ -192,8 +245,7 @@ void OptionsDialog::readLibrariesSettings()
   // read the settings and add libraries
   mpSettings->beginGroup("userlibraries");
   QStringList userLibraries = mpSettings->childKeys();
-  foreach (QString userLibrary, userLibraries)
-  {
+  foreach (QString userLibrary, userLibraries) {
     QStringList values;
     values << QUrl::fromPercentEncoding(QByteArray(userLibrary.toStdString().c_str())) << mpSettings->value(userLibrary).toString();
     mpLibrariesPage->getUserLibrariesTree()->addTopLevelItem(new QTreeWidgetItem(values));
@@ -201,55 +253,189 @@ void OptionsDialog::readLibrariesSettings()
   mpSettings->endGroup();
 }
 
-//! Reads the ModelicaText settings from omedit.ini
-void OptionsDialog::readModelicaTextSettings()
+/*!
+ * \brief OptionsDialog::readTextEditorSettings
+ * Reads the Text editor settings from omedit.ini
+ */
+void OptionsDialog::readTextEditorSettings()
 {
-  int currentIndex;
+  int index;
+  if (mpSettings->contains("textEditor/lineEnding")) {
+    index = mpTextEditorPage->getLineEndingComboBox()->findData(mpSettings->value("textEditor/lineEnding").toInt());
+    if (index > -1) {
+      mpTextEditorPage->getLineEndingComboBox()->setCurrentIndex(index);
+    }
+  }
+  if (mpSettings->contains("textEditor/bom")) {
+    index = mpTextEditorPage->getBOMComboBox()->findData(mpSettings->value("textEditor/bom").toInt());
+    if (index > -1) {
+      mpTextEditorPage->getBOMComboBox()->setCurrentIndex(index);
+    }
+  }
   if (mpSettings->contains("textEditor/tabPolicy")) {
-    currentIndex = mpModelicaTextEditorPage->getTabPolicyComboBox()->findData(mpSettings->value("textEditor/tabPolicy").toInt());
-    mpModelicaTextEditorPage->getTabPolicyComboBox()->setCurrentIndex(currentIndex);
+    index = mpTextEditorPage->getTabPolicyComboBox()->findData(mpSettings->value("textEditor/tabPolicy").toInt());
+    if (index > -1) {
+      mpTextEditorPage->getTabPolicyComboBox()->setCurrentIndex(index);
+    }
   }
   if (mpSettings->contains("textEditor/tabSize")) {
-    mpModelicaTextEditorPage->getTabSizeSpinBox()->setValue(mpSettings->value("textEditor/tabSize").toInt());
+    mpTextEditorPage->getTabSizeSpinBox()->setValue(mpSettings->value("textEditor/tabSize").toInt());
   }
   if (mpSettings->contains("textEditor/indentSize")) {
-    mpModelicaTextEditorPage->getIndentSpinBox()->setValue(mpSettings->value("textEditor/indentSize").toInt());
+    mpTextEditorPage->getIndentSpinBox()->setValue(mpSettings->value("textEditor/indentSize").toInt());
   }
   if (mpSettings->contains("textEditor/enableSyntaxHighlighting")) {
-    mpModelicaTextEditorPage->getSyntaxHighlightingCheckbox()->setChecked(mpSettings->value("textEditor/enableSyntaxHighlighting").toBool());
+    mpTextEditorPage->getSyntaxHighlightingGroupBox()->setChecked(mpSettings->value("textEditor/enableSyntaxHighlighting").toBool());
+  }
+  if (mpSettings->contains("textEditor/enableCodeFolding")) {
+    mpTextEditorPage->getCodeFoldingCheckBox()->setChecked(mpSettings->value("textEditor/enableCodeFolding").toBool());
+  }
+  if (mpSettings->contains("textEditor/matchParenthesesCommentsQuotes")) {
+    mpTextEditorPage->getMatchParenthesesCommentsQuotesCheckBox()->setChecked(mpSettings->value("textEditor/matchParenthesesCommentsQuotes").toBool());
   }
   if (mpSettings->contains("textEditor/enableLineWrapping")) {
-    mpModelicaTextEditorPage->getLineWrappingCheckbox()->setChecked(mpSettings->value("textEditor/enableLineWrapping").toBool());
+    mpTextEditorPage->getLineWrappingCheckbox()->setChecked(mpSettings->value("textEditor/enableLineWrapping").toBool());
   }
   if (mpSettings->contains("textEditor/fontFamily")) {
     // select font family item
-    currentIndex = mpModelicaTextEditorPage->getFontFamilyComboBox()->findText(mpSettings->value("textEditor/fontFamily").toString(), Qt::MatchExactly);
-    mpModelicaTextEditorPage->getFontFamilyComboBox()->setCurrentIndex(currentIndex);
+    index = mpTextEditorPage->getFontFamilyComboBox()->findText(mpSettings->value("textEditor/fontFamily").toString(), Qt::MatchExactly);
+    if (index > -1) {
+      mpTextEditorPage->getFontFamilyComboBox()->setCurrentIndex(index);
+    }
   }
   if (mpSettings->contains("textEditor/fontSize")) {
     // select font size item
-    mpModelicaTextEditorPage->getFontSizeSpinBox()->setValue(mpSettings->value("textEditor/fontSize").toDouble());
+    mpTextEditorPage->getFontSizeSpinBox()->setValue(mpSettings->value("textEditor/fontSize").toDouble());
   }
-  if (mpSettings->contains("textEditor/textRuleColor")) {
-    mpModelicaTextEditorPage->setTextRuleColor(QColor(mpSettings->value("textEditor/textRuleColor").toUInt()));
+  if (mpSettings->contains("textEditor/enableAutocomplete")) {
+    mpTextEditorPage->getAutoCompleteCheckBox()->setChecked(mpSettings->value("textEditor/enableAutocomplete").toBool());
   }
-  if (mpSettings->contains("textEditor/keywordRuleColor")) {
-    mpModelicaTextEditorPage->setKeywordRuleColor(QColor(mpSettings->value("textEditor/keywordRuleColor").toUInt()));
+}
+
+/*!
+ * \brief OptionsDialog::readModelicaEditorSettings
+ * Reads the ModelicaEditor settings from omedit.ini
+ */
+void OptionsDialog::readModelicaEditorSettings()
+{
+  if (mpSettings->contains("modelicaEditor/preserveTextIndentation")) {
+    mpModelicaEditorPage->getPreserveTextIndentationCheckBox()->setChecked(mpSettings->value("modelicaEditor/preserveTextIndentation").toBool());
   }
-  if (mpSettings->contains("textEditor/typeRuleColor")) {
-    mpModelicaTextEditorPage->setTypeRuleColor(QColor(mpSettings->value("textEditor/typeRuleColor").toUInt()));
+  if (mpSettings->contains("modelicaEditor/textRuleColor")) {
+    mpModelicaEditorPage->setColor("Text", QColor(mpSettings->value("modelicaEditor/textRuleColor").toUInt()));
   }
-  if (mpSettings->contains("textEditor/functionRuleColor")) {
-    mpModelicaTextEditorPage->setFunctionRuleColor(QColor(mpSettings->value("textEditor/functionRuleColor").toUInt()));
+  if (mpSettings->contains("modelicaEditor/keywordRuleColor")) {
+    mpModelicaEditorPage->setColor("Keyword", QColor(mpSettings->value("modelicaEditor/keywordRuleColor").toUInt()));
   }
-  if (mpSettings->contains("textEditor/quotesRuleColor")) {
-    mpModelicaTextEditorPage->setQuotesRuleColor(QColor(mpSettings->value("textEditor/quotesRuleColor").toUInt()));
+  if (mpSettings->contains("modelicaEditor/typeRuleColor")) {
+    mpModelicaEditorPage->setColor("Type", QColor(mpSettings->value("modelicaEditor/typeRuleColor").toUInt()));
   }
-  if (mpSettings->contains("textEditor/commentRuleColor")) {
-    mpModelicaTextEditorPage->setCommentRuleColor(QColor(mpSettings->value("textEditor/commentRuleColor").toUInt()));
+  if (mpSettings->contains("modelicaEditor/functionRuleColor")) {
+    mpModelicaEditorPage->setColor("Function", QColor(mpSettings->value("modelicaEditor/functionRuleColor").toUInt()));
   }
-  if (mpSettings->contains("textEditor/numberRuleColor")) {
-    mpModelicaTextEditorPage->setNumberRuleColor(QColor(mpSettings->value("textEditor/numberRuleColor").toUInt()));
+  if (mpSettings->contains("modelicaEditor/quotesRuleColor")) {
+    mpModelicaEditorPage->setColor("Quotes", QColor(mpSettings->value("modelicaEditor/quotesRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("modelicaEditor/commentRuleColor")) {
+    mpModelicaEditorPage->setColor("Comment", QColor(mpSettings->value("modelicaEditor/commentRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("modelicaEditor/numberRuleColor")) {
+    mpModelicaEditorPage->setColor("Number", QColor(mpSettings->value("modelicaEditor/numberRuleColor").toUInt()));
+  }
+}
+
+/*!
+ * \brief OptionsDialog::readMetaModelicaEditorSettings
+ * Reads the MetaModelicaEditor settings from omedit.ini
+ */
+void OptionsDialog::readMetaModelicaEditorSettings()
+{
+  if (mpSettings->contains("metaModelicaEditor/textRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Text", QColor(mpSettings->value("metaModelicaEditor/textRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("metaModelicaEditor/keywordRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Keyword", QColor(mpSettings->value("metaModelicaEditor/keywordRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("metaModelicaEditor/typeRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Type", QColor(mpSettings->value("metaModelicaEditor/typeRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("metaModelicaEditor/quotesRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Quotes", QColor(mpSettings->value("metaModelicaEditor/quotesRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("metaModelicaEditor/commentRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Comment", QColor(mpSettings->value("metaModelicaEditor/commentRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("metaModelicaEditor/numberRuleColor")) {
+    mpMetaModelicaEditorPage->setColor("Number", QColor(mpSettings->value("metaModelicaEditor/numberRuleColor").toUInt()));
+  }
+}
+
+/*!
+ * \brief OptionsDialog::readCompositeModelEditorSettings
+ * Reads the CompositeModelEditor settings from omedit.ini
+ */
+void OptionsDialog::readCompositeModelEditorSettings()
+{
+  if (mpSettings->contains("compositeModelEditor/textRuleColor")) {
+    mpCompositeModelEditorPage->setColor("Text", QColor(mpSettings->value("compositeModelEditor/textRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("compositeModelEditor/commentRuleColor")) {
+    mpCompositeModelEditorPage->setColor("Comment", QColor(mpSettings->value("compositeModelEditor/commentRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("compositeModelEditor/tagRuleColor")) {
+    mpCompositeModelEditorPage->setColor("Tag", QColor(mpSettings->value("compositeModelEditor/tagRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("compositeModelEditor/quotesRuleColor")) {
+    mpCompositeModelEditorPage->setColor("Quotes", QColor(mpSettings->value("compositeModelEditor/quotesRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("compositeModelEditor/elementsRuleColor")) {
+    mpCompositeModelEditorPage->setColor("Element", QColor(mpSettings->value("compositeModelEditor/elementsRuleColor").toUInt()));
+  }
+}
+
+/*!
+ * \brief OptionsDialog::readCEditorSettings
+ * Reads the CEditor settings from omedit.ini
+ */
+void OptionsDialog::readCEditorSettings()
+{
+  if (mpSettings->contains("cEditor/textRuleColor")) {
+    mpCEditorPage->setColor("Text", QColor(mpSettings->value("cEditor/textRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("cEditor/keywordRuleColor")) {
+    mpCEditorPage->setColor("Keyword", QColor(mpSettings->value("cEditor/keywordRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("cEditor/typeRuleColor")) {
+    mpCEditorPage->setColor("Type", QColor(mpSettings->value("cEditor/typeRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("cEditor/quotesRuleColor")) {
+    mpCEditorPage->setColor("Quotes", QColor(mpSettings->value("cEditor/quotesRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("cEditor/commentRuleColor")) {
+    mpCEditorPage->setColor("Comment", QColor(mpSettings->value("cEditor/commentRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("cEditor/numberRuleColor")) {
+    mpCEditorPage->setColor("Number", QColor(mpSettings->value("cEditor/numberRuleColor").toUInt()));
+  }
+}
+
+/*!
+ * \brief OptionsDialog::readHTMLEditorSettings
+ * Reads the HTMLEditor settings from omedit.ini
+ */
+void OptionsDialog::readHTMLEditorSettings()
+{
+  if (mpSettings->contains("HTMLEditor/textRuleColor")) {
+    mpHTMLEditorPage->setColor("Text", QColor(mpSettings->value("HTMLEditor/textRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("HTMLEditor/commentRuleColor")) {
+    mpHTMLEditorPage->setColor("Comment", QColor(mpSettings->value("HTMLEditor/commentRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("HTMLEditor/tagRuleColor")) {
+    mpHTMLEditorPage->setColor("Tag", QColor(mpSettings->value("HTMLEditor/tagRuleColor").toUInt()));
+  }
+  if (mpSettings->contains("HTMLEditor/quotesRuleColor")) {
+    mpHTMLEditorPage->setColor("Quotes", QColor(mpSettings->value("HTMLEditor/quotesRuleColor").toUInt()));
   }
 }
 
@@ -305,11 +491,35 @@ void OptionsDialog::readSimulationSettings()
       mpSimulationPage->getIndexReductionMethodComboBox()->setCurrentIndex(currentIndex);
     }
   }
+  if (mpSettings->contains("simulation/targetLanguage")) {
+    int currentIndex = mpSimulationPage->getTargetLanguageComboBox()->findText(mpSettings->value("simulation/targetLanguage").toString(), Qt::MatchExactly);
+    if (currentIndex > -1) {
+      mpSimulationPage->getTargetLanguageComboBox()->setCurrentIndex(currentIndex);
+    }
+  }
+  if (mpSettings->contains("simulation/targetCompiler")) {
+    int currentIndex = mpSimulationPage->getTargetCompilerComboBox()->findText(mpSettings->value("simulation/targetCompiler").toString(), Qt::MatchExactly);
+    if (currentIndex > -1) {
+      mpSimulationPage->getTargetCompilerComboBox()->setCurrentIndex(currentIndex);
+    }
+  }
   if (mpSettings->contains("simulation/OMCFlags")) {
     mpSimulationPage->getOMCFlagsTextBox()->setText(mpSettings->value("simulation/OMCFlags").toString());
   }
+  if (mpSettings->contains("simulation/ignoreCommandLineOptionsAnnotation")) {
+    mpSimulationPage->getIgnoreCommandLineOptionsAnnotationCheckBox()->setChecked(mpSettings->value("simulation/ignoreCommandLineOptionsAnnotation").toBool());
+  }
+  if (mpSettings->contains("simulation/ignoreSimulationFlagsAnnotation")) {
+    mpSimulationPage->getIgnoreSimulationFlagsAnnotationCheckBox()->setChecked(mpSettings->value("simulation/ignoreSimulationFlagsAnnotation").toBool());
+  }
   if (mpSettings->contains("simulation/saveClassBeforeSimulation")) {
     mpSimulationPage->getSaveClassBeforeSimulationCheckBox()->setChecked(mpSettings->value("simulation/saveClassBeforeSimulation").toBool());
+  }
+  if (mpSettings->contains("simulation/switchToPlottingPerspectiveAfterSimulation")) {
+    mpSimulationPage->getSwitchToPlottingPerspectiveCheckBox()->setChecked(mpSettings->value("simulation/switchToPlottingPerspectiveAfterSimulation").toBool());
+  }
+  if (mpSettings->contains("simulation/closeSimulationOutputWidgetsBeforeSimulation")) {
+    mpSimulationPage->getCloseSimulationOutputWidgetsBeforeSimulationCheckBox()->setChecked(mpSettings->value("simulation/closeSimulationOutputWidgetsBeforeSimulation").toBool());
   }
   if (mpSettings->contains("simulation/outputMode")) {
     mpSimulationPage->setOutputMode(mpSettings->value("simulation/outputMode").toString());
@@ -324,6 +534,9 @@ void OptionsDialog::readMessagesSettings()
   }
   if (mpSettings->contains("messages/resetMessagesNumber")) {
     mpMessagesPage->getResetMessagesNumberBeforeSimulationCheckBox()->setChecked(mpSettings->value("messages/resetMessagesNumber").toBool());
+  }
+  if (mpSettings->contains("messages/clearMessagesBrowser")) {
+    mpMessagesPage->getClearMessagesBrowserBeforeSimulationCheckBox()->setChecked(mpSettings->value("messages/clearMessagesBrowser").toBool());
   }
   // read font family
   if (mpSettings->contains("messages/fontFamily")) {
@@ -365,25 +578,23 @@ void OptionsDialog::readMessagesSettings()
 //! Reads the Notifications section settings from omedit.ini
 void OptionsDialog::readNotificationsSettings()
 {
-  if (mpSettings->contains("notifications/promptQuitApplication"))
-  {
+  if (mpSettings->contains("notifications/promptQuitApplication")) {
     mpNotificationsPage->getQuitApplicationCheckBox()->setChecked(mpSettings->value("notifications/promptQuitApplication").toBool());
   }
-  if (mpSettings->contains("notifications/itemDroppedOnItself"))
-  {
+  if (mpSettings->contains("notifications/itemDroppedOnItself")) {
     mpNotificationsPage->getItemDroppedOnItselfCheckBox()->setChecked(mpSettings->value("notifications/itemDroppedOnItself").toBool());
   }
-  if (mpSettings->contains("notifications/replaceableIfPartial"))
-  {
+  if (mpSettings->contains("notifications/replaceableIfPartial")) {
     mpNotificationsPage->getReplaceableIfPartialCheckBox()->setChecked(mpSettings->value("notifications/replaceableIfPartial").toBool());
   }
-  if (mpSettings->contains("notifications/innerModelNameChanged"))
-  {
+  if (mpSettings->contains("notifications/innerModelNameChanged")) {
     mpNotificationsPage->getInnerModelNameChangedCheckBox()->setChecked(mpSettings->value("notifications/innerModelNameChanged").toBool());
   }
-  if (mpSettings->contains("notifications/saveModelForBitmapInsertion"))
-  {
+  if (mpSettings->contains("notifications/saveModelForBitmapInsertion")) {
     mpNotificationsPage->getSaveModelForBitmapInsertionCheckBox()->setChecked(mpSettings->value("notifications/saveModelForBitmapInsertion").toBool());
+  }
+  if (mpSettings->contains("notifications/alwaysAskForDraggedComponentName")) {
+    mpNotificationsPage->getAlwaysAskForDraggedComponentName()->setChecked(mpSettings->value("notifications/alwaysAskForDraggedComponentName").toBool());
   }
 }
 
@@ -497,15 +708,39 @@ void OptionsDialog::readDebuggerSettings()
 }
 
 /*!
-  Reads the FMI section settings from omedit.ini
-  */
+ * \brief OptionsDialog::readFMISettings
+ * Reads the FMI section settings from omedit.ini
+ */
 void OptionsDialog::readFMISettings()
 {
   if (mpSettings->contains("FMIExport/Version")) {
     mpFMIPage->setFMIExportVersion(mpSettings->value("FMIExport/Version").toDouble());
   }
-  if (mpSettings->contains("FMI/FMUName")) {
+  if (mpSettings->contains("FMIExport/Type")) {
+    mpFMIPage->setFMIExportType(mpSettings->value("FMIExport/Type").toString());
+  }
+  if (mpSettings->contains("FMIExport/FMUName")) {
     mpFMIPage->getFMUNameTextBox()->setText(mpSettings->value("FMI/FMUName").toString());
+  }
+  // read platforms
+  QStringList platforms = mpSettings->value("FMIExport/Platforms").toStringList();
+  foreach (QString platform, platforms) {
+    int currentIndex = mpFMIPage->getLinkingComboBox()->findData(platform);
+    if (currentIndex > -1) {
+      mpFMIPage->getLinkingComboBox()->setCurrentIndex(currentIndex);
+    } else {
+      int i = 0;
+      while (QLayoutItem* pLayoutItem = mpFMIPage->getPlatformsGroupBox()->layout()->itemAt(i)) {
+        if (dynamic_cast<QCheckBox*>(pLayoutItem->widget())) {
+          QCheckBox *pPlatformCheckBox = dynamic_cast<QCheckBox*>(pLayoutItem->widget());
+          if (pPlatformCheckBox->text().compare(platform) == 0) {
+            pPlatformCheckBox->setChecked(true);
+            break;
+          }
+        }
+        i++;
+      }
+    }
   }
 }
 
@@ -529,43 +764,36 @@ void OptionsDialog::readTLMSettings()
   }
 }
 
-//! Reads the TLM Text settings from omedit.ini
-void OptionsDialog::readTLMEditorSettings()
+/*!
+ * \brief OptionsDialog::readTraceabilitySettings
+ * Reads the  Traceability settings from omedit.ini
+ */
+void OptionsDialog::readTraceabilitySettings()
 {
-  int currentIndex;
-  if (mpSettings->contains("TLMEditor/tabPolicy")) {
-    currentIndex = mpTLMEditorPage->getTabPolicyComboBox()->findData(mpSettings->value("TLMEditor/tabPolicy").toInt());
-    mpTLMEditorPage->getTabPolicyComboBox()->setCurrentIndex(currentIndex);
+  // read traceability checkbox
+  if (mpSettings->contains("traceability/Traceability")) {
+    mpTraceabilityPage->getTraceabilityGroupBox()->setChecked(mpSettings->value("traceability/Traceability").toBool());
   }
-  if (mpSettings->contains("TLMEditor/tabSize")) {
-    mpTLMEditorPage->getTabSizeSpinBox()->setValue(mpSettings->value("TLMEditor/tabSize").toInt());
+  // read user name
+  if (mpSettings->contains("traceability/UserName")) {
+    mpTraceabilityPage->getUserName()->setText(mpSettings->value("traceability/UserName").toString());
   }
-  if (mpSettings->contains("TLMEditor/indentSize")) {
-    mpTLMEditorPage->getIndentSpinBox()->setValue(mpSettings->value("TLMEditor/indentSize").toInt());
+  // read Email
+  if (mpSettings->contains("traceability/Email")) {
+    mpTraceabilityPage->getEmail()->setText(mpSettings->value("traceability/Email").toString());
   }
-  if (mpSettings->contains("TLMEditor/enableSyntaxHighlighting")) {
-    mpTLMEditorPage->getSyntaxHighlightingCheckbox()->setChecked(mpSettings->value("TLMEditor/enableSyntaxHighlighting").toBool());
+  // read Git repository
+  if (mpSettings->contains("traceability/GitRepository")) {
+    mpTraceabilityPage->getGitRepository()->setText(mpSettings->value("traceability/GitRepository").toString());
   }
-  if (mpSettings->contains("TLMEditor/enableLineWrapping")) {
-    mpTLMEditorPage->getLineWrappingCheckbox()->setChecked(mpSettings->value("TLMEditor/enableLineWrapping").toBool());
+  // read the  traceability daemon IP-adress
+  if (mpSettings->contains("traceability/IPAdress")) {
+    mpTraceabilityPage->getTraceabilityDaemonIpAdress()->setText(mpSettings->value("traceability/IPAdress").toString());
   }
-  if (mpSettings->contains("TLMEditor/fontFamily")){
-      // select font family item
-    currentIndex = mpTLMEditorPage->getFontFamilyComboBox()->findText(mpSettings->value("TLMEditor/fontFamily").toString(), Qt::MatchExactly);
-    mpTLMEditorPage->getFontFamilyComboBox()->setCurrentIndex(currentIndex);
+  // read the traceability daemon Port
+  if (mpSettings->contains("traceability/Port")) {
+    mpTraceabilityPage->getTraceabilityDaemonPort()->setText(mpSettings->value("traceability/Port").toString());
   }
-  if (mpSettings->contains("TLMEditor/fontSize"))
-    mpTLMEditorPage->getFontSizeSpinBox()->setValue(mpSettings->value("TLMEditor/fontSize").toDouble());
-  if (mpSettings->contains("TLMEditor/textRuleColor"))
-    mpTLMEditorPage->setTextRuleColor(QColor(mpSettings->value("TLMEditor/textRuleColor").toUInt()));
-  if (mpSettings->contains("TLMEditor/commentRuleColor"))
-    mpTLMEditorPage->setCommentRuleColor(QColor(mpSettings->value("TLMEditor/commentRuleColor").toUInt()));
-  if (mpSettings->contains("TLMEditor/tagRuleColor"))
-    mpTLMEditorPage->setTagRuleColor(QColor(mpSettings->value("TLMEditor/tagRuleColor").toUInt()));
-  if (mpSettings->contains("TLMEditor/quotesRuleColor"))
-    mpTLMEditorPage->setQuotesRuleColor(QColor(mpSettings->value("TLMEditor/quotesRuleColor").toUInt()));
-  if (mpSettings->contains("TLMEditor/elementsRuleColor"))
-    mpTLMEditorPage->setElementRuleColor(QColor(mpSettings->value("TLMEditor/elementsRuleColor").toUInt()));
 }
 
 //! Saves the General section settings to omedit.ini
@@ -580,55 +808,61 @@ void OptionsDialog::saveGeneralSettings()
   }
   mpSettings->setValue("language", language);
   // save working directory
-  mpMainWindow->getOMCProxy()->changeDirectory(mpGeneralSettingsPage->getWorkingDirectory());
-  mpSettings->setValue("workingDirectory", mpMainWindow->getOMCProxy()->changeDirectory());
+  MainWindow::instance()->getOMCProxy()->changeDirectory(mpGeneralSettingsPage->getWorkingDirectory());
+  mpGeneralSettingsPage->setWorkingDirectory(MainWindow::instance()->getOMCProxy()->changeDirectory());
+  mpSettings->setValue("workingDirectory", mpGeneralSettingsPage->getWorkingDirectory());
   // save toolbar icon size
   mpSettings->setValue("toolbarIconSize", mpGeneralSettingsPage->getToolbarIconSizeSpinBox()->value());
   // save user customizations
   mpSettings->setValue("userCustomizations", mpGeneralSettingsPage->getPreserveUserCustomizations());
+  // save terminal command
+  mpSettings->setValue("terminalCommand", mpGeneralSettingsPage->getTerminalCommand());
+  // save terminal command arguments
+  mpSettings->setValue("terminalCommandArgs", mpGeneralSettingsPage->getTerminalCommandArguments());
+  // save hide variables browser
+  mpSettings->setValue("hideVariablesBrowser", mpGeneralSettingsPage->getHideVariablesBrowserCheckBox()->isChecked());
   // save library icon size
   mpSettings->setValue("libraryIconSize", mpGeneralSettingsPage->getLibraryIconSizeSpinBox()->value());
   // save show protected classes
   mpSettings->setValue("showProtectedClasses", mpGeneralSettingsPage->getShowProtectedClasses());
   // show/hide the protected classes
-  getMainWindow()->getLibraryTreeWidget()->showProtectedClasses(mpGeneralSettingsPage->getShowProtectedClasses());
+  MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->showHideProtectedClasses();
   // save modeling view mode
   mpSettings->setValue("modeling/viewmode", mpGeneralSettingsPage->getModelingViewMode());
   if (mpGeneralSettingsPage->getModelingViewMode().compare(Helper::subWindow) == 0) {
-    mpMainWindow->getModelWidgetContainer()->setViewMode(QMdiArea::SubWindowView);
-    ModelWidget *pModelWidget = mpMainWindow->getModelWidgetContainer()->getCurrentModelWidget();
+    MainWindow::instance()->getModelWidgetContainer()->setViewMode(QMdiArea::SubWindowView);
+    ModelWidget *pModelWidget = MainWindow::instance()->getModelWidgetContainer()->getCurrentModelWidget();
     if (pModelWidget) {
       pModelWidget->show();
       pModelWidget->setWindowState(Qt::WindowMaximized);
     }
   } else {
-    mpMainWindow->getModelWidgetContainer()->setViewMode(QMdiArea::TabbedView);
+    MainWindow::instance()->getModelWidgetContainer()->setViewMode(QMdiArea::TabbedView);
   }
   // save default view
   mpSettings->setValue("defaultView", mpGeneralSettingsPage->getDefaultView());
   // save auto save
   mpSettings->setValue("autoSave/enable", mpGeneralSettingsPage->getEnableAutoSaveGroupBox()->isChecked());
   mpSettings->setValue("autoSave/interval", mpGeneralSettingsPage->getAutoSaveIntervalSpinBox()->value());
-  mpSettings->setValue("autoSave/enableSingleClasses", mpGeneralSettingsPage->getEnableAutoSaveForSingleClassesCheckBox()->isChecked());
-  mpSettings->setValue("autoSave/enableOneFilePackages", mpGeneralSettingsPage->getEnableAutoSaveForOneFilePackagesCheckBox()->isChecked());
-  mpMainWindow->toggleAutoSave();
+  MainWindow::instance()->getAutoSaveTimer()->setInterval(mpGeneralSettingsPage->getAutoSaveIntervalSpinBox()->value() * 1000);
+  MainWindow::instance()->toggleAutoSave();
   // save welcome page
   switch (mpGeneralSettingsPage->getWelcomePageView()) {
     case 2:
-      mpMainWindow->getWelcomePageWidget()->getSplitter()->setOrientation(Qt::Vertical);
+      MainWindow::instance()->getWelcomePageWidget()->getSplitter()->setOrientation(Qt::Vertical);
       break;
     case 1:
     default:
-      mpMainWindow->getWelcomePageWidget()->getSplitter()->setOrientation(Qt::Horizontal);
+      MainWindow::instance()->getWelcomePageWidget()->getSplitter()->setOrientation(Qt::Horizontal);
       break;
   }
   mpSettings->setValue("welcomePage/view", mpGeneralSettingsPage->getWelcomePageView());
   bool showLatestNews = mpGeneralSettingsPage->getShowLatestNewsCheckBox()->isChecked();
-  if (mpMainWindow->getWelcomePageWidget()->getLatestNewsFrame()->isHidden() && showLatestNews) {
-    mpMainWindow->getWelcomePageWidget()->getLatestNewsFrame()->show();
-    mpMainWindow->getWelcomePageWidget()->addLatestNewsListItems();
+  if (MainWindow::instance()->getWelcomePageWidget()->getLatestNewsFrame()->isHidden() && showLatestNews) {
+    MainWindow::instance()->getWelcomePageWidget()->getLatestNewsFrame()->show();
+    MainWindow::instance()->getWelcomePageWidget()->addLatestNewsListItems();
   } else if (!showLatestNews) {
-    mpMainWindow->getWelcomePageWidget()->getLatestNewsFrame()->hide();
+    MainWindow::instance()->getWelcomePageWidget()->getLatestNewsFrame()->hide();
   }
   mpSettings->setValue("welcomePage/showLatestNews", showLatestNews);
 }
@@ -638,28 +872,25 @@ void OptionsDialog::saveLibrariesSettings()
 {
   // read the settings and add system libraries
   mpSettings->beginGroup("libraries");
-  foreach (QString lib, mpSettings->childKeys())
-  {
+  foreach (QString lib, mpSettings->childKeys()) {
     mpSettings->remove(lib);
   }
   QTreeWidgetItemIterator systemLibrariesIterator(mpLibrariesPage->getSystemLibrariesTree());
-  while (*systemLibrariesIterator)
-  {
+  while (*systemLibrariesIterator) {
     QTreeWidgetItem *pItem = dynamic_cast<QTreeWidgetItem*>(*systemLibrariesIterator);
     mpSettings->setValue(pItem->text(0), pItem->text(1));
     ++systemLibrariesIterator;
   }
   mpSettings->endGroup();
   mpSettings->setValue("forceModelicaLoad", mpLibrariesPage->getForceModelicaLoadCheckBox()->isChecked());
+  mpSettings->setValue("loadOpenModelicaOnStartup", mpLibrariesPage->getLoadOpenModelicaLibraryCheckBox()->isChecked());
   // read the settings and add user libraries
   mpSettings->beginGroup("userlibraries");
-  foreach (QString lib, mpSettings->childKeys())
-  {
+  foreach (QString lib, mpSettings->childKeys()) {
     mpSettings->remove(lib);
   }
   QTreeWidgetItemIterator userLibrariesIterator(mpLibrariesPage->getUserLibrariesTree());
-  while (*userLibrariesIterator)
-  {
+  while (*userLibrariesIterator) {
     QTreeWidgetItem *pItem = dynamic_cast<QTreeWidgetItem*>(*userLibrariesIterator);
     mpSettings->setValue(QUrl::toPercentEncoding(pItem->text(0)), pItem->text(1));
     ++userLibrariesIterator;
@@ -667,23 +898,93 @@ void OptionsDialog::saveLibrariesSettings()
   mpSettings->endGroup();
 }
 
-//! Saves the ModelicaText settings to omedit.ini
-void OptionsDialog::saveModelicaTextSettings()
+/*!
+ * \brief OptionsDialog::saveTextEditorSettings
+ * Saves the TextEditor settings to omedit.ini
+ */
+void OptionsDialog::saveTextEditorSettings()
 {
-  mpSettings->setValue("textEditor/tabPolicy", mpModelicaTextEditorPage->getTabPolicyComboBox()->itemData(mpModelicaTextEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
-  mpSettings->setValue("textEditor/tabSize", mpModelicaTextEditorPage->getTabSizeSpinBox()->value());
-  mpSettings->setValue("textEditor/indentSize", mpModelicaTextEditorPage->getIndentSpinBox()->value());
-  mpSettings->setValue("textEditor/enableSyntaxHighlighting", mpModelicaTextEditorPage->getSyntaxHighlightingCheckbox()->isChecked());
-  mpSettings->setValue("textEditor/enableLineWrapping", mpModelicaTextEditorPage->getLineWrappingCheckbox()->isChecked());
-  mpSettings->setValue("textEditor/fontFamily", mpModelicaTextEditorPage->getFontFamilyComboBox()->currentFont().family());
-  mpSettings->setValue("textEditor/fontSize", mpModelicaTextEditorPage->getFontSizeSpinBox()->value());
-  mpSettings->setValue("textEditor/textRuleColor", mpModelicaTextEditorPage->getTextRuleColor().rgba());
-  mpSettings->setValue("textEditor/keywordRuleColor", mpModelicaTextEditorPage->getKeywordRuleColor().rgba());
-  mpSettings->setValue("textEditor/typeRuleColor", mpModelicaTextEditorPage->getTypeRuleColor().rgba());
-  mpSettings->setValue("textEditor/functionRuleColor", mpModelicaTextEditorPage->getFunctionRuleColor().rgba());
-  mpSettings->setValue("textEditor/quotesRuleColor", mpModelicaTextEditorPage->getQuotesRuleColor().rgba());
-  mpSettings->setValue("textEditor/commentRuleColor", mpModelicaTextEditorPage->getCommentRuleColor().rgba());
-  mpSettings->setValue("textEditor/numberRuleColor", mpModelicaTextEditorPage->getNumberRuleColor().rgba());
+  mpSettings->setValue("textEditor/lineEnding", mpTextEditorPage->getLineEndingComboBox()->itemData(mpTextEditorPage->getLineEndingComboBox()->currentIndex()).toInt());
+  mpSettings->setValue("textEditor/bom", mpTextEditorPage->getBOMComboBox()->itemData(mpTextEditorPage->getBOMComboBox()->currentIndex()).toInt());
+  mpSettings->setValue("textEditor/tabPolicy", mpTextEditorPage->getTabPolicyComboBox()->itemData(mpTextEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
+  mpSettings->setValue("textEditor/tabSize", mpTextEditorPage->getTabSizeSpinBox()->value());
+  mpSettings->setValue("textEditor/indentSize", mpTextEditorPage->getIndentSpinBox()->value());
+  mpSettings->setValue("textEditor/enableSyntaxHighlighting", mpTextEditorPage->getSyntaxHighlightingGroupBox()->isChecked());
+  mpSettings->setValue("textEditor/enableCodeFolding", mpTextEditorPage->getCodeFoldingCheckBox()->isChecked());
+  mpSettings->setValue("textEditor/matchParenthesesCommentsQuotes", mpTextEditorPage->getMatchParenthesesCommentsQuotesCheckBox()->isChecked());
+  mpSettings->setValue("textEditor/enableLineWrapping", mpTextEditorPage->getLineWrappingCheckbox()->isChecked());
+  mpSettings->setValue("textEditor/fontFamily", mpTextEditorPage->getFontFamilyComboBox()->currentFont().family());
+  mpSettings->setValue("textEditor/fontSize", mpTextEditorPage->getFontSizeSpinBox()->value());
+  mpSettings->setValue("textEditor/enableAutocomplete", mpTextEditorPage->getAutoCompleteCheckBox()->isChecked());
+}
+
+/*!
+ * \brief OptionsDialog::saveModelicaEditorSettings
+ * Saves the ModelicaEditor settings to omedit.ini
+ */
+void OptionsDialog::saveModelicaEditorSettings()
+{
+  mpSettings->setValue("modelicaEditor/preserveTextIndentation", mpModelicaEditorPage->getPreserveTextIndentationCheckBox()->isChecked());
+  mpSettings->setValue("modelicaEditor/textRuleColor", mpModelicaEditorPage->getColor("Text").rgba());
+  mpSettings->setValue("modelicaEditor/keywordRuleColor", mpModelicaEditorPage->getColor("Keyword").rgba());
+  mpSettings->setValue("modelicaEditor/typeRuleColor", mpModelicaEditorPage->getColor("Type").rgba());
+  mpSettings->setValue("modelicaEditor/functionRuleColor", mpModelicaEditorPage->getColor("Function").rgba());
+  mpSettings->setValue("modelicaEditor/quotesRuleColor", mpModelicaEditorPage->getColor("Quotes").rgba());
+  mpSettings->setValue("modelicaEditor/commentRuleColor", mpModelicaEditorPage->getColor("Comment").rgba());
+  mpSettings->setValue("modelicaEditor/numberRuleColor", mpModelicaEditorPage->getColor("Number").rgba());
+}
+
+/*!
+ * \brief OptionsDialog::saveMetaModelicaEditorSettings
+ * Saves the MetaModelicaEditor settings to omedit.ini
+ */
+void OptionsDialog::saveMetaModelicaEditorSettings()
+{
+  mpSettings->setValue("metaModelicaEditor/textRuleColor", mpMetaModelicaEditorPage->getColor("Text").rgba());
+  mpSettings->setValue("metaModelicaEditor/keywordRuleColor", mpMetaModelicaEditorPage->getColor("Keyword").rgba());
+  mpSettings->setValue("metaModelicaEditor/typeRuleColor", mpMetaModelicaEditorPage->getColor("Type").rgba());
+  mpSettings->setValue("metaModelicaEditor/quotesRuleColor", mpMetaModelicaEditorPage->getColor("Quotes").rgba());
+  mpSettings->setValue("metaModelicaEditor/commentRuleColor", mpMetaModelicaEditorPage->getColor("Comment").rgba());
+  mpSettings->setValue("metaModelicaEditor/numberRuleColor", mpMetaModelicaEditorPage->getColor("Number").rgba());
+}
+
+/*!
+ * \brief OptionsDialog::saveCompositeModelEditorSettings
+ * Saves the CompositeModelEditor settings to omedit.ini
+ */
+void OptionsDialog::saveCompositeModelEditorSettings()
+{
+  mpSettings->setValue("compositeModelEditor/textRuleColor", mpCompositeModelEditorPage->getColor("Text").rgba());
+  mpSettings->setValue("compositeModelEditor/commentRuleColor", mpCompositeModelEditorPage->getColor("Comment").rgba());
+  mpSettings->setValue("compositeModelEditor/tagRuleColor", mpCompositeModelEditorPage->getColor("Tag").rgba());
+  mpSettings->setValue("compositeModelEditor/quotesRuleColor", mpCompositeModelEditorPage->getColor("Quotes").rgba());
+  mpSettings->setValue("compositeModelEditor/elementsRuleColor", mpCompositeModelEditorPage->getColor("Element").rgba());
+}
+
+/*!
+ * \brief OptionsDialog::saveCEditorSettings
+ * Saves the CEditor settings to omedit.ini
+ */
+void OptionsDialog::saveCEditorSettings()
+{
+  mpSettings->setValue("cEditor/textRuleColor", mpCEditorPage->getColor("Text").rgba());
+  mpSettings->setValue("cEditor/keywordRuleColor", mpCEditorPage->getColor("Keyword").rgba());
+  mpSettings->setValue("cEditor/typeRuleColor", mpCEditorPage->getColor("Type").rgba());
+  mpSettings->setValue("cEditor/quotesRuleColor", mpCEditorPage->getColor("Quotes").rgba());
+  mpSettings->setValue("cEditor/commentRuleColor", mpCEditorPage->getColor("Comment").rgba());
+  mpSettings->setValue("cEditor/numberRuleColor", mpCEditorPage->getColor("Number").rgba());
+}
+
+/*!
+ * \brief OptionsDialog::saveHTMLEditorSettings
+ * Saves the HTMLEditor settings to omedit.ini
+ */
+void OptionsDialog::saveHTMLEditorSettings()
+{
+  mpSettings->setValue("HTMLEditor/textRuleColor", mpHTMLEditorPage->getColor("Text").rgba());
+  mpSettings->setValue("HTMLEditor/commentRuleColor", mpHTMLEditorPage->getColor("Comment").rgba());
+  mpSettings->setValue("HTMLEditor/tagRuleColor", mpHTMLEditorPage->getColor("Tag").rgba());
+  mpSettings->setValue("HTMLEditor/quotesRuleColor", mpHTMLEditorPage->getColor("Quotes").rgba());
 }
 
 //! Saves the GraphicsViews section settings to omedit.ini
@@ -710,16 +1011,44 @@ void OptionsDialog::saveGraphicalViewsSettings()
 //! Saves the Simulation section settings to omedit.ini
 void OptionsDialog::saveSimulationSettings()
 {
+  // clear command line options before saving new ones
+  MainWindow::instance()->getOMCProxy()->clearCommandLineOptions();
+  // save matching algorithm
   mpSettings->setValue("simulation/matchingAlgorithm", mpSimulationPage->getMatchingAlgorithmComboBox()->currentText());
-  mpMainWindow->getOMCProxy()->setMatchingAlgorithm(mpSimulationPage->getMatchingAlgorithmComboBox()->currentText());
+  MainWindow::instance()->getOMCProxy()->setMatchingAlgorithm(mpSimulationPage->getMatchingAlgorithmComboBox()->currentText());
+  // save index reduction
   mpSettings->setValue("simulation/indexReductionMethod", mpSimulationPage->getIndexReductionMethodComboBox()->currentText());
-  mpMainWindow->getOMCProxy()->setIndexReductionMethod(mpSimulationPage->getIndexReductionMethodComboBox()->currentText());
-  mpMainWindow->getOMCProxy()->clearCommandLineOptions();
-  if (mpMainWindow->getOMCProxy()->setCommandLineOptions(mpSimulationPage->getOMCFlagsTextBox()->text()))
+  MainWindow::instance()->getOMCProxy()->setIndexReductionMethod(mpSimulationPage->getIndexReductionMethodComboBox()->currentText());
+  // save +simCodeTarget
+  mpSettings->setValue("simulation/targetLanguage", mpSimulationPage->getTargetLanguageComboBox()->currentText());
+  MainWindow::instance()->getOMCProxy()->setCommandLineOptions(QString("+simCodeTarget=%1").arg(mpSimulationPage->getTargetLanguageComboBox()->currentText()));
+  // save +target
+  mpSettings->setValue("simulation/targetCompiler", mpSimulationPage->getTargetCompilerComboBox()->currentText());
+  MainWindow::instance()->getOMCProxy()->setCommandLineOptions(QString("+target=%1").arg(mpSimulationPage->getTargetCompilerComboBox()->currentText()));
+  // save command line options ste manually by user. This will override above options.
+  if (MainWindow::instance()->getOMCProxy()->setCommandLineOptions(mpSimulationPage->getOMCFlagsTextBox()->text())) {
     mpSettings->setValue("simulation/OMCFlags", mpSimulationPage->getOMCFlagsTextBox()->text());
-  else
+  } else {
     mpSimulationPage->getOMCFlagsTextBox()->setText(mpSettings->value("simulation/OMCFlags").toString());
+  }
+  // save ignore command line options
+  mpSettings->setValue("simulation/ignoreCommandLineOptionsAnnotation", mpSimulationPage->getIgnoreCommandLineOptionsAnnotationCheckBox()->isChecked());
+  if (mpSimulationPage->getIgnoreCommandLineOptionsAnnotationCheckBox()->isChecked()) {
+    MainWindow::instance()->getOMCProxy()->setCommandLineOptions("+ignoreCommandLineOptionsAnnotation=true");
+  } else {
+    MainWindow::instance()->getOMCProxy()->setCommandLineOptions("+ignoreCommandLineOptionsAnnotation=false");
+  }
+  // save ignore simulation flags
+  mpSettings->setValue("simulation/ignoreSimulationFlagsAnnotation", mpSimulationPage->getIgnoreSimulationFlagsAnnotationCheckBox()->isChecked());
+  if (mpSimulationPage->getIgnoreSimulationFlagsAnnotationCheckBox()->isChecked()) {
+    MainWindow::instance()->getOMCProxy()->setCommandLineOptions("+ignoreSimulationFlagsAnnotation=true");
+  } else {
+    MainWindow::instance()->getOMCProxy()->setCommandLineOptions("+ignoreSimulationFlagsAnnotation=false");
+  }
+  // save class before simulation.
   mpSettings->setValue("simulation/saveClassBeforeSimulation", mpSimulationPage->getSaveClassBeforeSimulationCheckBox()->isChecked());
+  mpSettings->setValue("simulation/switchToPlottingPerspectiveAfterSimulation", mpSimulationPage->getSwitchToPlottingPerspectiveCheckBox()->isChecked());
+  mpSettings->setValue("simulation/closeSimulationOutputWidgetsBeforeSimulation", mpSimulationPage->getCloseSimulationOutputWidgetsBeforeSimulationCheckBox()->isChecked());
   mpSettings->setValue("simulation/outputMode", mpSimulationPage->getOutputMode());
 }
 
@@ -730,6 +1059,8 @@ void OptionsDialog::saveMessagesSettings()
   mpSettings->setValue("messages/outputSize", mpMessagesPage->getOutputSizeSpinBox()->value());
   // save reset messages number
   mpSettings->setValue("messages/resetMessagesNumber", mpMessagesPage->getResetMessagesNumberBeforeSimulationCheckBox()->isChecked());
+  // save clear messages browser
+  mpSettings->setValue("messages/clearMessagesBrowser", mpMessagesPage->getClearMessagesBrowserBeforeSimulationCheckBox()->isChecked());
   // save font
   mpSettings->setValue("messages/fontFamily", mpMessagesPage->getFontFamilyComboBox()->currentFont().family());
   mpSettings->setValue("messages/fontSize", mpMessagesPage->getFontSizeSpinBox()->value());
@@ -740,7 +1071,7 @@ void OptionsDialog::saveMessagesSettings()
   // save error color
   mpSettings->setValue("messages/errorColor", mpMessagesPage->getErrorColor().rgba());
   // apply the above settings to Messages
-  mpMainWindow->getMessagesWidget()->applyMessagesSettings();
+  MessagesWidget::instance()->applyMessagesSettings();
 }
 
 //! Saves the Notifications section settings to omedit.ini
@@ -751,6 +1082,7 @@ void OptionsDialog::saveNotificationsSettings()
   mpSettings->setValue("notifications/replaceableIfPartial", mpNotificationsPage->getReplaceableIfPartialCheckBox()->isChecked());
   mpSettings->setValue("notifications/innerModelNameChanged", mpNotificationsPage->getInnerModelNameChangedCheckBox()->isChecked());
   mpSettings->setValue("notifications/saveModelForBitmapInsertion", mpNotificationsPage->getSaveModelForBitmapInsertionCheckBox()->isChecked());
+  mpSettings->setValue("notifications/alwaysAskForDraggedComponentName", mpNotificationsPage->getAlwaysAskForDraggedComponentName()->isChecked());
 }
 
 //! Saves the LineStyle section settings to omedit.ini
@@ -780,15 +1112,16 @@ void OptionsDialog::savePlottingSettings()
   // save plotting view mode
   mpSettings->setValue("plotting/viewmode", mpPlottingPage->getPlottingViewMode());
   if (mpPlottingPage->getPlottingViewMode().compare(Helper::subWindow) == 0) {
-    mpMainWindow->getPlotWindowContainer()->setViewMode(QMdiArea::SubWindowView);
-    OMPlot::PlotWindow *pPlotWindow = mpMainWindow->getPlotWindowContainer()->getCurrentWindow();
+    MainWindow::instance()->getPlotWindowContainer()->setViewMode(QMdiArea::SubWindowView);
+    OMPlot::PlotWindow *pPlotWindow = MainWindow::instance()->getPlotWindowContainer()->getCurrentWindow();
     if (pPlotWindow) {
       pPlotWindow->show();
       pPlotWindow->setWindowState(Qt::WindowMaximized);
     }
   } else {
-    mpMainWindow->getPlotWindowContainer()->setViewMode(QMdiArea::TabbedView);
+    MainWindow::instance()->getPlotWindowContainer()->setViewMode(QMdiArea::TabbedView);
   }
+
   mpSettings->setValue("curvestyle/pattern", mpPlottingPage->getCurvePattern());
   mpSettings->setValue("curvestyle/thickness", mpPlottingPage->getCurveThickness());
 }
@@ -807,12 +1140,12 @@ void OptionsDialog::saveFigaroSettings()
 void OptionsDialog::saveDebuggerSettings()
 {
   mpSettings->beginGroup("algorithmicDebugger");
-  mpSettings->setValue("GDBPath", mpDebuggerPage->getGDBPath());
+  mpSettings->setValue("GDBPath", mpDebuggerPage->getGDBPathForSettings());
   mpSettings->setValue("GDBCommandTimeout", mpDebuggerPage->getGDBCommandTimeoutSpinBox()->value());
   mpSettings->setValue("GDBOutputLimit", mpDebuggerPage->getGDBOutputLimitSpinBox()->value());
   mpSettings->setValue("displayCFrames", mpDebuggerPage->getDisplayCFramesCheckBox()->isChecked());
   mpSettings->setValue("displayUnknownFrames", mpDebuggerPage->getDisplayUnknownFramesCheckBox()->isChecked());
-  mpMainWindow->getDebuggerMainWindow()->getStackFramesWidget()->getStackFramesTreeWidget()->updateStackFrames();
+  MainWindow::instance()->getStackFramesWidget()->getStackFramesTreeWidget()->updateStackFrames();
   mpSettings->setValue("clearOutputOnNewRun", mpDebuggerPage->getClearOutputOnNewRunCheckBox()->isChecked());
   mpSettings->setValue("clearLogOnNewRun", mpDebuggerPage->getClearLogOnNewRunCheckBox()->isChecked());
   mpSettings->endGroup();
@@ -820,18 +1153,35 @@ void OptionsDialog::saveDebuggerSettings()
   mpSettings->setValue("alwaysShowTransformationalDebugger", mpDebuggerPage->getAlwaysShowTransformationsCheckBox()->isChecked());
   mpSettings->setValue("generateOperations", mpDebuggerPage->getGenerateOperationsCheckBox()->isChecked());
   if (mpDebuggerPage->getGenerateOperationsCheckBox()->isChecked()) {
-    mpMainWindow->getOMCProxy()->setCommandLineOptions("+d=infoXmlOperations");
+    MainWindow::instance()->getOMCProxy()->setCommandLineOptions("-d=infoXmlOperations");
   }
   mpSettings->endGroup();
 }
 
 /*!
-  Saves the FMI section settings to omedit.ini
-  */
+ * \brief OptionsDialog::saveFMISettings
+ * Saves the FMI section settings to omedit.ini
+ */
 void OptionsDialog::saveFMISettings()
 {
   mpSettings->setValue("FMIExport/Version", mpFMIPage->getFMIExportVersion());
-  mpSettings->setValue("FMI/FMUName", mpFMIPage->getFMUNameTextBox()->text());
+  mpSettings->setValue("FMIExport/Type", mpFMIPage->getFMIExportType());
+  mpSettings->setValue("FMIExport/FMUName", mpFMIPage->getFMUNameTextBox()->text());
+  // save platforms
+  QStringList platforms;
+  QString linking = mpFMIPage->getLinkingComboBox()->itemData(mpFMIPage->getLinkingComboBox()->currentIndex()).toString();
+  platforms.append(linking);
+  int i = 0;
+  while (QLayoutItem* pLayoutItem = mpFMIPage->getPlatformsGroupBox()->layout()->itemAt(i)) {
+    if (dynamic_cast<QCheckBox*>(pLayoutItem->widget())) {
+      QCheckBox *pPlatformCheckBox = dynamic_cast<QCheckBox*>(pLayoutItem->widget());
+      if (pPlatformCheckBox->isChecked()) {
+        platforms.append(pPlatformCheckBox->text());
+      }
+    }
+    i++;
+  }
+  mpSettings->setValue("FMIExport/Platforms", platforms);
 }
 
 /*!
@@ -848,23 +1198,25 @@ void OptionsDialog::saveTLMSettings()
   mpSettings->setValue("TLM/MonitorProcess", mpTLMPage->getTLMMonitorProcessTextBox()->text());
 }
 
-//! Saves the TLM settings to omedit.ini
-void OptionsDialog::saveTLMEditorSettings()
+/*!
+ * \brief OptionsDialog::saveTraceabilitySettings
+ * Saves the traceability settings in omedit.ini
+ */
+void OptionsDialog::saveTraceabilitySettings()
 {
-  mpSettings->setValue("TLMEditor/tabPolicy", mpTLMEditorPage->getTabPolicyComboBox()->itemData(mpModelicaTextEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
-  mpSettings->setValue("TLMEditor/tabSize", mpTLMEditorPage->getTabSizeSpinBox()->value());
-  mpSettings->setValue("TLMEditor/indentSize", mpTLMEditorPage->getIndentSpinBox()->value());
-  mpSettings->setValue("TLMEditor/enableSyntaxHighlighting", mpTLMEditorPage->getSyntaxHighlightingCheckbox()->isChecked());
-  mpSettings->setValue("TLMEditor/enableLineWrapping", mpTLMEditorPage->getLineWrappingCheckbox()->isChecked());
-  mpSettings->setValue("TLMEditor/fontFamily", mpTLMEditorPage->getFontFamilyComboBox()->currentFont().family());
-  mpSettings->setValue("TLMEditor/fontSize", mpTLMEditorPage->getFontSizeSpinBox()->value());
-  mpSettings->setValue("TLMEditor/textRuleColor", mpTLMEditorPage->getTextRuleColor().rgba());
-  mpSettings->setValue("TLMEditor/commentRuleColor", mpTLMEditorPage->getCommentRuleColor().rgba());
-  mpSettings->setValue("TLMEditor/tagRuleColor", mpTLMEditorPage->getTagRuleColor().rgba());
-  mpSettings->setValue("TLMEditor/quotesRuleColor", mpTLMEditorPage->getQuotesRuleColor().rgba());
-  mpSettings->setValue("TLMEditor/elementsRuleColor", mpTLMEditorPage->getElementRuleColor().rgba());
+  // save traceability checkBox
+  mpSettings->setValue("traceability/Traceability", mpTraceabilityPage->getTraceabilityGroupBox()->isChecked());
+  // save user name
+  mpSettings->setValue("traceability/UserName", mpTraceabilityPage->getUserName()->text());
+  // save email
+  mpSettings->setValue("traceability/Email", mpTraceabilityPage->getEmail()->text());
+  // save Git repository
+  mpSettings->setValue("traceability/GitRepository", mpTraceabilityPage->getGitRepository()->text());
+  // save the traceability daemon IP-Adress
+  mpSettings->setValue("traceability/IPAdress", mpTraceabilityPage->getTraceabilityDaemonIpAdress()->text());
+  // save the traceability daemon port
+  mpSettings->setValue("traceability/Port", mpTraceabilityPage->getTraceabilityDaemonPort()->text());
 }
-
 //! Sets up the Options Widget dialog
 void OptionsDialog::setUpDialog()
 {
@@ -900,14 +1252,15 @@ void OptionsDialog::setUpDialog()
   mpButtonBox->addButton(mpCancelButton, QDialogButtonBox::ActionRole);
   QHBoxLayout *horizontalLayout = new QHBoxLayout;
   horizontalLayout->addWidget(mpOptionsList);
-  QScrollArea *pPagesWidgetScrollArea = new QScrollArea;
-  pPagesWidgetScrollArea->setWidget(mpPagesWidget);
-  horizontalLayout->addWidget(pPagesWidgetScrollArea);
+  mpPagesWidgetScrollArea = new QScrollArea;
+  mpPagesWidgetScrollArea->setWidgetResizable(true);
+  mpPagesWidgetScrollArea->setWidget(mpPagesWidget);
+  horizontalLayout->addWidget(mpPagesWidgetScrollArea);
   // Create a layout
   QGridLayout *mainLayout = new QGridLayout;
   mainLayout->addLayout(horizontalLayout, 0, 0, 1, 2);
   mainLayout->addWidget(mpChangesEffectLabel, 1, 0);
-  mainLayout->addWidget(mpButtonBox, 1, 1);
+  mainLayout->addWidget(mpButtonBox, 1, 1, Qt::AlignRight);
   setLayout(mainLayout);
 }
 
@@ -923,10 +1276,30 @@ void OptionsDialog::addListItems()
   QListWidgetItem *pLibrariesItem = new QListWidgetItem(mpOptionsList);
   pLibrariesItem->setIcon(QIcon(":/Resources/icons/libraries.svg"));
   pLibrariesItem->setText(Helper::libraries);
-  // Modelica Text Item
-  QListWidgetItem *pModelicaTextEditorItem = new QListWidgetItem(mpOptionsList);
-  pModelicaTextEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
-  pModelicaTextEditorItem->setText(tr("Modelica Text Editor"));
+  // Text Editor Item
+  QListWidgetItem *pTextEditorItem = new QListWidgetItem(mpOptionsList);
+  pTextEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pTextEditorItem->setText(tr("Text Editor"));
+  // Modelica Editor Item
+  QListWidgetItem *pModelicaEditorItem = new QListWidgetItem(mpOptionsList);
+  pModelicaEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pModelicaEditorItem->setText(tr("Modelica Editor"));
+  // MetaModelica Editor Item
+  QListWidgetItem *pMetaModelicaEditorItem = new QListWidgetItem(mpOptionsList);
+  pMetaModelicaEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pMetaModelicaEditorItem->setText(tr("MetaModelica Editor"));
+  // CompositeModel Editor Item
+  QListWidgetItem *pCompositeModelEditorItem = new QListWidgetItem(mpOptionsList);
+  pCompositeModelEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pCompositeModelEditorItem->setText(tr("CompositeModel Editor"));
+  // C/C++ Editor Item
+  QListWidgetItem *pCEditorItem = new QListWidgetItem(mpOptionsList);
+  pCEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pCEditorItem->setText(tr("C/C++ Editor"));
+  // HTML Editor Item
+  QListWidgetItem *pHTMLEditorItem = new QListWidgetItem(mpOptionsList);
+  pHTMLEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
+  pHTMLEditorItem->setText(tr("HTML Editor"));
   // Graphical Views Item
   QListWidgetItem *pGraphicalViewsItem = new QListWidgetItem(mpOptionsList);
   pGraphicalViewsItem->setIcon(QIcon(":/Resources/icons/modeling.png"));
@@ -970,11 +1343,11 @@ void OptionsDialog::addListItems()
   // TLM Item
   QListWidgetItem *pTLMItem = new QListWidgetItem(mpOptionsList);
   pTLMItem->setIcon(QIcon(":/Resources/icons/tlm-icon.svg"));
-  pTLMItem->setText(tr("TLM"));
-  // TLM Editor Item
-  QListWidgetItem *pTLMEditorItem = new QListWidgetItem(mpOptionsList);
-  pTLMEditorItem->setIcon(QIcon(":/Resources/icons/modeltext.svg"));
-  pTLMEditorItem->setText(tr("TLM Editor"));
+  pTLMItem->setText(tr("OMTLMSimulator"));
+  // Traceability Item
+  QListWidgetItem *pTraceabilityItem = new QListWidgetItem(mpOptionsList);
+  pTraceabilityItem->setIcon(QIcon(":/Resources/icons/traceability.svg"));
+  pTraceabilityItem->setText(tr("Traceability"));
 }
 
 //! Creates pages for the Options Widget. The pages are created as stacked widget and are mapped with mpOptionsList.
@@ -984,7 +1357,12 @@ void OptionsDialog::createPages()
   mpPagesWidget->setContentsMargins(5, 2, 5, 2);
   mpPagesWidget->addWidget(mpGeneralSettingsPage);
   mpPagesWidget->addWidget(mpLibrariesPage);
-  mpPagesWidget->addWidget(mpModelicaTextEditorPage);
+  mpPagesWidget->addWidget(mpTextEditorPage);
+  mpPagesWidget->addWidget(mpModelicaEditorPage);
+  mpPagesWidget->addWidget(mpMetaModelicaEditorPage);
+  mpPagesWidget->addWidget(mpCompositeModelEditorPage);
+  mpPagesWidget->addWidget(mpCEditorPage);
+  mpPagesWidget->addWidget(mpHTMLEditorPage);
   mpPagesWidget->addWidget(mpGraphicalViewsPage);
   mpPagesWidget->addWidget(mpSimulationPage);
   mpPagesWidget->addWidget(mpMessagesPage);
@@ -996,7 +1374,7 @@ void OptionsDialog::createPages()
   mpPagesWidget->addWidget(mpDebuggerPage);
   mpPagesWidget->addWidget(mpFMIPage);
   mpPagesWidget->addWidget(mpTLMPage);
-  mpPagesWidget->addWidget(mpTLMEditorPage);
+  mpPagesWidget->addWidget(mpTraceabilityPage);
 }
 
 /*!
@@ -1011,8 +1389,9 @@ void OptionsDialog::saveDialogGeometry()
 }
 
 /*!
-  Reimplementation of QDialog::show method.
-  */
+ * \brief OptionsDialog::show
+ * Reimplementation of QDialog::show method.
+ */
 void OptionsDialog::show()
 {
   /* restore the window geometry. */
@@ -1022,30 +1401,35 @@ void OptionsDialog::show()
   setVisible(true);
 }
 
-TabSettings OptionsDialog::getModelicaTabSettings()
+/*!
+ * \brief OptionsDialog::getTabSettings
+ * Returns a TabSettings
+ * \return
+ */
+TabSettings OptionsDialog::getTabSettings()
 {
   TabSettings tabSettings;
-  tabSettings.setTabPolicy(mpModelicaTextEditorPage->getTabPolicyComboBox()->itemData(mpModelicaTextEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
-  tabSettings.setTabSize(mpModelicaTextEditorPage->getTabSizeSpinBox()->value());
-  tabSettings.setIndentSize(mpModelicaTextEditorPage->getIndentSpinBox()->value());
+  tabSettings.setTabPolicy(mpTextEditorPage->getTabPolicyComboBox()->itemData(mpTextEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
+  tabSettings.setTabSize(mpTextEditorPage->getTabSizeSpinBox()->value());
+  tabSettings.setIndentSize(mpTextEditorPage->getIndentSpinBox()->value());
   return tabSettings;
 }
 
-TabSettings OptionsDialog::getTLMTabSettings()
-{
-  TabSettings tabSettings;
-  tabSettings.setTabPolicy(mpTLMEditorPage->getTabPolicyComboBox()->itemData(mpTLMEditorPage->getTabPolicyComboBox()->currentIndex()).toInt());
-  tabSettings.setTabSize(mpTLMEditorPage->getTabSizeSpinBox()->value());
-  tabSettings.setIndentSize(mpTLMEditorPage->getIndentSpinBox()->value());
-  return tabSettings;
-}
-//! Change the page in Options Widget when the mpOptionsList currentItemChanged Signal is raised.
+/*!
+ * \brief OptionsDialog::changePage
+ * Change the page in Options Widget when the mpOptionsList currentItemChanged Signal is raised.
+ * \param current
+ * \param previous
+ */
 void OptionsDialog::changePage(QListWidgetItem *current, QListWidgetItem *previous)
 {
   if (!current) {
     current = previous;
   }
   mpPagesWidget->setCurrentIndex(mpOptionsList->row(current));
+  /* ticket:4345 reset the scrollbars to top */
+  mpPagesWidgetScrollArea->verticalScrollBar()->setValue(0);
+  mpPagesWidgetScrollArea->horizontalScrollBar()->setValue(0);
 }
 
 //! Reimplementation of QWidget's reject function. If user reject the settings then set them back to original.
@@ -1062,9 +1446,17 @@ void OptionsDialog::saveSettings()
 {
   saveGeneralSettings();
   saveLibrariesSettings();
-  saveModelicaTextSettings();
-  // emit the signal so that all syntax highlighters are updated
-  emit modelicaTextSettingsChanged();
+  saveTextEditorSettings();
+  saveModelicaEditorSettings();
+  emit modelicaEditorSettingsChanged();
+  saveMetaModelicaEditorSettings();
+  emit metaModelicaEditorSettingsChanged();
+  saveCompositeModelEditorSettings();
+  emit compositeModelEditorSettingsChanged();
+  saveCEditorSettings();
+  emit cEditorSettingsChanged();
+  saveHTMLEditorSettings();
+  emit HTMLEditorSettingsChanged();
   saveGraphicalViewsSettings();
   saveSimulationSettings();
   saveMessagesSettings();
@@ -1076,11 +1468,9 @@ void OptionsDialog::saveSettings()
   saveDebuggerSettings();
   saveFMISettings();
   saveTLMSettings();
-  saveTLMEditorSettings();
-  // emit the signal so that all syntax highlighters are updated
-  emit TLMEditorSettingsChanged();
-  // emit the signal so that all text editors can set line wrapping mode
-  emit updateLineWrapping();
+  saveTraceabilitySettings();
+  // emit the signal so that all text editors can set settings & line wrapping mode
+  emit textSettingsChanged();
   mpSettings->sync();
   saveDialogGeometry();
   accept();
@@ -1120,7 +1510,7 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   }
   // Working Directory
   mpWorkingDirectoryLabel = new Label(Helper::workingDirectory);
-  mpWorkingDirectoryTextBox = new QLineEdit(mpOptionsDialog->getMainWindow()->getOMCProxy()->changeDirectory());
+  mpWorkingDirectoryTextBox = new QLineEdit(MainWindow::instance()->getOMCProxy()->changeDirectory());
   mpWorkingDirectoryBrowseButton = new QPushButton(Helper::browse);
   mpWorkingDirectoryBrowseButton->setAutoDefault(false);
   connect(mpWorkingDirectoryBrowseButton, SIGNAL(clicked()), SLOT(selectWorkingDirectory()));
@@ -1131,6 +1521,27 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   mpToolbarIconSizeSpinBox->setValue(24);
   // Store Customizations Option
   mpPreserveUserCustomizations = new QCheckBox(tr("Preserve User's GUI Customizations"));
+  mpPreserveUserCustomizations->setChecked(true);
+  // terminal command
+  mpTerminalCommandLabel = new Label(tr("Terminal Command:"));
+  mpTerminalCommandTextBox = new QLineEdit;
+#ifdef Q_OS_WIN32
+  mpTerminalCommandTextBox->setText("cmd.exe");
+#elif defined(Q_OS_MAC)
+  mpTerminalCommandTextBox->setText("");
+#else
+  mpTerminalCommandTextBox->setText("");
+#endif
+  mpTerminalCommandBrowseButton = new QPushButton(Helper::browse);
+  mpTerminalCommandBrowseButton->setAutoDefault(false);
+  connect(mpTerminalCommandBrowseButton, SIGNAL(clicked()), SLOT(selectTerminalCommand()));
+  // terminal command args
+  mpTerminalCommandArgumentsLabel = new Label(tr("Terminal Command Arguments:"));
+  mpTerminalCommandArgumentsTextBox = new QLineEdit;
+  // hide variables browser checkbox
+  mpHideVariablesBrowserCheckBox = new QCheckBox(tr("Hide Variables Browser"));
+  mpHideVariablesBrowserCheckBox->setToolTip(tr("Hides the variable browser when switching away from plotting perspective."));
+  mpHideVariablesBrowserCheckBox->setChecked(true);
   // set the layout of general settings group
   QGridLayout *generalSettingsLayout = new QGridLayout;
   generalSettingsLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
@@ -1142,6 +1553,12 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   generalSettingsLayout->addWidget(mpToolbarIconSizeLabel, 2, 0);
   generalSettingsLayout->addWidget(mpToolbarIconSizeSpinBox, 2, 1, 1, 2);
   generalSettingsLayout->addWidget(mpPreserveUserCustomizations, 3, 0, 1, 3);
+  generalSettingsLayout->addWidget(mpTerminalCommandLabel, 4, 0);
+  generalSettingsLayout->addWidget(mpTerminalCommandTextBox, 4, 1);
+  generalSettingsLayout->addWidget(mpTerminalCommandBrowseButton, 4, 2);
+  generalSettingsLayout->addWidget(mpTerminalCommandArgumentsLabel, 5, 0);
+  generalSettingsLayout->addWidget(mpTerminalCommandArgumentsTextBox, 5, 1, 1, 2);
+  generalSettingsLayout->addWidget(mpHideVariablesBrowserCheckBox, 6, 0, 1, 3);
   mpGeneralSettingsGroupBox->setLayout(generalSettingsLayout);
   // Libraries Browser group box
   mpLibrariesBrowserGroupBox = new QGroupBox(tr("Libraries Browser"));
@@ -1161,7 +1578,7 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   pLibrariesBrowserLayout->addWidget(mpShowProtectedClasses, 1, 0, 1, 2);
   mpLibrariesBrowserGroupBox->setLayout(pLibrariesBrowserLayout);
   // Modeling View Mode
-  mpModelingViewModeGroupBox = new QGroupBox(tr("Modeling View Mode"));
+  mpModelingViewModeGroupBox = new QGroupBox(tr("Default Modeling View Mode"));
   mpModelingTabbedViewRadioButton = new QRadioButton(tr("Tabbed View"));
   mpModelingTabbedViewRadioButton->setChecked(true);
   mpModelingSubWindowViewRadioButton = new QRadioButton(tr("SubWindow View"));
@@ -1197,10 +1614,10 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   pDefaultViewRadioButtonsGridLayout->addWidget(mpTextViewRadioButton, 1, 0);
   pDefaultViewRadioButtonsGridLayout->addWidget(mpDocumentationViewRadioButton, 1, 1);
   // set the layout of default view group
-  QGridLayout *pDefautlViewLayout = new QGridLayout;
-  pDefautlViewLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-  pDefautlViewLayout->addLayout(pDefaultViewRadioButtonsGridLayout, 0, 0);
-  mpDefaultViewGroupBox->setLayout(pDefautlViewLayout);
+  QGridLayout *pDefaultViewLayout = new QGridLayout;
+  pDefaultViewLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pDefaultViewLayout->addLayout(pDefaultViewRadioButtonsGridLayout, 0, 0);
+  mpDefaultViewGroupBox->setLayout(pDefaultViewLayout);
   // Auto Save
   mpEnableAutoSaveGroupBox = new QGroupBox(tr("Enable Auto Save"));
   mpEnableAutoSaveGroupBox->setToolTip("Auto save feature is experimental. If you encounter unexpected crashes then disable it.");
@@ -1214,9 +1631,6 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   mpAutoSaveIntervalSpinBox->setValue(300);
   mpAutoSaveSecondsLabel = new Label;
   connect(mpAutoSaveIntervalSpinBox, SIGNAL(valueChanged(int)), SLOT(autoSaveIntervalValueChanged(int)));
-  mpEnableAutoSaveForSingleClassesCheckBox = new QCheckBox(tr("Enable Auto Save for single classes"));
-  mpEnableAutoSaveForSingleClassesCheckBox->setChecked(true);
-  mpEnableAutoSaveForOneFilePackagesCheckBox = new QCheckBox(tr("Enable Auto Save for one file packages (Experimental)"));
   // calculate the auto save interval seconds.
   autoSaveIntervalValueChanged(mpAutoSaveIntervalSpinBox->value());
   // Auto Save layout
@@ -1225,8 +1639,6 @@ GeneralSettingsPage::GeneralSettingsPage(OptionsDialog *pOptionsDialog)
   pAutoSaveGridLayout->addWidget(mpAutoSaveIntervalLabel, 0, 0);
   pAutoSaveGridLayout->addWidget(mpAutoSaveIntervalSpinBox, 0, 1);
   pAutoSaveGridLayout->addWidget(mpAutoSaveSecondsLabel, 0, 2);
-  pAutoSaveGridLayout->addWidget(mpEnableAutoSaveForSingleClassesCheckBox, 1, 0, 1, 3);
-  pAutoSaveGridLayout->addWidget(mpEnableAutoSaveForOneFilePackagesCheckBox, 2, 0, 1, 3);
   mpEnableAutoSaveGroupBox->setLayout(pAutoSaveGridLayout);
   // Welcome Page
   mpWelcomePageGroupBox = new QGroupBox(tr("Welcome Page"));
@@ -1331,52 +1743,48 @@ void GeneralSettingsPage::setDefaultView(QString value)
     mpDiagramViewRadioButton->setChecked(true);
 }
 
+/*!
+ * \brief GeneralSettingsPage::getDefaultView
+ * Returns the default view as QString.
+ * \return
+ */
 QString GeneralSettingsPage::getDefaultView()
 {
-  if (mpIconViewRadioButton->isChecked())
+  if (mpIconViewRadioButton->isChecked()) {
     return Helper::iconView;
-  else if (mpTextViewRadioButton->isChecked())
+  } else if (mpTextViewRadioButton->isChecked()) {
     return Helper::textView;
-  else if (mpDocumentationViewRadioButton->isChecked())
+  } else if (mpDocumentationViewRadioButton->isChecked()) {
     return Helper::documentationView;
-  else
+  } else {
     return Helper::diagramView;
+  }
 }
 
-QGroupBox* GeneralSettingsPage::getEnableAutoSaveGroupBox()
-{
-  return mpEnableAutoSaveGroupBox;
-}
-
-QSpinBox* GeneralSettingsPage::getAutoSaveIntervalSpinBox()
-{
-  return mpAutoSaveIntervalSpinBox;
-}
-
-QCheckBox* GeneralSettingsPage::getEnableAutoSaveForSingleClassesCheckBox()
-{
-  return mpEnableAutoSaveForSingleClassesCheckBox;
-}
-
-QCheckBox* GeneralSettingsPage::getEnableAutoSaveForOneFilePackagesCheckBox()
-{
-  return mpEnableAutoSaveForOneFilePackagesCheckBox;
-}
-
+/*!
+ * \brief GeneralSettingsPage::getWelcomePageView
+ * Returns the WelcomePageWidget orientation.
+ * \return
+ */
 int GeneralSettingsPage::getWelcomePageView()
 {
-  if (mpHorizontalViewRadioButton->isChecked())
+  if (mpHorizontalViewRadioButton->isChecked()) {
     return 1;
-  else if (mpVerticalViewRadioButton->isChecked())
+  } else if (mpVerticalViewRadioButton->isChecked()) {
     return 2;
-  else
+  } else {
     return 0;
+  }
 }
 
+/*!
+ * \brief GeneralSettingsPage::setWelcomePageView
+ * Sets the WelcomePageWidget orientation.
+ * \param view
+ */
 void GeneralSettingsPage::setWelcomePageView(int view)
 {
-  switch (view)
-  {
+  switch (view) {
     case 2:
       mpVerticalViewRadioButton->setChecked(true);
       break;
@@ -1387,18 +1795,33 @@ void GeneralSettingsPage::setWelcomePageView(int view)
   }
 }
 
-QCheckBox* GeneralSettingsPage::getShowLatestNewsCheckBox()
-{
-  return mpShowLatestNewsCheckBox;
-}
-
-//! Slot activated when mpWorkingDirectoryBrowseButton clicked signal is raised.
-//! Allows user to choose a new working directory.
+/*!
+ * \brief GeneralSettingsPage::selectWorkingDirectory
+ * Slot activated when mpWorkingDirectoryBrowseButton clicked signal is raised.
+ * Allows user to choose a new working directory.
+ */
 void GeneralSettingsPage::selectWorkingDirectory()
 {
-  mpWorkingDirectoryTextBox->setText(StringHandler::getExistingDirectory(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseDirectory), NULL));
+  mpWorkingDirectoryTextBox->setText(StringHandler::getExistingDirectory(this, QString("%1 - %2").arg(Helper::applicationName)
+                                                                         .arg(Helper::chooseDirectory), NULL));
 }
 
+/*!
+ * \brief GeneralSettingsPage::selectTerminalCommand
+ * Slot activated when mpTerminalCommandBrowseButton clicked signal is raised.
+ * Allows user to select a new terminal command.
+ */
+void GeneralSettingsPage::selectTerminalCommand()
+{
+  mpTerminalCommandTextBox->setText(StringHandler::getOpenFileName(this, QString("%1 - %2").arg(Helper::applicationName)
+                                                                   .arg(Helper::chooseFile), NULL, NULL, NULL));
+}
+
+/*!
+ * \brief GeneralSettingsPage::autoSaveIntervalValueChanged
+ * Slot activated when mpAutoSaveIntervalSpinBox valueChanged signal is raised.
+ * \param value
+ */
 void GeneralSettingsPage::autoSaveIntervalValueChanged(int value)
 {
   mpAutoSaveSecondsLabel->setText(tr("(%1 minute(s))").arg((double)value/60));
@@ -1428,7 +1851,7 @@ LibrariesPage::LibrariesPage(OptionsDialog *pOptionsDialog)
   mpSystemLibrariesTree->setColumnCount(2);
   mpSystemLibrariesTree->setTextElideMode(Qt::ElideMiddle);
   QStringList systemLabels;
-  systemLabels << tr("Name") << tr("Version");
+  systemLabels << tr("Name") << Helper::version;
   mpSystemLibrariesTree->setHeaderLabels(systemLabels);
   connect(mpSystemLibrariesTree, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)), SLOT(openEditSystemLibrary()));
   // system libraries buttons
@@ -1458,6 +1881,9 @@ LibrariesPage::LibrariesPage(OptionsDialog *pOptionsDialog)
   mpForceModelicaLoadCheckBox = new QCheckBox(tr("Force loading of Modelica Standard Library"));
   mpForceModelicaLoadCheckBox->setToolTip(tr("This will make sure that Modelica and ModelicaReference will always load even if user has removed them from the list of system libraries."));
   mpForceModelicaLoadCheckBox->setChecked(true);
+  // force Modelica load checkbox
+  mpLoadOpenModelicaOnStartupCheckBox = new QCheckBox(tr("Load OpenModelica library on startup"));
+  mpLoadOpenModelicaOnStartupCheckBox->setChecked(true);
   // user libraries groupbox
   mpUserLibrariesGroupBox = new QGroupBox(tr("User Libraries *"));
   // user libraries tree
@@ -1496,25 +1922,9 @@ LibrariesPage::LibrariesPage(OptionsDialog *pOptionsDialog)
   layout->setContentsMargins(0, 0, 0, 0);
   layout->addWidget(mpSystemLibrariesGroupBox);
   layout->addWidget(mpForceModelicaLoadCheckBox);
+  layout->addWidget(mpLoadOpenModelicaOnStartupCheckBox);
   layout->addWidget(mpUserLibrariesGroupBox);
   setLayout(layout);
-}
-
-//! Returns the System Libraries Tree instance.
-QTreeWidget* LibrariesPage::getSystemLibrariesTree()
-{
-  return mpSystemLibrariesTree;
-}
-
-QCheckBox* LibrariesPage::getForceModelicaLoadCheckBox()
-{
-  return mpForceModelicaLoadCheckBox;
-}
-
-//! Returns the User Libraries Tree instance.
-QTreeWidget* LibrariesPage::getUserLibrariesTree()
-{
-  return mpUserLibrariesTree;
 }
 
 //! Slot activated when mpAddSystemLibraryButton clicked signal is raised.
@@ -1594,7 +2004,7 @@ void LibrariesPage::openEditUserLibrary()
 //! Constructor
 //! @param pLibrariesPage is the pointer to LibrariesPage
 AddSystemLibraryDialog::AddSystemLibraryDialog(LibrariesPage *pLibrariesPage)
-  : QDialog(pLibrariesPage, Qt::WindowTitleHint), mEditFlag(false)
+  : QDialog(pLibrariesPage), mEditFlag(false)
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(tr("Add System Library")));
   setAttribute(Qt::WA_DeleteOnClose);
@@ -1602,11 +2012,11 @@ AddSystemLibraryDialog::AddSystemLibraryDialog(LibrariesPage *pLibrariesPage)
   mpLibrariesPage = pLibrariesPage;
   mpNameLabel = new Label(Helper::name);
   mpNameComboBox = new QComboBox;
-  foreach (const QString &key, mpLibrariesPage->mpOptionsDialog->getMainWindow()->getOMCProxy()->getAvailableLibraries()) {
+  foreach (const QString &key, MainWindow::instance()->getOMCProxy()->getAvailableLibraries()) {
     mpNameComboBox->addItem(key,key);
   }
 
-  mpValueLabel = new Label(Helper::version);
+  mpValueLabel = new Label(Helper::version + ":");
   mpVersionTextBox = new QLineEdit("default");
   mpOkButton = new QPushButton(Helper::ok);
   connect(mpOkButton, SIGNAL(clicked()), SLOT(addSystemLibrary()));
@@ -1704,7 +2114,7 @@ void AddSystemLibraryDialog::addSystemLibrary()
 //! Constructor
 //! @param pLibrariesPage is the pointer to LibrariesPage
 AddUserLibraryDialog::AddUserLibraryDialog(LibrariesPage *pLibrariesPage)
-  : QDialog(pLibrariesPage, Qt::WindowTitleHint), mEditFlag(false)
+  : QDialog(pLibrariesPage), mEditFlag(false)
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(tr("Add User Library")));
   setAttribute(Qt::WA_DeleteOnClose);
@@ -1810,15 +2220,49 @@ void AddUserLibraryDialog::addUserLibrary()
   accept();
 }
 
-//! @class ModelicaTextEditorPage
-//! @brief Creates an interface for Modelica Text settings.
-
-//! Constructor
-//! @param pOptionsDialog is the pointer to OptionsDialog
-ModelicaTextEditorPage::ModelicaTextEditorPage(OptionsDialog *pOptionsDialog)
+/*!
+ * \class TextEditorPage
+ * \brief Creates an interface for Text Editor settings.
+ */
+/*!
+ * \brief TextEditorPage::TextEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+TextEditorPage::TextEditorPage(OptionsDialog *pOptionsDialog)
   : QWidget(pOptionsDialog)
 {
   mpOptionsDialog = pOptionsDialog;
+  // format groupbox
+  mpFormatGroupBox = new QGroupBox(tr("Format"));
+  // line ending
+  mpLineEndingLabel = new Label(tr("Line Ending:"));
+  mpLineEndingComboBox = new QComboBox;
+  mpLineEndingComboBox->addItem(tr("Windows (CRLF)"), Utilities::CRLFLineEnding);
+  mpLineEndingComboBox->addItem(tr("Unix (LF)"), Utilities::LFLineEnding);
+#ifndef WIN32
+  mpLineEndingComboBox->setCurrentIndex(1);
+#endif
+  // Byte Order Mark BOM
+  mpBOMLabel = new Label(tr("Byte Order Mark (BOM):"));
+  mpBOMComboBox = new QComboBox;
+  mpBOMComboBox->setToolTip(tr("<html><head/><body>"
+                               "<p>Note that BOMs are uncommon and treated incorrectly by some editors, so it usually makes little sense to add any.</p>"
+                               "<ul><li><i>Always Add:</i> always add a BOM when saving a file.</li>"
+                               "<li><i>Keep If Already Present:</i> save the file with a BOM if it already had one when it was loaded.</li>"
+                               "<li><i>Always Delete:</i> never write a BOM, possibly deleting a pre-existing one.</li></ul>"
+                               "</body></html>"));
+  mpBOMComboBox->addItem(tr("Always Add"), Utilities::AlwaysAddBom);
+  mpBOMComboBox->addItem(tr("Keep If Already Present"), Utilities::KeepBom);
+  mpBOMComboBox->addItem(tr("Always Delete"), Utilities::AlwaysDeleteBom);
+  mpBOMComboBox->setCurrentIndex(1);
+  // set format groupbox layout
+  QGridLayout *pFormatGroupBoxLayout = new QGridLayout;
+  pFormatGroupBoxLayout->addWidget(mpLineEndingLabel, 0, 0);
+  pFormatGroupBoxLayout->setColumnStretch(1, 1);
+  pFormatGroupBoxLayout->addWidget(mpLineEndingComboBox, 0, 1);
+  pFormatGroupBoxLayout->addWidget(mpBOMLabel, 1, 0);
+  pFormatGroupBoxLayout->addWidget(mpBOMComboBox, 1, 1);
+  mpFormatGroupBox->setLayout(pFormatGroupBoxLayout);
   // tabs and indentation groupbox
   mpTabsAndIndentation = new QGroupBox(tr("Tabs and Indentation"));
   // tab policy
@@ -1839,6 +2283,7 @@ ModelicaTextEditorPage::ModelicaTextEditorPage(OptionsDialog *pOptionsDialog)
   // set tabs & indentation groupbox layout
   QGridLayout *pTabsAndIndentationGroupBoxLayout = new QGridLayout;
   pTabsAndIndentationGroupBoxLayout->addWidget(mpTabPolicyLabel, 0, 0);
+  pTabsAndIndentationGroupBoxLayout->setColumnStretch(1, 1);
   pTabsAndIndentationGroupBoxLayout->addWidget(mpTabPolicyComboBox, 0, 1);
   pTabsAndIndentationGroupBoxLayout->addWidget(mpTabSizeLabel, 1, 0);
   pTabsAndIndentationGroupBoxLayout->addWidget(mpTabSizeSpinBox, 1, 1);
@@ -1847,52 +2292,101 @@ ModelicaTextEditorPage::ModelicaTextEditorPage(OptionsDialog *pOptionsDialog)
   mpTabsAndIndentation->setLayout(pTabsAndIndentationGroupBoxLayout);
   // syntax highlight and text wrapping groupbox
   mpSyntaxHighlightAndTextWrappingGroupBox = new QGroupBox(tr("Syntax Highlight and Text Wrapping"));
-  // syntax highlighting checkbox
-  mpSyntaxHighlightingCheckbox = new QCheckBox(tr("Enable Syntax Highlighting"));
-  mpSyntaxHighlightingCheckbox->setChecked(true);
+  // syntax highlighting groupbox
+  mpSyntaxHighlightingGroupBox = new QGroupBox(tr("Enable Syntax Highlighting"));
+  mpSyntaxHighlightingGroupBox->setCheckable(true);
+  mpSyntaxHighlightingGroupBox->setChecked(true);
+  // code folding checkbox
+  mpCodeFoldingCheckBox = new QCheckBox(tr("Enable Code Folding"));
+  mpCodeFoldingCheckBox->setChecked(true);
+  // match parenthesis within comments and quotes
+  mpMatchParenthesesCommentsQuotesCheckBox = new QCheckBox(tr("Match Parentheses within Comments and Quotes"));
+  // set Syntax Highlighting groupbox layout
+  QGridLayout *pSyntaxHighlightingGroupBoxLayout = new QGridLayout;
+  pSyntaxHighlightingGroupBoxLayout->addWidget(mpCodeFoldingCheckBox, 0, 0);
+  pSyntaxHighlightingGroupBoxLayout->addWidget(mpMatchParenthesesCommentsQuotesCheckBox, 1, 0);
+  mpSyntaxHighlightingGroupBox->setLayout(pSyntaxHighlightingGroupBoxLayout);
   // line wrap checkbox
   mpLineWrappingCheckbox = new QCheckBox(tr("Enable Line Wrapping"));
   mpLineWrappingCheckbox->setChecked(true);
-  connect(mpLineWrappingCheckbox, SIGNAL(toggled(bool)), this, SLOT(setLineWrapping()));
   // set Syntax Highlight & Text Wrapping groupbox layout
   QGridLayout *pSyntaxHighlightAndTextWrappingGroupBoxLayout = new QGridLayout;
-  pSyntaxHighlightAndTextWrappingGroupBoxLayout->addWidget(mpSyntaxHighlightingCheckbox, 0, 0);
+  pSyntaxHighlightAndTextWrappingGroupBoxLayout->addWidget(mpSyntaxHighlightingGroupBox, 0, 0);
   pSyntaxHighlightAndTextWrappingGroupBoxLayout->addWidget(mpLineWrappingCheckbox, 1, 0);
   mpSyntaxHighlightAndTextWrappingGroupBox->setLayout(pSyntaxHighlightAndTextWrappingGroupBoxLayout);
-  // fonts & colors groupbox
-  mpFontColorsGroupBox = new QGroupBox(Helper::fontAndColors);
+  // AutoCompleter group box
+  mpAutoCompleteGroupBox = new QGroupBox(tr("Autocomplete"));
+  // autocompleter checkbox
+  mpAutoCompleteCheckBox = new QCheckBox(tr("Enable Autocomplete"));
+  mpAutoCompleteCheckBox->setChecked(true);
+  QGridLayout *pAutoCompleteGroupBoxLayout = new QGridLayout;
+  pAutoCompleteGroupBoxLayout->addWidget(mpAutoCompleteCheckBox,0,0);
+  mpAutoCompleteGroupBox->setLayout(pAutoCompleteGroupBoxLayout);
+  // font groupbox
+  mpFontGroupBox = new QGroupBox(tr("Font"));
   // font family combobox
   mpFontFamilyLabel = new Label(Helper::fontFamily);
   mpFontFamilyComboBox = new QFontComboBox;
   int currentIndex;
   currentIndex = mpFontFamilyComboBox->findText(Helper::monospacedFontInfo.family(), Qt::MatchExactly);
   mpFontFamilyComboBox->setCurrentIndex(currentIndex);
-  connect(mpFontFamilyComboBox, SIGNAL(currentFontChanged(QFont)), SIGNAL(updatePreview()));
   // font size combobox
   mpFontSizeLabel = new Label(Helper::fontSize);
   mpFontSizeSpinBox = new DoubleSpinBox;
   mpFontSizeSpinBox->setRange(6, std::numeric_limits<double>::max());
   mpFontSizeSpinBox->setValue(Helper::monospacedFontInfo.pointSizeF());
   mpFontSizeSpinBox->setSingleStep(1);
-  connect(mpFontSizeSpinBox, SIGNAL(valueChanged(double)), SIGNAL(updatePreview()));
-  // Item color label and pick color button
-  mpItemColorLabel = new Label(tr("Item Color:"));
-  mpItemColorPickButton = new QPushButton(Helper::pickColor);
-  mpItemColorPickButton->setAutoDefault(false);
-  connect(mpItemColorPickButton, SIGNAL(clicked()), SLOT(pickColor()));
-  // Items list
-  mpItemsLabel = new Label(tr("Items:"));
-  mpItemsList = new QListWidget;
-  mpItemsList->setItemDelegate(new ItemDelegate(mpItemsList));
-  mpItemsList->setMaximumHeight(90);
+  // set font groupbox layout
+  QGridLayout *pFontGroupBoxLayout = new QGridLayout;
+  pFontGroupBoxLayout->addWidget(mpFontFamilyLabel, 0, 0);
+  pFontGroupBoxLayout->addWidget(mpFontSizeLabel, 0, 1);
+  pFontGroupBoxLayout->addWidget(mpFontFamilyComboBox, 1, 0);
+  pFontGroupBoxLayout->addWidget(mpFontSizeSpinBox, 1, 1);
+  mpFontGroupBox->setLayout(pFontGroupBoxLayout);
+  // set the layout
+  QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setContentsMargins(0, 0, 0, 0);
+  pMainLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pMainLayout->addWidget(mpFormatGroupBox);
+  pMainLayout->addWidget(mpTabsAndIndentation);
+  pMainLayout->addWidget(mpSyntaxHighlightAndTextWrappingGroupBox);
+  pMainLayout->addWidget(mpAutoCompleteGroupBox);
+  pMainLayout->addWidget(mpFontGroupBox);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \class ModelicaEditorPage
+ * \brief Creates an interface for Modelica Text settings.
+ */
+/*!
+ * \brief ModelicaEditorPage::ModelicaEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+ModelicaEditorPage::ModelicaEditorPage(OptionsDialog *pOptionsDialog)
+  : QWidget(pOptionsDialog)
+{
+  mpOptionsDialog = pOptionsDialog;
+  // preserve text indentation
+  mpPreserveTextIndentationCheckBox = new QCheckBox(tr("Preserve Text Indentation"));
+  mpPreserveTextIndentationCheckBox->setChecked(true);
+  // code colors widget
+  mpCodeColorsWidget = new CodeColorsWidget(this);
+  connect(mpCodeColorsWidget, SIGNAL(colorUpdated()), SIGNAL(updatePreview()));
   // Add items to list
-  addListItems();
-  // make first item in the list selected
-  mpItemsList->setCurrentRow(0, QItemSelectionModel::Select);
-  // preview textbox
-  mpPreviewLabel = new Label(tr("Preview:"));
-  mpPreviewPlainTextBox = new QPlainTextEdit;
-  mpPreviewPlainTextBox->setTabStopWidth(Helper::tabWidth);
+  // number (purple)
+  new ListWidgetItem("Number", QColor(139, 0, 139), mpCodeColorsWidget->getItemsListWidget());
+  // keyword (dark red)
+  new ListWidgetItem("Keyword", QColor(139, 0, 0), mpCodeColorsWidget->getItemsListWidget());
+  // type (red)
+  new ListWidgetItem("Type", QColor(255, 10, 10), mpCodeColorsWidget->getItemsListWidget());
+  // function (blue)
+  new ListWidgetItem("Function", QColor(0, 0, 255), mpCodeColorsWidget->getItemsListWidget());
+  // Quotes (dark green)
+  new ListWidgetItem("Quotes", QColor(0, 139, 0), mpCodeColorsWidget->getItemsListWidget());
+  // comment (dark green)
+  new ListWidgetItem("Comment", QColor(0, 150, 0), mpCodeColorsWidget->getItemsListWidget());
+  // preview text
   QString previewText;
   previewText.append("class HelloWorld /* block\n"
                      "comment */\n"
@@ -1903,204 +2397,477 @@ ModelicaTextEditorPage::ModelicaTextEditorPage(OptionsDialog *pOptionsDialog)
                      "equation\n"
                      "\tder(x) = - a * x;\n"
                      "end HelloWorld;\n");
-  mpPreviewPlainTextBox->setPlainText(previewText);
+  mpCodeColorsWidget->getPreviewPlainTextEdit()->setPlainText(previewText);
   // highlight preview textbox
-  ModelicaTextHighlighter *pModelicaTextHighlighter = new ModelicaTextHighlighter(this, mpPreviewPlainTextBox);
+  ModelicaHighlighter *pModelicaTextHighlighter = new ModelicaHighlighter(this, mpCodeColorsWidget->getPreviewPlainTextEdit());
   connect(this, SIGNAL(updatePreview()), pModelicaTextHighlighter, SLOT(settingsChanged()));
-  connect(mpSyntaxHighlightingCheckbox, SIGNAL(toggled(bool)), pModelicaTextHighlighter, SLOT(settingsChanged()));
-  // set fonts & colors groupbox layout
-  QGridLayout *pFontsColorsGroupBoxLayout = new QGridLayout;
-  pFontsColorsGroupBoxLayout->addWidget(mpFontFamilyLabel, 0, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontSizeLabel, 0, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontFamilyComboBox, 1, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontSizeSpinBox, 1, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemsLabel, 2, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemColorLabel, 2, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemsList, 3, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemColorPickButton, 3, 1, Qt::AlignTop);
-  pFontsColorsGroupBoxLayout->addWidget(mpPreviewLabel, 4, 0, 1, 2);
-  pFontsColorsGroupBoxLayout->addWidget(mpPreviewPlainTextBox, 5, 0, 1, 2);
-  mpFontColorsGroupBox->setLayout(pFontsColorsGroupBoxLayout);
+  connect(mpOptionsDialog->getTextEditorPage()->getSyntaxHighlightingGroupBox(), SIGNAL(toggled(bool)),
+          pModelicaTextHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox(), SIGNAL(toggled(bool)),
+          pModelicaTextHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getLineWrappingCheckbox(), SIGNAL(toggled(bool)), this, SLOT(setLineWrapping(bool)));
   // set the layout
   QVBoxLayout *pMainLayout = new QVBoxLayout;
   pMainLayout->setContentsMargins(0, 0, 0, 0);
-  pMainLayout->addWidget(mpTabsAndIndentation);
-  pMainLayout->addWidget(mpSyntaxHighlightAndTextWrappingGroupBox);
-  pMainLayout->addWidget(mpFontColorsGroupBox);
+  pMainLayout->addWidget(mpPreserveTextIndentationCheckBox);
+  pMainLayout->addWidget(mpCodeColorsWidget);
   setLayout(pMainLayout);
 }
 
-//! Adds the Modelica Text settings rules to the mpItemsList.
-void ModelicaTextEditorPage::addListItems()
-{
-  // don't change the Data of items as it is being used in ModelicaTextEditorPage::pickColor slot to identify the items
-  // text
-  mpTextItem = new QListWidgetItem(mpItemsList);
-  mpTextItem->setText("Text");
-  mpTextItem->setData(Qt::UserRole, "Text");
-  setTextRuleColor(QColor(0, 0, 0)); // black
-  // number
-  mpNumberItem = new QListWidgetItem(mpItemsList);
-  mpNumberItem->setText("Number");
-  mpNumberItem->setData(Qt::UserRole, "Number");
-  setNumberRuleColor(QColor(139, 0, 139)); // purple
-  // keyword
-  mpKeywordItem = new QListWidgetItem(mpItemsList);
-  mpKeywordItem->setText("Keyword");
-  mpKeywordItem->setData(Qt::UserRole, "Keyword");
-  setKeywordRuleColor(QColor(139, 0, 0)); // dark red
-  // type
-  mpTypeItem = new QListWidgetItem(mpItemsList);
-  mpTypeItem->setText("Type");
-  mpTypeItem->setData(Qt::UserRole, "Type");
-  setTypeRuleColor(QColor(255, 10, 10)); // red
-  // function
-  mpFunctionItem = new QListWidgetItem(mpItemsList);
-  mpFunctionItem->setText("Function");
-  mpFunctionItem->setData(Qt::UserRole, "Function");
-  setFunctionRuleColor(QColor(0, 0, 255)); // blue
-  // Quotes
-  mpQuotesItem = new QListWidgetItem(mpItemsList);
-  mpQuotesItem->setText("Quotes");
-  mpQuotesItem->setData(Qt::UserRole, "Quotes");
-  setQuotesRuleColor(QColor(0, 139, 0)); // dark green
-  // comment
-  mpCommentItem = new QListWidgetItem(mpItemsList);
-  mpCommentItem->setText("Comment");
-  mpCommentItem->setData(Qt::UserRole, "Comment");
-  setCommentRuleColor(QColor(0, 150, 0)); // dark green
-}
-
 /*!
- * \brief ModelicaTextEditorPage::setTextRuleColor
+ * \brief ModelicaEditorPage::setColor
+ * Sets the color of an item.
+ * \param item
  * \param color
  */
-void ModelicaTextEditorPage::setTextRuleColor(QColor color)
+void ModelicaEditorPage::setColor(QString item, QColor color)
 {
-  mTextColor = color;
-  mpTextItem->setForeground(color);
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      pListWidgetItem->setColor(color);
+      pListWidgetItem->setForeground(color);
+    }
+  }
 }
 
 /*!
- * \brief ModelicaTextEditorPage::setNumberRuleColor
- * \param color
+ * \brief ModelicaEditorPage::getColor
+ * Returns the color of an item.
+ * \param item
+ * \return
  */
-void ModelicaTextEditorPage::setNumberRuleColor(QColor color)
+QColor ModelicaEditorPage::getColor(QString item)
 {
-  mNumberColor = color;
-  mpNumberItem->setForeground(color);
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      return pListWidgetItem->getColor();
+    }
+  }
+  return QColor(0, 0, 0);
 }
 
 /*!
- * \brief ModelicaTextEditorPage::setKeywordRuleColor
- * \param color
- */
-void ModelicaTextEditorPage::setKeywordRuleColor(QColor color)
-{
-  mKeywordColor = color;
-  mpKeywordItem->setForeground(color);
-}
-
-/*!
- * \brief ModelicaTextEditorPage::setTypeRuleColor
- * \param color
- */
-void ModelicaTextEditorPage::setTypeRuleColor(QColor color)
-{
-  mTypeColor = color;
-  mpTypeItem->setForeground(color);
-}
-
-/*!
- * \brief ModelicaTextEditorPage::setFunctionRuleColor
- * \param color
- */
-void ModelicaTextEditorPage::setFunctionRuleColor(QColor color)
-{
-  mFunctionColor = color;
-  mpFunctionItem->setForeground(color);
-}
-
-/*!
- * \brief ModelicaTextEditorPage::setQuotesRuleColor
- * \param color
- */
-void ModelicaTextEditorPage::setQuotesRuleColor(QColor color)
-{
-  mQuotesColor = color;
-  mpQuotesItem->setForeground(color);
-}
-
-/*!
- * \brief ModelicaTextEditorPage::setCommentRuleColor
- * \param color
- */
-void ModelicaTextEditorPage::setCommentRuleColor(QColor color)
-{
-  mCommentColor = color;
-  mpCommentItem->setForeground(color);
-}
-
-/*!
- * \brief ModelicaTextEditorPage::setLineWrapping
+ * \brief ModelicaEditorPage::setLineWrapping
  * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
  * Sets the mpPreviewPlainTextBox line wrapping mode.
  */
-void ModelicaTextEditorPage::setLineWrapping()
+void ModelicaEditorPage::setLineWrapping(bool enabled)
 {
-  if (mpLineWrappingCheckbox->isChecked()) {
-    mpPreviewPlainTextBox->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  if (enabled) {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::WidgetWidth);
   } else {
-    mpPreviewPlainTextBox->setLineWrapMode(QPlainTextEdit::NoWrap);
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::NoWrap);
   }
 }
 
 /*!
- * \brief ModelicaTextEditorPage::pickColor
- * Picks a color for one of the Modelica Text Settings rules.
- * This method is called when mpColorPickButton clicked SIGNAL raised.
+ * \class MetaModelicaEditorPage
+ * \brief Creates an interface for MetaModelica Text settings.
  */
-void ModelicaTextEditorPage::pickColor()
+/*!
+ * \brief MetaModelicaEditorPage::MetaModelicaEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+MetaModelicaEditorPage::MetaModelicaEditorPage(OptionsDialog *pOptionsDialog)
+  : QWidget(pOptionsDialog)
 {
-  QListWidgetItem *item = mpItemsList->currentItem();
-  QColor initialColor;
-  // get the color of the item
-  if (item->data(Qt::UserRole).toString().toLower().compare("text") == 0) {
-    initialColor = mTextColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("number") == 0) {
-    initialColor = mNumberColor;
-  } else if (item->data(Qt::UserRole).toString().toLower().compare("keyword") == 0) {
-    initialColor = mKeywordColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("type") == 0) {
-    initialColor = mTypeColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("function") == 0) {
-    initialColor = mFunctionColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("quotes") == 0) {
-    initialColor = mQuotesColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("comment") == 0) {
-    initialColor = mCommentColor;
+  mpOptionsDialog = pOptionsDialog;
+  // code colors widget
+  mpCodeColorsWidget = new CodeColorsWidget(this);
+  connect(mpCodeColorsWidget, SIGNAL(colorUpdated()), SIGNAL(updatePreview()));
+  // Add items to list
+  // number (purple)
+  new ListWidgetItem("Number", QColor(139, 0, 139), mpCodeColorsWidget->getItemsListWidget());
+  // keyword (dark red)
+  new ListWidgetItem("Keyword", QColor(139, 0, 0), mpCodeColorsWidget->getItemsListWidget());
+  // type (red)
+  new ListWidgetItem("Type", QColor(255, 10, 10), mpCodeColorsWidget->getItemsListWidget());
+  // Quotes (dark green)
+  new ListWidgetItem("Quotes", QColor(0, 139, 0), mpCodeColorsWidget->getItemsListWidget());
+  // comment (dark green)
+  new ListWidgetItem("Comment", QColor(0, 150, 0), mpCodeColorsWidget->getItemsListWidget());
+  // preview text
+  QString previewText;
+  previewText.append("function HelloWorld /* block\n"
+                     "comment */\n"
+                     "\tinput Integer request; // Line comment\n"
+                     "\toutput String str;\n"
+                     "algorithm\n"
+                     "\tstr := match (request)\n"
+                     "\t\tcase (1) then \"Hi\";\n"
+                     "\t\tcase (2) then \"Hey\";\n"
+                     "\t\tcase (3) then \"Hello\";\n"
+                     "\tend match;\n"
+                     "end HelloWorld;\n");
+  mpCodeColorsWidget->getPreviewPlainTextEdit()->setPlainText(previewText);
+  // highlight preview textbox
+  MetaModelicaHighlighter *pMetaModelicaHighlighter = new MetaModelicaHighlighter(this, mpCodeColorsWidget->getPreviewPlainTextEdit());
+  connect(this, SIGNAL(updatePreview()), pMetaModelicaHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getSyntaxHighlightingGroupBox(), SIGNAL(toggled(bool)),
+          pMetaModelicaHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox(), SIGNAL(toggled(bool)),
+          pMetaModelicaHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getLineWrappingCheckbox(), SIGNAL(toggled(bool)), this, SLOT(setLineWrapping(bool)));
+  // set the layout
+  QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setContentsMargins(0, 0, 0, 0);
+  pMainLayout->addWidget(mpCodeColorsWidget);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief MetaModelicaEditorPage::setColor
+ * Sets the color of an item.
+ * \param item
+ * \param color
+ */
+void MetaModelicaEditorPage::setColor(QString item, QColor color)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      pListWidgetItem->setColor(color);
+      pListWidgetItem->setForeground(color);
+    }
   }
-  QColor color = QColorDialog::getColor(initialColor);
-  if (!color.isValid()) {
-    return;
+}
+
+/*!
+ * \brief MetaModelicaEditorPage::getColor
+ * Returns the color of an item.
+ * \param item
+ * \return
+ */
+QColor MetaModelicaEditorPage::getColor(QString item)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      return pListWidgetItem->getColor();
+    }
   }
-  // set the color of the item
-  if (item->data(Qt::UserRole).toString().toLower().compare("text") == 0) {
-    setTextRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("number") == 0) {
-    setNumberRuleColor(color);
-  } else if (item->data(Qt::UserRole).toString().toLower().compare("keyword") == 0) {
-    setKeywordRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("type") == 0) {
-    setTypeRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("function") == 0) {
-    setFunctionRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("quotes") == 0) {
-    setQuotesRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("comment") == 0) {
-    setCommentRuleColor(color);
+  return QColor(0, 0, 0);
+}
+
+/*!
+ * \brief MetaModelicaEditorPage::setLineWrapping
+ * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
+ * Sets the mpPreviewPlainTextBox line wrapping mode.
+ */
+void MetaModelicaEditorPage::setLineWrapping(bool enabled)
+{
+  if (enabled) {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  } else {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::NoWrap);
   }
-  emit updatePreview();
+}
+
+/*!
+ * \class CompositeModelEditorPage
+ * \brief Creates an interface for CompositeModel Text settings.
+ */
+/*!
+ * \brief CompositeModelEditorPage::CompositeModelEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+CompositeModelEditorPage::CompositeModelEditorPage(OptionsDialog *pOptionsDialog)
+  : QWidget(pOptionsDialog)
+{
+  mpOptionsDialog = pOptionsDialog;
+  // code colors widget
+  mpCodeColorsWidget = new CodeColorsWidget(this);
+  connect(mpCodeColorsWidget, SIGNAL(colorUpdated()), SIGNAL(updatePreview()));
+  // Add items to list
+  // tag (blue)
+  new ListWidgetItem("Tag", QColor(0, 0, 255), mpCodeColorsWidget->getItemsListWidget());
+  // element (blue)
+  new ListWidgetItem("Element", QColor(0, 0, 255), mpCodeColorsWidget->getItemsListWidget());
+  // quotes (dark red)
+  new ListWidgetItem("Quotes", QColor(139, 0, 0), mpCodeColorsWidget->getItemsListWidget());
+  // comment (dark green)
+  new ListWidgetItem("Comment", QColor(0, 150, 0), mpCodeColorsWidget->getItemsListWidget());
+  // preview textbox
+  QString previewText;
+  previewText.append("<!-- This is a comment. -->\n"
+                     "<Model Name=\"model\">\n"
+                     "\t<SubModels>\n"
+                     "\t\t<SubModel Name=\"submodel\">\n"
+                     "\t\t</SubModel>\n"
+                     "\t</SubModels>\n"
+                     "\t<Connections>\n"
+                     "\t\t<Connection From=\"from\" To=\"to\">\n"
+                     "\t</Connections>\n"
+                     "</Model>\n");
+  mpCodeColorsWidget->getPreviewPlainTextEdit()->setPlainText(previewText);
+  // highlight preview textbox
+  CompositeModelHighlighter *pCompositeModelHighlighter = new CompositeModelHighlighter(this, mpCodeColorsWidget->getPreviewPlainTextEdit());
+  connect(this, SIGNAL(updatePreview()), pCompositeModelHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getSyntaxHighlightingGroupBox(), SIGNAL(toggled(bool)),
+          pCompositeModelHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox(), SIGNAL(toggled(bool)),
+          pCompositeModelHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getLineWrappingCheckbox(), SIGNAL(toggled(bool)), this, SLOT(setLineWrapping(bool)));
+  // set the layout
+  QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setContentsMargins(0, 0, 0, 0);
+  pMainLayout->addWidget(mpCodeColorsWidget);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief CompositeModelEditorPage::setColor
+ * Sets the color of an item.
+ * \param item
+ * \param color
+ */
+void CompositeModelEditorPage::setColor(QString item, QColor color)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      pListWidgetItem->setColor(color);
+      pListWidgetItem->setForeground(color);
+    }
+  }
+}
+
+/*!
+ * \brief CompositeModelEditorPage::getColor
+ * Returns the color of an item.
+ * \param item
+ * \return
+ */
+QColor CompositeModelEditorPage::getColor(QString item)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      return pListWidgetItem->getColor();
+    }
+  }
+  return QColor(0, 0, 0);
+}
+
+/*!
+ * \brief CompositeModelEditorPage::setLineWrapping
+ * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
+ * Sets the mpPreviewPlainTextBox line wrapping mode.
+ */
+void CompositeModelEditorPage::setLineWrapping(bool enabled)
+{
+  if (enabled) {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  } else {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::NoWrap);
+  }
+}
+
+/*!
+ * \class CEditorPage
+ * \brief Creates an interface for C Text settings.
+ */
+/*!
+ * \brief CEditorPage::CEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+CEditorPage::CEditorPage(OptionsDialog *pOptionsDialog)
+  : QWidget(pOptionsDialog)
+{
+  mpOptionsDialog = pOptionsDialog;
+  // code colors widget
+  mpCodeColorsWidget = new CodeColorsWidget(this);
+  connect(mpCodeColorsWidget, SIGNAL(colorUpdated()), SIGNAL(updatePreview()));
+  // Add items to list
+  // number (purple)
+  new ListWidgetItem("Number", QColor(139, 0, 139), mpCodeColorsWidget->getItemsListWidget());
+  // keyword (dark red)
+  new ListWidgetItem("Keyword", QColor(139, 0, 0), mpCodeColorsWidget->getItemsListWidget());
+  // type (red)
+  new ListWidgetItem("Type", QColor(255, 10, 10), mpCodeColorsWidget->getItemsListWidget());
+  // Quotes (dark green)
+  new ListWidgetItem("Quotes", QColor(0, 139, 0), mpCodeColorsWidget->getItemsListWidget());
+  // comment (dark green)
+  new ListWidgetItem("Comment", QColor(0, 150, 0), mpCodeColorsWidget->getItemsListWidget());
+  // preview text
+  QString previewText;
+  previewText.append("#include <stdio.h>\n"
+                     "int main() { /* block\n"
+                     "comment */\n"
+                     "\tprintf(\"Hello World\"); // Line comment\n"
+                     "return 0;\n"
+                     "}\n");
+  mpCodeColorsWidget->getPreviewPlainTextEdit()->setPlainText(previewText);
+  // highlight preview textbox
+  CHighlighter *pCHighlighter = new CHighlighter(this, mpCodeColorsWidget->getPreviewPlainTextEdit());
+  connect(this, SIGNAL(updatePreview()), pCHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getSyntaxHighlightingGroupBox(), SIGNAL(toggled(bool)),
+          pCHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox(), SIGNAL(toggled(bool)),
+          pCHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getLineWrappingCheckbox(), SIGNAL(toggled(bool)), this, SLOT(setLineWrapping(bool)));
+  // set the layout
+  QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setContentsMargins(0, 0, 0, 0);
+  pMainLayout->addWidget(mpCodeColorsWidget);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief CEditorPage::setColor
+ * Sets the color of an item.
+ * \param item
+ * \param color
+ */
+void CEditorPage::setColor(QString item, QColor color)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      pListWidgetItem->setColor(color);
+      pListWidgetItem->setForeground(color);
+    }
+  }
+}
+
+/*!
+ * \brief CEditorPage::getColor
+ * Returns the color of an item.
+ * \param item
+ * \return
+ */
+QColor CEditorPage::getColor(QString item)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      return pListWidgetItem->getColor();
+    }
+  }
+  return QColor(0, 0, 0);
+}
+
+/*!
+ * \brief CEditorPage::setLineWrapping
+ * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
+ * Sets the mpPreviewPlainTextBox line wrapping mode.
+ */
+void CEditorPage::setLineWrapping(bool enabled)
+{
+  if (enabled) {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  } else {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::NoWrap);
+  }
+}
+
+/*!
+ * \class HTMLEditorPage
+ * \brief Creates an interface for HTML Text settings.
+ */
+/*!
+ * \brief HTMLEditorPage::HTMLEditorPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
+HTMLEditorPage::HTMLEditorPage(OptionsDialog *pOptionsDialog)
+  : QWidget(pOptionsDialog)
+{
+  mpOptionsDialog = pOptionsDialog;
+  // code colors widget
+  mpCodeColorsWidget = new CodeColorsWidget(this);
+  connect(mpCodeColorsWidget, SIGNAL(colorUpdated()), SIGNAL(updatePreview()));
+  // Add items to list
+  // tag (blue)
+  new ListWidgetItem("Tag", QColor(0, 0, 255), mpCodeColorsWidget->getItemsListWidget());
+  // quotes (dark red)
+  new ListWidgetItem("Quotes", QColor(139, 0, 0), mpCodeColorsWidget->getItemsListWidget());
+  // comment (dark green)
+  new ListWidgetItem("Comment", QColor(0, 150, 0), mpCodeColorsWidget->getItemsListWidget());
+  // preview textbox
+  QString previewText;
+  previewText.append("<!-- This is a comment. -->\n"
+                     "<html>\n"
+                     "\t<body>\n"
+                     "\t\t<h1>OPENMODELICA</h1>\n"
+                     "\t\t<p>OpenModelica is an open-source Modelica-based modeling and simulation environment"
+                     " intended for industrial and academic usage. Its long-term development is supported by a"
+                     " non-profit organization – the <a href=\"http://www.openmodelica.org\">Open Source Modelica Consortium (OSMC)</a></p>\n"
+                     "\t</body>\n"
+                     "</html>\n");
+  mpCodeColorsWidget->getPreviewPlainTextEdit()->setPlainText(previewText);
+  // highlight preview textbox
+  HTMLHighlighter *pHTMLHighlighter = new HTMLHighlighter(this, mpCodeColorsWidget->getPreviewPlainTextEdit());
+  connect(this, SIGNAL(updatePreview()), pHTMLHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getSyntaxHighlightingGroupBox(), SIGNAL(toggled(bool)),
+          pHTMLHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getMatchParenthesesCommentsQuotesCheckBox(), SIGNAL(toggled(bool)),
+          pHTMLHighlighter, SLOT(settingsChanged()));
+  connect(mpOptionsDialog->getTextEditorPage()->getLineWrappingCheckbox(), SIGNAL(toggled(bool)), this, SLOT(setLineWrapping(bool)));
+  // set the layout
+  QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setContentsMargins(0, 0, 0, 0);
+  pMainLayout->addWidget(mpCodeColorsWidget);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief HTMLEditorPage::setColor
+ * Sets the color of an item.
+ * \param item
+ * \param color
+ */
+void HTMLEditorPage::setColor(QString item, QColor color)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      pListWidgetItem->setColor(color);
+      pListWidgetItem->setForeground(color);
+    }
+  }
+}
+
+/*!
+ * \brief HTMLEditorPage::getColor
+ * Returns the color of an item.
+ * \param item
+ * \return
+ */
+QColor HTMLEditorPage::getColor(QString item)
+{
+  QList<QListWidgetItem*> items = mpCodeColorsWidget->getItemsListWidget()->findItems(item, Qt::MatchExactly);
+  if (items.size() > 0) {
+    ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(items.at(0));
+    if (pListWidgetItem) {
+      return pListWidgetItem->getColor();
+    }
+  }
+  return QColor(0, 0, 0);
+}
+
+/*!
+ * \brief HTMLEditorPage::setLineWrapping
+ * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
+ * Sets the mpPreviewPlainTextBox line wrapping mode.
+ */
+void HTMLEditorPage::setLineWrapping(bool enabled)
+{
+  if (enabled) {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+  } else {
+    mpCodeColorsWidget->getPreviewPlainTextEdit()->setLineWrapMode(QPlainTextEdit::NoWrap);
+  }
 }
 
 GraphicalViewsPage::GraphicalViewsPage(OptionsDialog *pOptionsDialog)
@@ -2458,38 +3225,75 @@ SimulationPage::SimulationPage(OptionsDialog *pOptionsDialog)
   // Matching Algorithm
   mpSimulationGroupBox = new QGroupBox(Helper::simulation);
   mpMatchingAlgorithmLabel = new Label(tr("Matching Algorithm:"));
-  QStringList matchingAlgorithmChoices, matchingAlgorithmComments;
-  mpOptionsDialog->getMainWindow()->getOMCProxy()->getAvailableMatchingAlgorithms(&matchingAlgorithmChoices, &matchingAlgorithmComments);
+  OMCInterface::getAvailableMatchingAlgorithms_res matchingAlgorithms;
+  matchingAlgorithms = MainWindow::instance()->getOMCProxy()->getAvailableMatchingAlgorithms();
   mpMatchingAlgorithmComboBox = new QComboBox;
   int i = 0;
-  foreach (QString matchingAlgorithmChoice, matchingAlgorithmChoices)
-  {
+  foreach (QString matchingAlgorithmChoice, matchingAlgorithms.allChoices) {
     mpMatchingAlgorithmComboBox->addItem(matchingAlgorithmChoice);
-    mpMatchingAlgorithmComboBox->setItemData(i, matchingAlgorithmComments[i], Qt::ToolTipRole);
+    mpMatchingAlgorithmComboBox->setItemData(i, matchingAlgorithms.allComments[i], Qt::ToolTipRole);
     i++;
   }
-  mpMatchingAlgorithmComboBox->setCurrentIndex(mpMatchingAlgorithmComboBox->findText(mpOptionsDialog->getMainWindow()->getOMCProxy()->getMatchingAlgorithm()));
+  connect(mpMatchingAlgorithmComboBox, SIGNAL(currentIndexChanged(int)), SLOT(updateMatchingAlgorithmToolTip(int)));
+  mpMatchingAlgorithmComboBox->setCurrentIndex(mpMatchingAlgorithmComboBox->findText(MainWindow::instance()->getOMCProxy()->getMatchingAlgorithm()));
   // Index Reduction Method
   mpIndexReductionMethodLabel = new Label(tr("Index Reduction Method:"));
-  QStringList indexReductionMethodChoices, indexReductionMethodComments;
-  mpOptionsDialog->getMainWindow()->getOMCProxy()->getAvailableIndexReductionMethods(&indexReductionMethodChoices, &indexReductionMethodComments);
+  OMCInterface::getAvailableIndexReductionMethods_res indexReductionMethods;
+  indexReductionMethods = MainWindow::instance()->getOMCProxy()->getAvailableIndexReductionMethods();
   mpIndexReductionMethodComboBox = new QComboBox;
   i = 0;
-  foreach (QString indexReductionChoice, indexReductionMethodChoices)
-  {
+  foreach (QString indexReductionChoice, indexReductionMethods.allChoices) {
     mpIndexReductionMethodComboBox->addItem(indexReductionChoice);
-    mpIndexReductionMethodComboBox->setItemData(i, indexReductionMethodComments[i], Qt::ToolTipRole);
+    mpIndexReductionMethodComboBox->setItemData(i, indexReductionMethods.allComments[i], Qt::ToolTipRole);
     i++;
   }
-  mpIndexReductionMethodComboBox->setCurrentIndex(mpIndexReductionMethodComboBox->findText(mpOptionsDialog->getMainWindow()->getOMCProxy()->getIndexReductionMethod()));
+  connect(mpIndexReductionMethodComboBox, SIGNAL(currentIndexChanged(int)), SLOT(updateIndexReductionToolTip(int)));
+  mpIndexReductionMethodComboBox->setCurrentIndex(mpIndexReductionMethodComboBox->findText(MainWindow::instance()->getOMCProxy()->getIndexReductionMethod()));
+  // Target Language
+  mpTargetLanguageLabel = new Label(tr("Target Language:"));
+  OMCInterface::getConfigFlagValidOptions_res simCodeTarget = MainWindow::instance()->getOMCProxy()->getConfigFlagValidOptions("simCodeTarget");
+  mpTargetLanguageComboBox = new QComboBox;
+  mpTargetLanguageComboBox->addItems(simCodeTarget.validOptions);
+  mpTargetLanguageComboBox->setToolTip(simCodeTarget.mainDescription);
+  i = 0;
+  foreach (QString description, simCodeTarget.descriptions) {
+    mpTargetLanguageComboBox->setItemData(i, description, Qt::ToolTipRole);
+    i++;
+  }
+  mpTargetLanguageComboBox->setCurrentIndex(mpTargetLanguageComboBox->findText("C"));
+  // Compiler
+  mpCompilerLabel = new Label(tr("Target Compiler:"));
+  OMCInterface::getConfigFlagValidOptions_res target = MainWindow::instance()->getOMCProxy()->getConfigFlagValidOptions("target");
+  mpTargetCompilerComboBox = new QComboBox;
+  mpTargetCompilerComboBox->addItems(target.validOptions);
+  mpTargetCompilerComboBox->setToolTip(target.mainDescription);
+  i = 0;
+  foreach (QString description, target.descriptions) {
+    mpTargetCompilerComboBox->setItemData(i, description, Qt::ToolTipRole);
+    i++;
+  }
   // OMC Flags
-  mpOMCFlagsLabel = new Label(tr("OMC Flags"));
-  mpOMCFlagsLabel->setToolTip(tr("Space separated list of flags e.g. +d=initialization +cheapmatchingAlgorithm=3"));
-  mpOMCFlagsTextBox = new QLineEdit("+d=initialization");
+  mpOMCFlagsLabel = new Label(QString("%1:").arg(Helper::OMCFlags));
+  mpOMCFlagsLabel->setToolTip(Helper::OMCFlagsTip);
+  mpOMCFlagsTextBox = new QLineEdit("-d=initialization");
+  mpOMCFlagsHelpButton = new QToolButton;
+  mpOMCFlagsHelpButton->setIcon(QIcon(":/Resources/icons/link-external.svg"));
+  mpOMCFlagsHelpButton->setToolTip(tr("OMC flags help"));
+  connect(mpOMCFlagsHelpButton, SIGNAL(clicked()), SLOT(showOMCFlagsHelp()));
+  // ignore command line options annotation checkbox
+  mpIgnoreCommandLineOptionsAnnotationCheckBox = new QCheckBox(tr("Ignore __OpenModelica_commandLineOptions annotation"));
+  // ignore simulation flags annotation checkbox
+  mpIgnoreSimulationFlagsAnnotationCheckBox = new QCheckBox(tr("Ignore __OpenModelica_simulationFlags annotation"));
   /* save class before simulation checkbox */
   mpSaveClassBeforeSimulationCheckBox = new QCheckBox(tr("Save class before simulation"));
   mpSaveClassBeforeSimulationCheckBox->setToolTip(tr("Disabling this will effect the debugger functionality."));
   mpSaveClassBeforeSimulationCheckBox->setChecked(true);
+  /* switch to plotting perspective after simulation checkbox */
+  mpSwitchToPlottingPerspectiveCheckBox = new QCheckBox(tr("Switch to plotting perspective after simulation"));
+  mpSwitchToPlottingPerspectiveCheckBox->setChecked(true);
+  /* Close completed SimulationOutputWidgets before simulation checkbox */
+  mpCloseSimulationOutputWidgetsBeforeSimulationCheckBox = new QCheckBox(tr("Close completed simulation output windows before simulation"));
+  mpCloseSimulationOutputWidgetsBeforeSimulationCheckBox->setChecked(true);
   // simulation output format
   mpOutputGroupBox = new QGroupBox(Helper::output);
   mpStructuredRadioButton = new QRadioButton(tr("Structured"));
@@ -2513,13 +3317,22 @@ SimulationPage::SimulationPage(OptionsDialog *pOptionsDialog)
   QGridLayout *pSimulationLayout = new QGridLayout;
   pSimulationLayout->setAlignment(Qt::AlignTop);
   pSimulationLayout->addWidget(mpMatchingAlgorithmLabel, 0, 0);
-  pSimulationLayout->addWidget(mpMatchingAlgorithmComboBox, 0, 1);
+  pSimulationLayout->addWidget(mpMatchingAlgorithmComboBox, 0, 1, 1, 2);
   pSimulationLayout->addWidget(mpIndexReductionMethodLabel, 1, 0);
-  pSimulationLayout->addWidget(mpIndexReductionMethodComboBox, 1, 1);
-  pSimulationLayout->addWidget(mpOMCFlagsLabel, 2, 0);
-  pSimulationLayout->addWidget(mpOMCFlagsTextBox, 2, 1);
-  pSimulationLayout->addWidget(mpSaveClassBeforeSimulationCheckBox, 3, 0, 1, 2);
-  pSimulationLayout->addWidget(mpOutputGroupBox, 4, 0, 1, 2);
+  pSimulationLayout->addWidget(mpIndexReductionMethodComboBox, 1, 1, 1, 2);
+  pSimulationLayout->addWidget(mpTargetLanguageLabel, 2, 0);
+  pSimulationLayout->addWidget(mpTargetLanguageComboBox, 2, 1, 1, 2);
+  pSimulationLayout->addWidget(mpCompilerLabel, 3, 0);
+  pSimulationLayout->addWidget(mpTargetCompilerComboBox, 3, 1, 1, 2);
+  pSimulationLayout->addWidget(mpOMCFlagsLabel, 4, 0);
+  pSimulationLayout->addWidget(mpOMCFlagsTextBox, 4, 1);
+  pSimulationLayout->addWidget(mpOMCFlagsHelpButton, 4, 2);
+  pSimulationLayout->addWidget(mpIgnoreCommandLineOptionsAnnotationCheckBox, 5, 0, 1, 3);
+  pSimulationLayout->addWidget(mpIgnoreSimulationFlagsAnnotationCheckBox, 6, 0, 1, 3);
+  pSimulationLayout->addWidget(mpSaveClassBeforeSimulationCheckBox, 7, 0, 1, 3);
+  pSimulationLayout->addWidget(mpSwitchToPlottingPerspectiveCheckBox, 8, 0, 1, 3);
+  pSimulationLayout->addWidget(mpCloseSimulationOutputWidgetsBeforeSimulationCheckBox, 9, 0, 1, 3);
+  pSimulationLayout->addWidget(mpOutputGroupBox, 10, 0, 1, 3);
   mpSimulationGroupBox->setLayout(pSimulationLayout);
   // set the layout
   QVBoxLayout *pLayout = new QVBoxLayout;
@@ -2527,21 +3340,6 @@ SimulationPage::SimulationPage(OptionsDialog *pOptionsDialog)
   pLayout->setContentsMargins(0, 0, 0, 0);
   pLayout->addWidget(mpSimulationGroupBox);
   setLayout(pLayout);
-}
-
-QComboBox* SimulationPage::getMatchingAlgorithmComboBox()
-{
-  return mpMatchingAlgorithmComboBox;
-}
-
-QComboBox* SimulationPage::getIndexReductionMethodComboBox()
-{
-  return mpIndexReductionMethodComboBox;
-}
-
-QLineEdit* SimulationPage::getOMCFlagsTextBox()
-{
-  return mpOMCFlagsTextBox;
 }
 
 void SimulationPage::setOutputMode(QString value)
@@ -2559,6 +3357,42 @@ QString SimulationPage::getOutputMode()
     return Helper::structuredOutput;
   } else {
     return Helper::textOutput;
+  }
+}
+
+/*!
+ * \brief SimulationPage::updateMatchingAlgorithmToolTip
+ * Updates the matching algorithm combobox tooltip.
+ * \param index
+ */
+void SimulationPage::updateMatchingAlgorithmToolTip(int index)
+{
+  mpMatchingAlgorithmComboBox->setToolTip(mpMatchingAlgorithmComboBox->itemData(index, Qt::ToolTipRole).toString());
+}
+
+/*!
+ * \brief SimulationPage::updateIndexReductionToolTip
+ * Updates the index reduction combobox tooltip.
+ * \param index
+ */
+void SimulationPage::updateIndexReductionToolTip(int index)
+{
+  mpIndexReductionMethodComboBox->setToolTip(mpIndexReductionMethodComboBox->itemData(index, Qt::ToolTipRole).toString());
+}
+
+/*!
+ * \brief SimulationPage::showOMCFlagsHelp
+ * Slot activated when mpOMCFlagsHelpButton clicked signal is raised.\n
+ * Opens the omchelptext.html page of OpenModelica users guide.
+ */
+void SimulationPage::showOMCFlagsHelp()
+{
+  QUrl omcHelpTextPath (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
+                        .append("/share/doc/omc/OpenModelicaUsersGuide/omchelptext.html"));
+  if (!QDesktopServices::openUrl(omcHelpTextPath)) {
+    QString errorMessage = GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(omcHelpTextPath.toString());
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, errorMessage, Helper::scriptingKind,
+                                                          Helper::errorLevel));
   }
 }
 
@@ -2583,17 +3417,20 @@ MessagesPage::MessagesPage(OptionsDialog *pOptionsDialog)
   mpOutputSizeSpinBox->setSuffix(" rows");
   mpOutputSizeSpinBox->setSpecialValueText(Helper::unlimited);
   // reset messages number before simulation
-  mpResetMessagesNumberBeforeSimulationCheckBox = new QCheckBox(tr("Reset messages number before simulation"));
+  mpResetMessagesNumberBeforeSimulationCheckBox = new QCheckBox(tr("Reset messages number before checking, instantiation && simulation"));
   mpResetMessagesNumberBeforeSimulationCheckBox->setChecked(true);
+  // clear messages browser before simulation
+  mpClearMessagesBrowserBeforeSimulationCheckBox = new QCheckBox(tr("Clear messages browser before checking, instantiation && simulation"));
   // set general groupbox layout
   QGridLayout *pGeneralGroupBoxLayout = new QGridLayout;
   pGeneralGroupBoxLayout->setColumnStretch(1, 1);
   pGeneralGroupBoxLayout->addWidget(mpOutputSizeLabel, 0, 0);
   pGeneralGroupBoxLayout->addWidget(mpOutputSizeSpinBox, 0, 1);
   pGeneralGroupBoxLayout->addWidget(mpResetMessagesNumberBeforeSimulationCheckBox, 1, 0, 1, 2);
+  pGeneralGroupBoxLayout->addWidget(mpClearMessagesBrowserBeforeSimulationCheckBox, 2, 0, 1, 2);
   mpGeneralGroupBox->setLayout(pGeneralGroupBoxLayout);
   // Font and Colors
-  mpFontColorsGroupBox = new QGroupBox(Helper::fontAndColors);
+  mpFontColorsGroupBox = new QGroupBox(Helper::Colors);
   // font family combobox
   mpFontFamilyLabel = new Label(Helper::fontFamily);
   mpFontFamilyComboBox = new QFontComboBox;
@@ -2706,11 +3543,14 @@ void MessagesPage::pickErrorColor()
   setErrorPickColorButtonIcon();
 }
 
-//! @class NotificationsPage
-//! @brief Creates an interface for Notifications settings.
-
-//! Constructor
-//! @param pOptionsDialog is the pointer to OptionsDialog
+/*!
+ * \class NotificationsPage
+ * \brief Creates an interface for Notifications settings.
+ */
+/*!
+ * \brief NotificationsPage::NotificationsPage
+ * \param pOptionsDialog is the pointer to OptionsDialog
+ */
 NotificationsPage::NotificationsPage(OptionsDialog *pOptionsDialog)
   : QWidget(pOptionsDialog)
 {
@@ -2731,6 +3571,9 @@ NotificationsPage::NotificationsPage(OptionsDialog *pOptionsDialog)
   // create the save model for bitmap insertion checkbox
   mpSaveModelForBitmapInsertionCheckBox = new QCheckBox(tr("Show save model for bitmap insertion message"));
   mpSaveModelForBitmapInsertionCheckBox->setChecked(true);
+  // create the save model for bitmap insertion checkbox
+  mpAlwaysAskForDraggedComponentName = new QCheckBox(tr("Always ask for the dragged component name"));
+  mpAlwaysAskForDraggedComponentName->setChecked(true);
   // set the layout of notifications group
   QGridLayout *pNotificationsLayout = new QGridLayout;
   pNotificationsLayout->setAlignment(Qt::AlignTop);
@@ -2739,6 +3582,7 @@ NotificationsPage::NotificationsPage(OptionsDialog *pOptionsDialog)
   pNotificationsLayout->addWidget(mpReplaceableIfPartialCheckBox, 2, 0);
   pNotificationsLayout->addWidget(mpInnerModelNameChangedCheckBox, 3, 0);
   pNotificationsLayout->addWidget(mpSaveModelForBitmapInsertionCheckBox, 4, 0);
+  pNotificationsLayout->addWidget(mpAlwaysAskForDraggedComponentName, 5, 0);
   mpNotificationsGroupBox->setLayout(pNotificationsLayout);
   // set the layout
   QVBoxLayout *pLayout = new QVBoxLayout;
@@ -2746,31 +3590,6 @@ NotificationsPage::NotificationsPage(OptionsDialog *pOptionsDialog)
   pLayout->setContentsMargins(0, 0, 0, 0);
   pLayout->addWidget(mpNotificationsGroupBox);
   setLayout(pLayout);
-}
-
-QCheckBox* NotificationsPage::getQuitApplicationCheckBox()
-{
-  return mpQuitApplicationCheckBox;
-}
-
-QCheckBox* NotificationsPage::getItemDroppedOnItselfCheckBox()
-{
-  return mpItemDroppedOnItselfCheckBox;
-}
-
-QCheckBox* NotificationsPage::getReplaceableIfPartialCheckBox()
-{
-  return mpReplaceableIfPartialCheckBox;
-}
-
-QCheckBox* NotificationsPage::getInnerModelNameChangedCheckBox()
-{
-  return mpInnerModelNameChangedCheckBox;
-}
-
-QCheckBox* NotificationsPage::getSaveModelForBitmapInsertionCheckBox()
-{
-  return mpSaveModelForBitmapInsertionCheckBox;
 }
 
 //! @class LineStylePage
@@ -3042,7 +3861,7 @@ PlottingPage::PlottingPage(OptionsDialog *pOptionsDialog)
   pGeneralGroupBoxLayout->addWidget(mpAutoScaleCheckBox, 0, 0);
   mpGeneralGroupBox->setLayout(pGeneralGroupBoxLayout);
   // Plotting View Mode
-  mpPlottingViewModeGroupBox = new QGroupBox(tr("Plotting View Mode"));
+  mpPlottingViewModeGroupBox = new QGroupBox(tr("Default Plotting View Mode"));
   mpPlottingTabbedViewRadioButton = new QRadioButton(tr("Tabbed View"));
   mpPlottingTabbedViewRadioButton->setChecked(true);
   mpPlottingSubWindowViewRadioButton = new QRadioButton(tr("SubWindow View"));
@@ -3092,6 +3911,7 @@ PlottingPage::PlottingPage(OptionsDialog *pOptionsDialog)
   pMainLayout->addWidget(mpCurveStyleGroupBox);
   setLayout(pMainLayout);
 }
+
 
 /*!
  * \brief PlottingPage::setPlottingViewMode
@@ -3150,6 +3970,7 @@ qreal PlottingPage::getCurveThickness()
   return mpCurveThicknessSpinBox->value();
 }
 
+
 //! @class FigaroPage
 //! @brief Creates an interface for Figaro settings.
 
@@ -3174,22 +3995,28 @@ FigaroPage::FigaroPage(OptionsDialog *pOptionsDialog)
   connect(mpBrowseFigaroOptionsFileButton, SIGNAL(clicked()), SLOT(browseFigaroOptionsFile()));
   // figaro process
   mpFigaroProcessLabel = new Label(tr("Figaro Processor:"));
-  mpFigaroProcessTextBox = new QLineEdit(QString(Helper::OpenModelicaHome).append("/share/jEdit4.5_VisualFigaro/VisualFigaro/figp.exe"));
+  mFigaroProcessPath = QString(Helper::OpenModelicaHome).append("/share/jEdit4.5_VisualFigaro/VisualFigaro/figp.exe");
+  mpFigaroProcessTextBox = new QLineEdit(mFigaroProcessPath);
   mpBrowseFigaroProcessButton = new QPushButton(Helper::browse);
   mpBrowseFigaroProcessButton->setAutoDefault(false);
   connect(mpBrowseFigaroProcessButton, SIGNAL(clicked()), SLOT(browseFigaroProcessFile()));
+  mpResetFigaroProcessButton = new QPushButton(Helper::reset);
+  mpResetFigaroProcessButton->setToolTip(tr("Resets to default Figaro Processor path"));
+  mpResetFigaroProcessButton->setAutoDefault(false);
+  connect(mpResetFigaroProcessButton, SIGNAL(clicked()), SLOT(resetFigaroProcessPath()));
   // set the layout
   QGridLayout *pFigaroLayout = new QGridLayout;
   pFigaroLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
   pFigaroLayout->addWidget(mpFigaroDatabaseFileLabel, 0, 0);
-  pFigaroLayout->addWidget(mpFigaroDatabaseFileTextBox, 0, 1);
-  pFigaroLayout->addWidget(mpBrowseFigaroDatabaseFileButton, 0, 2);
+  pFigaroLayout->addWidget(mpFigaroDatabaseFileTextBox, 0, 1, 1, 2);
+  pFigaroLayout->addWidget(mpBrowseFigaroDatabaseFileButton, 0, 3);
   pFigaroLayout->addWidget(mpFigaroOptionsFileLabel, 1, 0);
-  pFigaroLayout->addWidget(mpFigaroOptionsFileTextBox, 1, 1);
-  pFigaroLayout->addWidget(mpBrowseFigaroOptionsFileButton, 1, 2);
+  pFigaroLayout->addWidget(mpFigaroOptionsFileTextBox, 1, 1, 1, 2);
+  pFigaroLayout->addWidget(mpBrowseFigaroOptionsFileButton, 1, 3);
   pFigaroLayout->addWidget(mpFigaroProcessLabel, 2, 0);
   pFigaroLayout->addWidget(mpFigaroProcessTextBox, 2, 1);
   pFigaroLayout->addWidget(mpBrowseFigaroProcessButton, 2, 2);
+  pFigaroLayout->addWidget(mpResetFigaroProcessButton, 2, 3);
   mpFigaroGroupBox->setLayout(pFigaroLayout);
   QVBoxLayout *pMainLayout = new QVBoxLayout;
   pMainLayout->setAlignment(Qt::AlignTop);
@@ -3217,6 +4044,15 @@ void FigaroPage::browseFigaroProcessFile()
 }
 
 /*!
+ * \brief FigaroPage::resetFigaroProcessPath
+ * Resets the figaro process path to default.
+ */
+void FigaroPage::resetFigaroProcessPath()
+{
+  mpFigaroProcessTextBox->setText(mFigaroProcessPath);
+}
+
+/*!
   \class DebuggerPage
   \brief Creates an interface for debugger settings.
   */
@@ -3230,16 +4066,11 @@ DebuggerPage::DebuggerPage(OptionsDialog *pOptionsDialog)
   mpAlgorithmicDebuggerGroupBox = new QGroupBox(Helper::algorithmicDebugger);
   // GDB Path
   mpGDBPathLabel = new Label(tr("GDB Path:"));
+  mpGDBPathTextBox = new QLineEdit;
 #ifdef WIN32
-  const char *OMDEV = getenv("OMDEV");
-  if (QString(OMDEV).isEmpty()) {
-    mpGDBPathTextBox = new QLineEdit(QString(Helper::OpenModelicaHome).append("/MinGW/bin/gdb.exe"));
-  } else {
-    QString qOMDEV = QString(OMDEV).replace("\\", "/");
-    mpGDBPathTextBox = new QLineEdit(QString(qOMDEV).append("/tools/mingw/bin/gdb.exe"));
-  }
+  mpGDBPathTextBox->setPlaceholderText(Utilities::getGDBPath());
 #else
-  mpGDBPathTextBox = new QLineEdit("gdb");
+  mpGDBPathTextBox->setPlaceholderText("gdb");
 #endif
   mpGDBPathBrowseButton = new QPushButton(Helper::browse);
   mpGDBPathBrowseButton->setAutoDefault(false);
@@ -3276,14 +4107,16 @@ DebuggerPage::DebuggerPage(OptionsDialog *pOptionsDialog)
   pDebuggerLayout->addWidget(mpGDBPathLabel, 0, 0);
   pDebuggerLayout->addWidget(mpGDBPathTextBox, 0, 1);
   pDebuggerLayout->addWidget(mpGDBPathBrowseButton, 0, 2);
-  pDebuggerLayout->addWidget(mpGDBCommandTimeoutLabel, 1, 0);
-  pDebuggerLayout->addWidget(mpGDBCommandTimeoutSpinBox, 1, 1, 1, 2);
-  pDebuggerLayout->addWidget(mpGDBOutputLimitLabel, 2, 0);
-  pDebuggerLayout->addWidget(mpGDBOutputLimitSpinBox, 2, 1, 1, 2);
-  pDebuggerLayout->addWidget(mpDisplayCFramesCheckBox, 3, 0, 1, 2);
-  pDebuggerLayout->addWidget(mpDisplayUnknownFramesCheckBox, 4, 0, 1, 2);
-  pDebuggerLayout->addWidget(mpClearOutputOnNewRunCheckBox, 5, 0, 1, 2);
-  pDebuggerLayout->addWidget(mpClearLogOnNewRunCheckBox, 6, 0, 1, 2);
+  pDebuggerLayout->addItem(new QSpacerItem(1, 1), 1, 0);
+  pDebuggerLayout->addWidget(new Label(tr("Default GDB path is used if above field is empty.")), 1, 1, 1, 2);
+  pDebuggerLayout->addWidget(mpGDBCommandTimeoutLabel, 2, 0);
+  pDebuggerLayout->addWidget(mpGDBCommandTimeoutSpinBox, 2, 1, 1, 2);
+  pDebuggerLayout->addWidget(mpGDBOutputLimitLabel, 3, 0);
+  pDebuggerLayout->addWidget(mpGDBOutputLimitSpinBox, 3, 1, 1, 2);
+  pDebuggerLayout->addWidget(mpDisplayCFramesCheckBox, 4, 0, 1, 2);
+  pDebuggerLayout->addWidget(mpDisplayUnknownFramesCheckBox, 5, 0, 1, 2);
+  pDebuggerLayout->addWidget(mpClearOutputOnNewRunCheckBox, 6, 0, 1, 2);
+  pDebuggerLayout->addWidget(mpClearLogOnNewRunCheckBox, 7, 0, 1, 2);
   mpAlgorithmicDebuggerGroupBox->setLayout(pDebuggerLayout);
   /* Transformational Debugger */
   mpTransformationalDebuggerGroupBox = new QGroupBox(Helper::transformationalDebugger);
@@ -3304,61 +4137,124 @@ DebuggerPage::DebuggerPage(OptionsDialog *pOptionsDialog)
   setLayout(pMainLayout);
 }
 
+/*!
+ * \brief DebuggerPage::setGDBPath
+ * Sets the GDB path. Only set the path if its not empty.
+ * \param path
+ */
 void DebuggerPage::setGDBPath(QString path)
 {
-  mpGDBPathTextBox->setText(path.isEmpty() ? "gdb" : path);
+  if (!path.isEmpty()) {
+    mpGDBPathTextBox->setText(path);
+  }
 }
 
+/*!
+ * \brief DebuggerPage::getGDBPath
+ * Returns the GDB path. If path is empty then return the default path which is stored in placeholderText.
+ * \return
+ */
 QString DebuggerPage::getGDBPath()
 {
-  if (mpGDBPathTextBox->text().isEmpty())
-    return "gdb";
-  else
+  if (mpGDBPathTextBox->text().isEmpty()) {
+    return mpGDBPathTextBox->placeholderText();
+  } else {
     return mpGDBPathTextBox->text();
+  }
 }
 
+/*!
+ * \brief DebuggerPage::browseGDBPath
+ * Browse a path for GDB.
+ */
 void DebuggerPage::browseGDBPath()
 {
   QString GDBPath = StringHandler::getOpenFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseFile),
                                                    NULL, "", NULL);
-  if (GDBPath.isEmpty())
+  if (GDBPath.isEmpty()) {
     return;
+  }
   mpGDBPathTextBox->setText(GDBPath);
 }
 
 /*!
-  \class DebuggerPage
-  \brief Creates an interface for debugger settings.
-  */
+ * \class DebuggerPage
+ * \brief Creates an interface for debugger settings.
+ */
 /*!
-  \param pParent - pointer to OptionsDialog
-  */
+ * \brief FMIPage::FMIPage
+ * \param pParent - pointer to OptionsDialog
+ */
 FMIPage::FMIPage(OptionsDialog *pOptionsDialog)
   : QWidget(pOptionsDialog)
 {
   mpOptionsDialog = pOptionsDialog;
   mpExportGroupBox = new QGroupBox(tr("Export"));
   // FMI export version
-  mpVersionLabel = new Label(Helper::version);
+  mpVersionGroupBox = new QGroupBox(Helper::version);
   mpVersion1RadioButton = new QRadioButton("1.0");
   mpVersion2RadioButton = new QRadioButton("2.0");
   mpVersion2RadioButton->setChecked(true);
-  // set the version group box layout
-  QHBoxLayout *pVersionLayout = new QHBoxLayout;
+  // set the version groupbox layout
+  QVBoxLayout *pVersionLayout = new QVBoxLayout;
   pVersionLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
   pVersionLayout->addWidget(mpVersion1RadioButton);
   pVersionLayout->addWidget(mpVersion2RadioButton);
+  mpVersionGroupBox->setLayout(pVersionLayout);
+  // FMI export type
+  mpTypeGroupBox = new QGroupBox(Helper::type);
+  mpModelExchangeRadioButton = new QRadioButton(tr("Model Exchange"));
+  mpCoSimulationRadioButton = new QRadioButton(tr("Co-Simulation"));
+  mpModelExchangeCoSimulationRadioButton = new QRadioButton(tr("Model Exchange and Co-Simulation"));
+  mpModelExchangeCoSimulationRadioButton->setChecked(true);
+  // set the type groupbox layout
+  QVBoxLayout *pTypeLayout = new QVBoxLayout;
+  pTypeLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pTypeLayout->addWidget(mpModelExchangeRadioButton);
+  pTypeLayout->addWidget(mpCoSimulationRadioButton);
+  pTypeLayout->addWidget(mpModelExchangeCoSimulationRadioButton);
+  mpTypeGroupBox->setLayout(pTypeLayout);
   // FMU name prefix
   mpFMUNameLabel = new Label(tr("FMU Name:"));
   mpFMUNameTextBox = new QLineEdit;
   mpFMUNameTextBox->setPlaceholderText("<default>");
+#ifdef WIN32
+  QStringList paths = QString(getenv("PATH")).split(";");
+#else
+  QStringList paths = QString(getenv("PATH")).split(":");
+#endif
+  QStringList nameFilters;
+  nameFilters << "*-*-*-*cc";
+  QStringList compilers;
+  foreach (QString path, paths) {
+    QDir dir(path);
+    compilers << dir.entryList(nameFilters, QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
+  }
+  mpPlatformsGroupBox = new QGroupBox(tr("Platforms"));
+  Label *pPlatformNoteLabel = new Label(tr("Note: The list of platforms is created by searching for programs in the PATH\n"
+                                           "matching pattern \"*-*-*-*cc\"."));
+  mpLinkingComboBox = new QComboBox;
+  mpLinkingComboBox->addItem(tr("None"), "none");
+  mpLinkingComboBox->addItem(tr("Dynamic"), "dynamic");
+  mpLinkingComboBox->addItem(tr("Static"), "static");
+  mpLinkingComboBox->setCurrentIndex(2);
+  // set the type groupbox layout
+  QVBoxLayout *pPlatformsLayout = new QVBoxLayout;
+  pPlatformsLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pPlatformsLayout->addWidget(pPlatformNoteLabel);
+  pPlatformsLayout->addWidget(mpLinkingComboBox);
+  foreach (QString compiler, compilers) {
+    pPlatformsLayout->addWidget(new QCheckBox(compiler.left(compiler.lastIndexOf('-'))));
+  }
+  mpPlatformsGroupBox->setLayout(pPlatformsLayout);
   // set the export group box layout
   QGridLayout *pExportLayout = new QGridLayout;
   pExportLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-  pExportLayout->addWidget(mpVersionLabel, 0, 0);
-  pExportLayout->addLayout(pVersionLayout, 0, 1);
-  pExportLayout->addWidget(mpFMUNameLabel, 1, 0);
-  pExportLayout->addWidget(mpFMUNameTextBox, 1, 1);
+  pExportLayout->addWidget(mpVersionGroupBox, 0, 0, 1, 2);
+  pExportLayout->addWidget(mpTypeGroupBox, 1, 0, 1, 2);
+  pExportLayout->addWidget(mpFMUNameLabel, 2, 0);
+  pExportLayout->addWidget(mpFMUNameTextBox, 2, 1);
+  pExportLayout->addWidget(mpPlatformsGroupBox, 3, 0, 1, 2);
   mpExportGroupBox->setLayout(pExportLayout);
   // set the layout
   QVBoxLayout *pMainLayout = new QVBoxLayout;
@@ -3368,6 +4264,11 @@ FMIPage::FMIPage(OptionsDialog *pOptionsDialog)
   setLayout(pMainLayout);
 }
 
+/*!
+ * \brief FMIPage::setFMIExportVersion
+ * Sets the FMI export version
+ * \param version
+ */
 void FMIPage::setFMIExportVersion(double version)
 {
   if (version == 1.0) {
@@ -3377,12 +4278,49 @@ void FMIPage::setFMIExportVersion(double version)
   }
 }
 
+/*!
+ * \brief FMIPage::getFMIExportVersion
+ * Gets the FMI export version
+ * \return
+ */
 double FMIPage::getFMIExportVersion()
 {
   if (mpVersion1RadioButton->isChecked()) {
     return 1.0;
   } else {
     return 2.0;
+  }
+}
+
+/*!
+ * \brief FMIPage::setFMIExportType
+ * Sets the FMI export type
+ * \param type
+ */
+void FMIPage::setFMIExportType(QString type)
+{
+  if (type.compare("me") == 0) {
+    mpModelExchangeRadioButton->setChecked(true);
+  } else if (type.compare("cs") == 0) {
+    mpCoSimulationRadioButton->setChecked(true);
+  } else {
+    mpModelExchangeCoSimulationRadioButton->setChecked(true);
+  }
+}
+
+/*!
+ * \brief FMIPage::getFMIExportType
+ * Gets the FMI export type
+ * \return
+ */
+QString FMIPage::getFMIExportType()
+{
+  if (mpModelExchangeRadioButton->isChecked()) {
+    return "me";
+  } else if (mpCoSimulationRadioButton->isChecked()) {
+    return "cs";
+  } else {
+    return "me_cs";
   }
 }
 
@@ -3396,20 +4334,23 @@ TLMPage::TLMPage(OptionsDialog *pOptionsDialog)
   mpOptionsDialog = pOptionsDialog;
   mpGeneralGroupBox = new QGroupBox(Helper::general);
   // TLM Plugin Path
-  mpTLMPluginPathLabel = new Label(tr("TLM Plugin Path:"));
+  mpTLMPluginPathLabel = new Label(tr("Path:"));
   mpTLMPluginPathTextBox = new QLineEdit;
+  mpTLMPluginPathTextBox->setPlaceholderText(QString("%1/OMTLMSimulator/bin").arg(Helper::OpenModelicaHome));
   mpBrowseTLMPluginPathButton = new QPushButton(Helper::browse);
   mpBrowseTLMPluginPathButton->setAutoDefault(false);
   connect(mpBrowseTLMPluginPathButton, SIGNAL(clicked()), SLOT(browseTLMPluginPath()));
   // TLM Manager Process
-  mpTLMManagerProcessLabel = new Label(tr("TLM Manager Process:"));
+  mpTLMManagerProcessLabel = new Label(tr("Manager Process:"));
   mpTLMManagerProcessTextBox = new QLineEdit;
+  mpTLMManagerProcessTextBox->setPlaceholderText(QString("%1/OMTLMSimulator/bin/tlmmanager").arg(Helper::OpenModelicaHome));
   mpBrowseTLMManagerProcessButton = new QPushButton(Helper::browse);
   mpBrowseTLMManagerProcessButton->setAutoDefault(false);
   connect(mpBrowseTLMManagerProcessButton, SIGNAL(clicked()), SLOT(browseTLMManagerProcess()));
   // TLM Monitor Process
-  mpTLMMonitorProcessLabel = new Label(tr("TLM Monitor Process:"));
+  mpTLMMonitorProcessLabel = new Label(tr("Monitor Process:"));
   mpTLMMonitorProcessTextBox = new QLineEdit;
+  mpTLMMonitorProcessTextBox->setPlaceholderText(QString("%1/OMTLMSimulator/bin/tlmmonitor").arg(Helper::OpenModelicaHome));
   mpBrowseTLMMonitorProcessButton = new QPushButton(Helper::browse);
   mpBrowseTLMMonitorProcessButton->setAutoDefault(false);
   connect(mpBrowseTLMMonitorProcessButton, SIGNAL(clicked()), SLOT(browseTLMMonitorProcess()));
@@ -3422,15 +4363,58 @@ TLMPage::TLMPage(OptionsDialog *pOptionsDialog)
   pGeneralGroupBoxLayout->addWidget(mpTLMManagerProcessLabel, 1, 0);
   pGeneralGroupBoxLayout->addWidget(mpTLMManagerProcessTextBox, 1, 1);
   pGeneralGroupBoxLayout->addWidget(mpBrowseTLMManagerProcessButton, 1, 2);
-  pGeneralGroupBoxLayout->addWidget(mpTLMMonitorProcessLabel, 2, 0);
-  pGeneralGroupBoxLayout->addWidget(mpTLMMonitorProcessTextBox, 2, 1);
-  pGeneralGroupBoxLayout->addWidget(mpBrowseTLMMonitorProcessButton, 2, 2);
+  pGeneralGroupBoxLayout->addWidget(mpTLMMonitorProcessLabel, 3, 0);
+  pGeneralGroupBoxLayout->addWidget(mpTLMMonitorProcessTextBox, 3, 1);
+  pGeneralGroupBoxLayout->addWidget(mpBrowseTLMMonitorProcessButton, 3, 2);
+  pGeneralGroupBoxLayout->addWidget(new Label(tr("* Default OMTLMSimulator paths are used if above field are empty.")), 4, 0, 1, 3);
   mpGeneralGroupBox->setLayout(pGeneralGroupBoxLayout);
   QVBoxLayout *pMainLayout = new QVBoxLayout;
   pMainLayout->setAlignment(Qt::AlignTop);
   pMainLayout->setContentsMargins(0, 0, 0, 0);
   pMainLayout->addWidget(mpGeneralGroupBox);
   setLayout(pMainLayout);
+}
+
+/*!
+ * \brief TLMPage::getOMTLMSimulatorPath
+ * Returns the OMTLMSimulator path.
+ * \return
+ */
+QString TLMPage::getOMTLMSimulatorPath()
+{
+  if (mpTLMPluginPathTextBox->text().isEmpty()) {
+    return mpTLMPluginPathTextBox->placeholderText();
+  } else {
+    return mpTLMPluginPathTextBox->text();
+  }
+}
+
+/*!
+ * \brief TLMPage::getOMTLMSimulatorManagerPath
+ * Returns the OMTLMSimulator manager path.
+ * \return
+ */
+QString TLMPage::getOMTLMSimulatorManagerPath()
+{
+  if (mpTLMManagerProcessTextBox->text().isEmpty()) {
+    return mpTLMManagerProcessTextBox->placeholderText();
+  } else {
+    return mpTLMManagerProcessTextBox->text();
+  }
+}
+
+/*!
+ * \brief TLMPage::getOMTLMSimulatorMonitorPath
+ * Returns the OMTLMSimulator monitor path.
+ * \return
+ */
+QString TLMPage::getOMTLMSimulatorMonitorPath()
+{
+  if (mpTLMMonitorProcessTextBox->text().isEmpty()) {
+    return mpTLMMonitorProcessTextBox->placeholderText();
+  } else {
+    return mpTLMMonitorProcessTextBox->text();
+  }
 }
 
 /*!
@@ -3478,254 +4462,73 @@ void TLMPage::browseTLMMonitorProcess()
                                                                      NULL, Helper::exeFileTypes, NULL));
 }
 
-//! @class TLMEditorPage
-//! @brief Creates an interface for TLM Text settings.
-
-//! Constructor
-//! @param pOptionsDialog is the pointer to OptionsDialog
-TLMEditorPage::TLMEditorPage(OptionsDialog *pOptionsDialog)
+/*!
+ * \class TraceabilityPage
+ * Creates an interface for Traceability settings.
+ */
+TraceabilityPage::TraceabilityPage(OptionsDialog *pOptionsDialog)
   : QWidget(pOptionsDialog)
 {
   mpOptionsDialog = pOptionsDialog;
-  // tabs and indentation groupbox
-  mpTabsAndIndentation = new QGroupBox(tr("Tabs and Indentation"));
-  // tab policy
-  mpTabPolicyLabel = new Label(tr("Tab Policy:"));
-  mpTabPolicyComboBox = new QComboBox;
-  mpTabPolicyComboBox->addItem(tr("Spaces Only"), 0);
-  mpTabPolicyComboBox->addItem(tr("Tabs Only"), 1);
-  // tab size
-  mpTabSizeLabel = new Label(tr("Tab Size:"));
-  mpTabSizeSpinBox = new QSpinBox;
-  mpTabSizeSpinBox->setRange(1, 20);
-  mpTabSizeSpinBox->setValue(4);
-  // indent size
-  mpIndentSizeLabel = new Label(tr("Indent Size:"));
-  mpIndentSpinBox = new QSpinBox;
-  mpIndentSpinBox->setRange(1, 20);
-  mpIndentSpinBox->setValue(2);
-  // set tabs & indentation groupbox layout
-  QGridLayout *pTabsAndIndentationGroupBoxLayout = new QGridLayout;
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpTabPolicyLabel, 0, 0);
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpTabPolicyComboBox, 0, 1);
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpTabSizeLabel, 1, 0);
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpTabSizeSpinBox, 1, 1);
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpIndentSizeLabel, 2, 0);
-  pTabsAndIndentationGroupBoxLayout->addWidget(mpIndentSpinBox, 2, 1);
-  mpTabsAndIndentation->setLayout(pTabsAndIndentationGroupBoxLayout);
-  // syntax highlight and text wrapping groupbox
-  mpSyntaxHighlightAndTextWrappingGroupBox = new QGroupBox(tr("Syntax Highlight and Text Wrapping"));
-  // syntax highlighting checkbox
-  mpSyntaxHighlightingCheckbox = new QCheckBox(tr("Enable Syntax Highlighting"));
-  mpSyntaxHighlightingCheckbox->setChecked(true);
-  // line wrap checkbox
-  mpLineWrappingCheckbox = new QCheckBox(tr("Enable Line Wrapping"));
-  mpLineWrappingCheckbox->setChecked(true);
-  connect(mpLineWrappingCheckbox, SIGNAL(toggled(bool)), this, SLOT(setLineWrapping()));
-  // set Syntax Highlight & Text Wrapping groupbox layout
-  QGridLayout *pSyntaxHighlightAndTextWrappingGroupBoxLayout = new QGridLayout;
-  pSyntaxHighlightAndTextWrappingGroupBoxLayout->addWidget(mpSyntaxHighlightingCheckbox, 0, 0);
-  pSyntaxHighlightAndTextWrappingGroupBoxLayout->addWidget(mpLineWrappingCheckbox, 1, 0);
-  mpSyntaxHighlightAndTextWrappingGroupBox->setLayout(pSyntaxHighlightAndTextWrappingGroupBoxLayout);
-  // fonts & colors groupbox
-  mpFontColorsGroupBox = new QGroupBox(Helper::fontAndColors);
-  // font family combobox
-  mpFontFamilyLabel = new Label(Helper::fontFamily);
-  mpFontFamilyComboBox = new QFontComboBox;
-  int currentIndex;
-  currentIndex = mpFontFamilyComboBox->findText(Helper::monospacedFontInfo.family(), Qt::MatchExactly);
-  mpFontFamilyComboBox->setCurrentIndex(currentIndex);
-  connect(mpFontFamilyComboBox, SIGNAL(currentFontChanged(QFont)), SIGNAL(updatePreview()));
-  // font size combobox
-  mpFontSizeLabel = new Label(Helper::fontSize);
-  mpFontSizeSpinBox = new DoubleSpinBox;
-  mpFontSizeSpinBox->setRange(6, std::numeric_limits<double>::max());
-  mpFontSizeSpinBox->setValue(Helper::monospacedFontInfo.pointSizeF());
-  mpFontSizeSpinBox->setSingleStep(1);
-  connect(mpFontSizeSpinBox, SIGNAL(valueChanged(double)), SIGNAL(updatePreview()));
-  // Item color label and pick color button
-  mpItemColorLabel = new Label(tr("Item Color:"));
-  mpItemColorPickButton = new QPushButton(Helper::pickColor);
-  mpItemColorPickButton->setAutoDefault(false);
-  connect(mpItemColorPickButton, SIGNAL(clicked()), SLOT(pickColor()));
-  // Items list
-  mpItemsLabel = new Label(tr("Items:"));
-  mpItemsList = new QListWidget;
-  mpItemsList->setItemDelegate(new ItemDelegate(mpItemsList));
-  mpItemsList->setMaximumHeight(90);
-  // Add items to list
-  addListItems();
-  // make first item in the list selected
-  mpItemsList->setCurrentRow(0, QItemSelectionModel::Select);
-  // preview textbox
-  mpPreviewLabel = new Label(tr("Preview:"));
-  mpPreviewPlainTextBox = new QPlainTextEdit;
-  mpPreviewPlainTextBox->setTabStopWidth(Helper::tabWidth);
-  QString previewText;
-  previewText.append("<!-- This is a comment. -->\n"
-                     "<Model Name=\"model\">\n"
-                     "\t<SubModels>\n"
-                     "\t\t<SubModel Name=\"submodel\">\n"
-                     "\t\t</SubModel>\n"
-                     "\t</SubModels>\n"
-                     "\t<Connections>\n"
-                     "\t\t<Connection From=\"from\" To=\"to\">\n"
-                     "\t</Connections>\n"
-                     "</Model>\n");
-  mpPreviewPlainTextBox->setPlainText(previewText);
-  // highlight preview textbox
-  TLMHighlighter *pTLMHighlighter = new TLMHighlighter(this, mpPreviewPlainTextBox);
-  connect(this, SIGNAL(updatePreview()), pTLMHighlighter, SLOT(settingsChanged()));
-  connect(mpSyntaxHighlightingCheckbox, SIGNAL(toggled(bool)), pTLMHighlighter, SLOT(settingsChanged()));
-  // set fonts & colors groupbox layout
-  QGridLayout *pFontsColorsGroupBoxLayout = new QGridLayout;
-  pFontsColorsGroupBoxLayout->addWidget(mpFontFamilyLabel, 0, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontSizeLabel, 0, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontFamilyComboBox, 1, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpFontSizeSpinBox, 1, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemsLabel, 2, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemColorLabel, 2, 1);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemsList, 3, 0);
-  pFontsColorsGroupBoxLayout->addWidget(mpItemColorPickButton, 3, 1, Qt::AlignTop);
-  pFontsColorsGroupBoxLayout->addWidget(mpPreviewLabel, 4, 0, 1, 2);
-  pFontsColorsGroupBoxLayout->addWidget(mpPreviewPlainTextBox, 5, 0, 1, 2);
-  mpFontColorsGroupBox->setLayout(pFontsColorsGroupBoxLayout);
-  // set the layout
+  mpTraceabilityGroupBox = new QGroupBox(tr("Traceability"));
+  mpTraceabilityGroupBox->setCheckable(true);
+  mpTraceabilityGroupBox->setChecked(false);
+  // User name
+  mpUserNameLabel = new Label(tr("User Name:"));
+  mpUserNameTextBox = new QLineEdit;
+  // Email
+  mpEmailLabel = new Label(tr("Email:"));
+  mpEmailTextBox = new QLineEdit;
+  // Git repository
+  mpGitRepositoryLabel = new Label(tr("Git Repository:"));
+  mpGitRepositoryTextBox = new QLineEdit;
+  mpBrowseGitRepositoryButton = new QPushButton(Helper::browse);
+  mpBrowseGitRepositoryButton->setAutoDefault(false);
+  connect(mpBrowseGitRepositoryButton, SIGNAL(clicked()), SLOT(browseGitRepository()));
+  // Traceability Daemon Ip Adress
+  mpTraceabilityDaemonIpAdressLabel = new Label(tr("Traceability Daemon IP Adress:"));
+  mpTraceabilityDaemonIpAdressTextBox = new QLineEdit;
+  // Traceability Daemon Port
+  mpTraceabilityDaemonPortLabel = new Label(tr("Traceability Daemon Port:"));
+  mpTraceabilityDaemonPortTextBox = new QLineEdit;
+   // set the layout
+  QGridLayout *pTraceabilityGroupBoxLayout = new QGridLayout;
+  pTraceabilityGroupBoxLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  pTraceabilityGroupBoxLayout->addWidget(mpUserNameLabel, 0, 0);
+  pTraceabilityGroupBoxLayout->addWidget(mpUserNameTextBox, 0, 1);
+  pTraceabilityGroupBoxLayout->addWidget(mpEmailLabel, 1, 0);
+  pTraceabilityGroupBoxLayout->addWidget(mpEmailTextBox, 1, 1);
+  pTraceabilityGroupBoxLayout->addWidget(mpGitRepositoryLabel, 2, 0);
+  pTraceabilityGroupBoxLayout->addWidget(mpGitRepositoryTextBox, 2, 1);
+  pTraceabilityGroupBoxLayout->addWidget(mpBrowseGitRepositoryButton, 2, 2);
+  pTraceabilityGroupBoxLayout->addWidget(mpTraceabilityDaemonIpAdressLabel, 3, 0);
+  pTraceabilityGroupBoxLayout->addWidget(mpTraceabilityDaemonIpAdressTextBox, 3, 1);
+  pTraceabilityGroupBoxLayout->addWidget(mpTraceabilityDaemonPortLabel, 4, 0);
+  pTraceabilityGroupBoxLayout->addWidget(mpTraceabilityDaemonPortTextBox, 4, 1);
+  mpTraceabilityGroupBox->setLayout(pTraceabilityGroupBoxLayout);
   QVBoxLayout *pMainLayout = new QVBoxLayout;
+  pMainLayout->setAlignment(Qt::AlignTop);
   pMainLayout->setContentsMargins(0, 0, 0, 0);
-  pMainLayout->addWidget(mpTabsAndIndentation);
-  pMainLayout->addWidget(mpSyntaxHighlightAndTextWrappingGroupBox);
-  pMainLayout->addWidget(mpFontColorsGroupBox);
+  pMainLayout->addWidget(mpTraceabilityGroupBox);
   setLayout(pMainLayout);
 }
 
-//! Adds the TLM Text settings rules to the mpItemsList.
-void TLMEditorPage::addListItems()
-{
-  // don't change the Data of items as it is being used in TLMEditorPage::pickColor slot to identify the items
-  // Text
-  mpTextItem = new QListWidgetItem(mpItemsList);
-  mpTextItem->setText("Text");
-  mpTextItem->setData(Qt::UserRole, "Text");
-  setTextRuleColor(QColor(0, 0, 0)); // black
-  // Tag
-  mpTagItem = new QListWidgetItem(mpItemsList);
-  mpTagItem->setText("Tag");
-  mpTagItem->setData(Qt::UserRole, "Tag");
-  setTagRuleColor(QColor(0, 0, 255)); // blue
-  // Element
-  mpElementItem = new QListWidgetItem(mpItemsList);
-  mpElementItem->setText("Element");
-  mpElementItem->setData(Qt::UserRole, "Element");
-  setElementRuleColor(QColor(0, 0, 255)); // blue
-  // Quotes
-  mpQuotesItem = new QListWidgetItem(mpItemsList);
-  mpQuotesItem->setText("Quotes");
-  mpQuotesItem->setData(Qt::UserRole, "Quotes");
-  setQuotesRuleColor(QColor(139, 0, 0)); // dark red
-  // Comment
-  mpCommentItem = new QListWidgetItem(mpItemsList);
-  mpCommentItem->setText("Comment");
-  mpCommentItem->setData(Qt::UserRole, "Comment");
-  setCommentRuleColor(QColor(0, 150, 0)); // dark green
-}
+/*!
+ * \brief TraceabilityPage::browseFMUOutputDirectory
+ * Browse FMU Output Directory.
+ */
+//void TraceabilityPage::browseFMUOutputDirectory()
+//{
+//  mpFMUOutputDirectoryTextBox->setText(StringHandler::getExistingDirectory(this, QString("%1 - %2").arg(Helper::applicationName)
+//                                                                         .arg(Helper::chooseDirectory), NULL));
+//}
 
 /*!
- * \brief TLMEditorPage::setTextRuleColor
- * \param color
+ * \brief TraceabilityPage::browseFMUOutputDirectory
+ * Browse FMU Output Directory.
  */
-void TLMEditorPage::setTextRuleColor(QColor color)
+void TraceabilityPage::browseGitRepository()
 {
-  mTextColor = color;
-  mpTextItem->setForeground(color);
-}
-
-/*!
- * \brief TLMEditorPage::setTagRuleColor
- * \param color
- */
-void TLMEditorPage::setTagRuleColor(QColor color)
-{
-  mTagColor = color;
-  mpTagItem->setForeground(color);
-}
-
-/*!
- * \brief TLMEditorPage::setElementRuleColor
- * \param color
- */
-void TLMEditorPage::setElementRuleColor(QColor color)
-{
-  mElementColor = color;
-  mpElementItem->setForeground(color);
-}
-
-/*!
- * \brief TLMEditorPage::setQuotesRuleColor
- * \param color
- */
-void TLMEditorPage::setQuotesRuleColor(QColor color)
-{
-  mQuotesColor = color;
-  mpQuotesItem->setForeground(color);
-}
-
-/*!
- * \brief TLMEditorPage::setCommentRuleColor
- * \param color
- */
-void TLMEditorPage::setCommentRuleColor(QColor color)
-{
-  mCommentColor = color;
-  mpCommentItem->setForeground(color);
-}
-
-/*!
- * \brief TLMEditorPage::setLineWrapping
- * Slot activated when mpLineWrappingCheckbox toggled SIGNAL is raised.
- * Sets the mpPreviewPlainTextBox line wrapping mode.
- */
-void TLMEditorPage::setLineWrapping()
-{
-  if (mpLineWrappingCheckbox->isChecked()) {
-    mpPreviewPlainTextBox->setLineWrapMode(QPlainTextEdit::WidgetWidth);
-  } else {
-    mpPreviewPlainTextBox->setLineWrapMode(QPlainTextEdit::NoWrap);
-  }
-}
-
-//! Picks a color for one of the TLM Text Settings rules.
-//! This method is called when mpColorPickButton clicked signal raised.
-void TLMEditorPage::pickColor()
-{
-  QListWidgetItem *item = mpItemsList->currentItem();
-  QColor initialColor;
-  // get the color of the item
-  if (item->data(Qt::UserRole).toString().toLower().compare("text") == 0) {
-    initialColor = mTextColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("quotes") == 0) {
-    initialColor = mQuotesColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("tag") == 0) {
-    initialColor = mTagColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("element") == 0) {
-    initialColor = mElementColor;
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("comment") == 0) {
-    initialColor = mCommentColor;
-  }
-  QColor color = QColorDialog::getColor(initialColor);
-  if (!color.isValid())
-    return;
-  // set the color of the item
-  if (item->data(Qt::UserRole).toString().toLower().compare("text") == 0) {
-   setTextRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("quotes") == 0) {
-    setQuotesRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("tag") == 0) {
-    setTagRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("element") == 0) {
-    setElementRuleColor(color);
-  } else if(item->data(Qt::UserRole).toString().toLower().compare("comment") == 0) {
-    setCommentRuleColor(color);
-  }
-  emit updatePreview();
+  mpGitRepositoryTextBox->setText(StringHandler::getExistingDirectory(this, QString("%1 - %2").arg(Helper::applicationName)
+                                                                         .arg(Helper::chooseDirectory), NULL));
 }

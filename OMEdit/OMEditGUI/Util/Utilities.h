@@ -29,33 +29,59 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
+#include <QApplication>
+#include <QSplashScreen>
 #include <QMdiArea>
+#include <QLineEdit>
 #include <QThread>
+#include <QToolButton>
+#include <QComboBox>
+#include <QPushButton>
 #include <QFile>
 #include <QLabel>
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QVariant>
+#include <QAbstractMessageHandler>
+#include <QDebug>
+#include <QPlainTextEdit>
+#include <QTextEdit>
+#include <QProcess>
+#include <QSettings>
+#include <QFileIconProvider>
+#include <QGroupBox>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QGenericMatrix>
+
+#ifdef WIN32
+#include <windows.h>
+#include <tlhelp32.h>
+#endif
 
 #ifndef UTILITIES_H
 #define UTILITIES_H
 
-class MainWindow;
-class MdiArea : public QMdiArea
+class SplashScreen : public QSplashScreen
 {
   Q_OBJECT
+private:
+  SplashScreen() : QSplashScreen() {}
+
+  static SplashScreen *mpInstance;
 public:
-  MdiArea(QWidget *pParent = 0);
-  MainWindow* getMainWindow();
-protected:
-  MainWindow *mpMainWindow;
+  static SplashScreen *instance();
+public slots:
+  void showMessage(const QString &message, int alignment = Qt::AlignLeft, const QColor &color = Qt::black)
+  {
+    QSplashScreen::showMessage(message, alignment, color);
+    qApp->processEvents();
+  }
 };
 
 //! @brief Used to create platform independent sleep for the application.
@@ -66,8 +92,33 @@ public:
   Sleep() {}
   ~Sleep() {}
   static void sleep(unsigned long secs) {QThread::sleep(secs);}
+  static void msleep(unsigned long msecs) {QThread::msleep(msecs);}
 protected:
   void run() {}
+};
+
+class TreeSearchFilters : public QWidget
+{
+  Q_OBJECT
+public:
+  TreeSearchFilters(QWidget *pParent = 0);
+  QLineEdit* getFilterTextBox() {return mpFilterTextBox;}
+  QComboBox* getSyntaxComboBox() {return mpSyntaxComboBox;}
+  QCheckBox* getCaseSensitiveCheckBox() {return mpCaseSensitiveCheckBox;}
+  QPushButton* getExpandAllButton() {return mpExpandAllButton;}
+  QPushButton* getCollapseAllButton() {return mpCollapseAllButton;}
+
+  bool eventFilter(QObject *pObject, QEvent *pEvent);
+private:
+  QLineEdit *mpFilterTextBox;
+  QToolButton *mpShowHideButton;
+  QWidget *mpFiltersWidget;
+  QComboBox *mpSyntaxComboBox;
+  QCheckBox *mpCaseSensitiveCheckBox;
+  QPushButton *mpExpandAllButton;
+  QPushButton *mpCollapseAllButton;
+private slots:
+  void showHideFilters(bool On);
 };
 
 class FileDataNotifier : public QThread
@@ -79,19 +130,18 @@ public:
 private:
   QFile mFile;
   bool mStop;
-  qint64 mBytesAvailable;
 protected:
   void run();
 public slots:
   void start(Priority = InheritPriority);
 signals:
-  void bytesAvailable(qint64 bytes);
+  void sendData(QString data);
 };
 
 /*!
-  \class Label
-  \brief Creates a QLabel with elidable text. The default elide mode is Qt::ElideMiddle.Allows text selection via mouse.
-  */
+ * \class Label
+ * \brief Creates a QLabel with elidable text. The default elide mode is Qt::ElideNone. Allows text selection via mouse.
+ */
 class Label : public QLabel
 {
 public:
@@ -132,22 +182,20 @@ public slots:
 };
 
 /*!
-  \class FixedCheckBox
-  \brief Creates a custom QCheckBox to represent the fixed modifier of components.
-  */
+ * \class FixedCheckBox
+ * \brief Creates a custom QCheckBox to represent the fixed modifier of components.
+ */
 class FixedCheckBox : public QCheckBox
 {
   Q_OBJECT
 private:
   bool mDefaultValue;
-  bool mDefaultTickState;
   bool mTickState;
 public:
   FixedCheckBox(QWidget *parent = 0);
-  void setDefaultTickState(bool defaultValue, bool defaultTickState, bool tickState);
-  void setTickState(bool defaultValue, bool tickState);
-  QString tickState();
-  bool getDefaultTickState() {return mDefaultTickState;}
+  void setTickState(bool defaultValue, bool tickStateString);
+  bool tickState() {return mTickState;}
+  QString tickStateString();
 protected:
   virtual void paintEvent(QPaintEvent *event);
 };
@@ -250,5 +298,183 @@ inline QDataStream& operator>>(QDataStream& in, DebuggerConfiguration& configura
   in >> configurationSettings.arguments;
   return in;
 }
+
+/*!
+ * \class MessageHandler
+ * \brief Defines the appropriate error message of the parsed XML validated againast the XML Schema.\n
+ * The class implementation and logic is inspired from Qt Creator sources.
+ */
+class MessageHandler : public QAbstractMessageHandler
+{
+public:
+  MessageHandler() : QAbstractMessageHandler(0) {mFailed = false;}
+  QString statusMessage() const { return mDescription;}
+  int line() const { return mSourceLocation.line();}
+  int column() const { return mSourceLocation.column();}
+  void setFailed(bool failed) {mFailed = failed;}
+  bool isFailed() {return mFailed;}
+protected:
+  virtual void handleMessage(QtMsgType type, const QString &description, const QUrl &identifier, const QSourceLocation &sourceLocation)
+  {
+    Q_UNUSED(type);
+    Q_UNUSED(identifier);
+    mDescription = description;
+    mSourceLocation = sourceLocation;
+  }
+private:
+  QString mDescription;
+  QSourceLocation mSourceLocation;
+  bool mFailed;
+};
+
+typedef struct {
+  QString mDelay;
+  QString mZf;
+  QString mZfr;
+  QString mAlpha;
+} CompositeModelConnection;
+
+class PreviewPlainTextEdit : public QPlainTextEdit
+{
+  Q_OBJECT
+public:
+  PreviewPlainTextEdit(QWidget *parent = 0);
+private:
+  QTextCharFormat mParenthesesMatchFormat;
+  QTextCharFormat mParenthesesMisMatchFormat;
+
+  void highlightCurrentLine();
+  void highlightParentheses();
+public slots:
+  void updateHighlights();
+};
+
+class ListWidgetItem : public QListWidgetItem
+{
+public:
+  ListWidgetItem(QString text, QColor color, QListWidget *pParentListWidget);
+  QColor getColor() {return mColor;}
+  void setColor(QColor color) {mColor = color;}
+private:
+  QColor mColor;
+};
+
+class CodeColorsWidget : public QWidget
+{
+  Q_OBJECT
+public:
+  CodeColorsWidget(QWidget *pParent = 0);
+  QListWidget* getItemsListWidget() {return mpItemsListWidget;}
+  PreviewPlainTextEdit* getPreviewPlainTextEdit() {return mpPreviewPlainTextEdit;}
+private:
+  QGroupBox *mpColorsGroupBox;
+  Label *mpItemsLabel;
+  QListWidget *mpItemsListWidget;
+  Label *mpItemColorLabel;
+  QPushButton *mpItemColorPickButton;
+  Label *mpPreviewLabel;
+  PreviewPlainTextEdit *mpPreviewPlainTextEdit;
+  ListWidgetItem *mpTextItem;
+  ListWidgetItem *mpNumberItem;
+  ListWidgetItem *mpKeywordItem;
+  ListWidgetItem *mpTypeItem;
+  ListWidgetItem *mpFunctionItem;
+  ListWidgetItem *mpQuotesItem;
+  ListWidgetItem *mpCommentItem;
+signals:
+  void colorUpdated();
+private slots:
+  void pickColor();
+};
+
+/*!
+ * \brief The VerticalScrollArea class
+ * A scroll area with vertical bar and adjustment of width
+ * See: https://forum.qt.io/topic/13374/solved-qscrollarea-vertical-scroll-only
+ */
+class VerticalScrollArea : public QScrollArea
+{
+public:
+  VerticalScrollArea()
+  {
+    setWidgetResizable(true);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+  }
+
+  virtual bool eventFilter(QObject *o, QEvent *e)
+  {
+    if (o && o == widget() && e->type() == QEvent::Resize) {
+      setMinimumWidth(widget()->minimumSizeHint().width() + verticalScrollBar()->width());
+    }
+    return QScrollArea::eventFilter(o, e);
+  }
+};
+
+namespace Utilities {
+
+  enum LineEndingMode {
+    CRLFLineEnding = 0,
+    LFLineEnding = 1,
+    NativeLineEnding =
+#ifdef WIN32
+    CRLFLineEnding,
+#else
+    LFLineEnding
+#endif
+  };
+
+  enum BomMode {
+    AlwaysAddBom = 0,
+    KeepBom = 1,
+    AlwaysDeleteBom = 2
+  };
+
+  QString& tempDirectory();
+  QSettings* getApplicationSettings();
+  void parseCompositeModelText(MessageHandler *pMessageHandler, QString contents);
+  qreal convertUnit(qreal value, qreal offset, qreal scaleFactor);
+  Label* getHeadingLabel(QString heading);
+  QFrame* getHeadingLine();
+  bool detectBOM(QString fileName);
+  QTextCharFormat getParenthesesMatchFormat();
+  QTextCharFormat getParenthesesMisMatchFormat();
+  void highlightCurrentLine(QPlainTextEdit *pPlainTextEdit);
+  void highlightParentheses(QPlainTextEdit *pPlainTextEdit, QTextCharFormat parenthesesMatchFormat, QTextCharFormat parenthesesMisMatchFormat);
+  qint64 getProcessId(QProcess *pProcess);
+#ifdef WIN32
+  void killProcessTreeWindows(DWORD myprocID);
+#endif
+  bool isCFile(QString extension);
+  bool isModelicaFile(QString extension);
+  void insertText(QPlainTextEdit *pPlainTextEdit, QString text, QTextCharFormat format = QTextCharFormat());
+  QGenericMatrix<3,3, double> getRotationMatrix(QGenericMatrix<3,1,double> rotation);
+#ifdef WIN32
+  QString getGDBPath();
+#endif
+
+  namespace FileIconProvider {
+    class FileIconProviderImplementation : public QFileIconProvider
+    {
+    public:
+      FileIconProviderImplementation();
+      QIcon icon(const QFileInfo &info);
+      using QFileIconProvider::icon;
+      // Mapping of file suffix to icon.
+      QHash<QString, QIcon> mIconsHash;
+      QIcon mUnknownFileIcon;
+    };
+    // Access to the single instance
+    QFileIconProvider *iconProvider();
+    QIcon icon(const QFileInfo &info);
+  } // namespace FileIconProvider
+
+  bool containsWord(QString text, int index, QString keyword, bool checkParenthesis = false);
+  qreal convertMMToPixel(qreal value);
+  float maxi(float arr[],int n);
+  float mini(float arr[], int n);
+  QList<QPointF> liangBarskyClipper(float xmin, float ymin, float xmax, float ymax, float x1, float y1, float x2, float y2);
+
+} // namespace Utilities
 
 #endif // UTILITIES_H

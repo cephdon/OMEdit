@@ -29,118 +29,159 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QtCore>
-#include <QtGui>
-#include <QDomDocument>
+#undef smooth
 
+#include <QtGlobal>
 #if (QT_VERSION < QT_VERSION_CHECK(4, 6, 0))
 #error "OMEdit requires Qt 4.6.0 or newer"
 #endif
 
-#include "OMCProxy.h"
-#include "OptionsDialog.h"
-#include "ModelicaClassDialog.h"
-#include "StringHandler.h"
-#include "MessagesWidget.h"
-#include "TransformationsWidget.h"
-#include "LibraryTreeWidget.h"
-#include "DocumentationWidget.h"
-#include "SimulationDialog.h"
-#include "TLMCoSimulationDialog.h"
-#include "Plotting/PlotWindowContainer.h"
-#include "ModelWidgetContainer.h"
-#include "DebuggerMainWindow.h"
-#include "ImportFMUDialog.h"
-#include "NotificationsDialog.h"
+#include <QMainWindow>
+#include <QDialog>
+#include <QProgressBar>
+#include <QDomDocument>
+#include <QStackedWidget>
+#include <QActionGroup>
+#include <QToolButton>
+#include <QMdiSubWindow>
+#include <QMdiArea>
+
 
 class OMCProxy;
-class OptionsDialog;
-class MessagesWidget;
 class TransformationsWidget;
-class SearchClassWidget;
-class LibraryTreeWidget;
+class LibraryWidget;
+class GDBAdapter;
+class StackFramesWidget;
+class LocalsWidget;
+class TargetOutputWidget;
+class GDBLoggerWidget;
 class DocumentationWidget;
+class PlotWindowContainer;
 class VariablesWidget;
+#if !defined(WITHOUT_OSG)
+class ThreeDViewer;
+#endif
+class BreakpointsWidget;
 class SimulationDialog;
 class TLMCoSimulationDialog;
-class PlotWindowContainer;
 class ModelWidgetContainer;
-class DebuggerMainWindow;
-class InfoBar;
 class WelcomePageWidget;
-class AboutOMEditWidget;
+class InfoBar;
+class AboutOMEditDialog;
+class Label;
+class FileDataNotifier;
+class LibraryTreeItem;
+class GitCommands;
+class CommitChangesDialog;
+class TraceabilityInformationURI;
+class TraceabilityGraphViewWidget;
+
 
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
 public:
   enum { MaxRecentFiles = 8 };
-  MainWindow(QSplashScreen *pSplashScreen, QWidget *parent = 0);
-  OMCProxy* getOMCProxy();
-  void setExitApplicationStatus(bool status);
-  bool getExitApplicationStatus();
-  OptionsDialog* getOptionsDialog();
-  MessagesWidget* getMessagesWidget();
-  LibraryTreeWidget* getLibraryTreeWidget();
-  DocumentationWidget* getDocumentationWidget();
-  QDockWidget* getDocumentationDockWidget();
-  VariablesWidget* getVariablesWidget();
-  QDockWidget* getVariablesDockWidget();
-  SimulationDialog* getSimulationDialog();
+private:
+  MainWindow(bool debug, QWidget *parent = 0);
+  static MainWindow *mpInstance;
+public:
+  static MainWindow *instance(bool debug = false);
+  void setUpMainWindow();
+  bool isDebug() {return mDebug;}
+  OMCProxy* getOMCProxy() {return mpOMCProxy;}
+  void setExitApplicationStatus(bool status) {mExitApplicationStatus = status;}
+  bool getExitApplicationStatus() {return mExitApplicationStatus;}
+  LibraryWidget* getLibraryWidget() {return mpLibraryWidget;}
+  StackFramesWidget* getStackFramesWidget() {return mpStackFramesWidget;}
+  BreakpointsWidget* getBreakpointsWidget() {return mpBreakpointsWidget;}
+  LocalsWidget* getLocalsWidget() {return mpLocalsWidget;}
+  TargetOutputWidget* getTargetOutputWidget() {return mpTargetOutputWidget;}
+  QDockWidget* getTargetOutputDockWidget() {return mpTargetOutputDockWidget;}
+  GDBLoggerWidget* getGDBLoggerWidget() {return mpGDBLoggerWidget;}
+  DocumentationWidget* getDocumentationWidget() {return mpDocumentationWidget;}
+  QDockWidget* getDocumentationDockWidget() {return mpDocumentationDockWidget;}
+  PlotWindowContainer* getPlotWindowContainer() {return mpPlotWindowContainer;}
+  VariablesWidget* getVariablesWidget() {return mpVariablesWidget;}
+  QDockWidget* getVariablesDockWidget() {return mpVariablesDockWidget;}
+
+#if !defined(WITHOUT_OSG)
+  bool isThreeDViewerInitialized();
+  ThreeDViewer* getThreeDViewer();
+  QDockWidget* getThreeDViewerDockWidget() {return mpThreeDViewerDockWidget;}
+#endif
+  SimulationDialog* getSimulationDialog() {return mpSimulationDialog;}
   TLMCoSimulationDialog* getTLMCoSimulationDialog() {return mpTLMCoSimulationDialog;}
-  PlotWindowContainer* getPlotWindowContainer();
-  ModelWidgetContainer* getModelWidgetContainer();
-  DebuggerMainWindow* getDebuggerMainWindow() {return mpDebuggerMainWindow;}
-  WelcomePageWidget* getWelcomePageWidget();
-  InfoBar* getInfoBar();
-  QStatusBar* getStatusBar();
-  QProgressBar* getProgressBar();
-  Label* getPointerXPositionLabel();
-  Label* getPointerYPositionLabel();
-  QTabBar* getPerspectiveTabBar();
-  QAction* getSaveAction();
-  QAction* getSaveAsAction();
-  QAction* getSaveTotalModelAction() {return mpSaveTotalModelAction;}
-  QAction* getPrintModelAction();
-  QAction* getSaveAllAction();
-  QAction* getShowGridLinesAction();
-  QAction* getResetZoomAction();
-  QAction* getZoomInAction();
-  QAction* getZoomOutAction();
-  QAction* getSimulateModelAction();
+  ModelWidgetContainer* getModelWidgetContainer() {return mpModelWidgetContainer;}
+  WelcomePageWidget* getWelcomePageWidget() {return mpWelcomePageWidget;}
+  GitCommands* getGitCommands() {return mpGitCommands;}
+  CommitChangesDialog* getCommitChangesDialog() {return mpCommitChangesDialog;}
+  TraceabilityInformationURI* getTraceabilityInformationURI() {return mpTraceabilityInformationURI;}
+  QStatusBar* getStatusBar() {return mpStatusBar;}
+  QProgressBar* getProgressBar() {return mpProgressBar;}
+  void showProgressBar() {mpProgressBar->setVisible(true);}
+  void hideProgressBar() {mpProgressBar->setVisible(false);}
+  Label* getPositionLabel() {return mpPositionLabel;}
+  QTabBar* getPerspectiveTabBar() {return mpPerspectiveTabbar;}
+  QTimer* getAutoSaveTimer() {return mpAutoSaveTimer;}
+  QAction* getSaveAction() {return mpSaveAction;}
+  QAction* getSaveAsAction() {return mpSaveAsAction;}
+  QAction* getSaveTotalAction() {return mpSaveTotalAction;}
+  QAction* getPrintModelAction() {return mpPrintModelAction;}
+  QAction* getSaveAllAction() {return mpSaveAllAction;}
+  QAction* getUndoAction() {return mpUndoAction;}
+  QAction* getRedoAction() {return mpRedoAction;}
+  QAction* getShowGridLinesAction() {return mpShowGridLinesAction;}
+  QAction* getResetZoomAction() {return mpResetZoomAction;}
+  QAction* getZoomInAction() {return mpZoomInAction;}
+  QAction* getZoomOutAction() {return mpZoomOutAction;}
+  QAction* getCloseAllWindowsAction() {return mpCloseAllWindowsAction;}
+  QAction* getCloseAllWindowsButThisAction() {return mpCloseAllWindowsButThisAction;}
+  QAction* getSimulateModelAction() {return mpSimulateModelAction;}
   QAction* getSimulateWithTransformationalDebuggerAction() {return mpSimulateWithTransformationalDebuggerAction;}
   QAction* getSimulateWithAlgorithmicDebuggerAction() {return mpSimulateWithAlgorithmicDebuggerAction;}
-  QAction* getSimulationSetupAction();
-  QAction* getInstantiateModelAction();
-  QAction* getCheckModelAction();
+#if !defined(WITHOUT_OSG)
+  QAction* getSimulateWithAnimationAction() {return mpSimulateWithAnimationAction;}
+#endif
+  QAction* getSimulationSetupAction() {return mpSimulationSetupAction;}
+  QAction* getInstantiateModelAction() {return mpInstantiateModelAction;}
+  QAction* getCheckModelAction() {return mpCheckModelAction;}
   QAction* getCheckAllModelsAction() {return mpCheckAllModelsAction;}
-  QAction* getExportFMUAction();
-  QAction* getExportXMLAction();
-  QAction* getExportFigaroAction();
-  QAction* getLineShapeAction();
-  QAction* getPolygonShapeAction();
-  QAction* getRectangleShapeAction();
-  QAction* getEllipseShapeAction();
-  QAction* getTextShapeAction();
-  QAction* getBitmapShapeAction();
-  QAction* getExportAsImageAction();
+  QAction* getExportFMUAction() {return mpExportFMUAction;}
+  QAction* getExportXMLAction() {return mpExportXMLAction;}
+  QAction* getExportFigaroAction() {return mpExportFigaroAction;}
+  QAction* getLineShapeAction() {return mpLineShapeAction;}
+  QAction* getPolygonShapeAction() {return mpPolygonShapeAction;}
+  QAction* getRectangleShapeAction() {return mpRectangleShapeAction;}
+  QAction* getEllipseShapeAction() {return mpEllipseShapeAction;}
+  QAction* getTextShapeAction() {return mpTextShapeAction;}
+  QAction* getBitmapShapeAction() {return mpBitmapShapeAction;}
+  QAction* getExportAsImageAction() {return mpExportAsImageAction;}
   QAction* getExportToClipboardAction() {return mpExportToClipboardAction;}
-  QAction* getExportToOMNotebookAction();
-  QAction* getImportFromOMNotebookAction();
-  QAction* getImportNgspiceNetlistAction();
-  QAction* getConnectModeAction();
+  QAction* getExportToOMNotebookAction() {return mpExportToOMNotebookAction;}
+  QAction* getImportFromOMNotebookAction() {return mpImportFromOMNotebookAction;}
+  QAction* getImportNgspiceNetlistAction() {return mpImportNgspiceNetlistAction;}
+  QAction* getConnectModeAction() {return mpConnectModeAction;}
+  QAction* getTransitionModeAction() {return mpTransitionModeAction;}
+  QAction* getReSimulateModelAction() {return mpReSimulateModelAction;}
+  QAction* getReSimulateSetupAction() {return mpReSimulateSetupAction;}
+  QAction* getSimulationParamsAction() {return mpSimulationParamsAction;}
   QAction* getFetchInterfaceDataAction() {return mpFetchInterfaceDataAction;}
+  QAction* getAlignInterfacesAction() {return mpAlignInterfacesAction;}
   QAction* getTLMSimulationAction() {return mpTLMCoSimulationAction;}
+  QAction* getLogCurrentFileAction() {return mpLogCurrentFileAction;}
+  QAction* getStageCurrentFileForCommitAction() {return mpStageCurrentFileForCommitAction;}
+  QAction* getUnstageCurrentFileFromCommitAction() {return mpUnstageCurrentFileFromCommitAction;}
+  QAction* getCommitFilesAction() {return mpCommitFilesAction;}
+  QAction* getRevertCommitAction() {return mpRevertCommitAction;}
+  QAction* getCleanWorkingDirectoryAction() {return mpCleanWorkingDirectoryAction;}
+  QAction* getTraceabilityQueryAction() {return mpTraceabilityQueryAction;}
   void addRecentFile(const QString &fileName, const QString &encoding);
   void updateRecentFileActions();
   void closeEvent(QCloseEvent *event);
@@ -148,62 +189,74 @@ public:
   void beforeClosingMainWindow();
   void openDroppedFile(QDropEvent *event);
   void openResultFiles(QStringList fileNames);
-  void simulate(LibraryTreeNode *pLibraryTreeNode);
-  void simulateWithTransformationalDebugger(LibraryTreeNode *pLibraryTreeNode);
-  void simulateWithAlgorithmicDebugger(LibraryTreeNode *pLibraryTreeNode);
-  void simulationSetup(LibraryTreeNode *pLibraryTreeNode);
-  void instantiatesModel(LibraryTreeNode *pLibraryTreeNode);
-  void checkModel(LibraryTreeNode *pLibraryTreeNode);
-  void checkAllModels(LibraryTreeNode *pLibraryTreeNode);
-  void exportModelFMU(LibraryTreeNode *pLibraryTreeNode);
-  void exportModelXML(LibraryTreeNode *pLibraryTreeNode);
-  void exportModelFigaro(LibraryTreeNode *pLibraryTreeNode);
-  void fetchInterfaceData(LibraryTreeNode *pLibraryTreeNode);
-  void TLMSimulate(LibraryTreeNode *pLibraryTreeNode);
-  void exportModelToOMNotebook(LibraryTreeNode *pLibraryTreeNode);
-  void createOMNotebookTitleCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement);
-  void createOMNotebookImageCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement, QString filePath);
-  void createOMNotebookCodeCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement);
+  void simulate(LibraryTreeItem *pLibraryTreeItem);
+  void simulateWithTransformationalDebugger(LibraryTreeItem *pLibraryTreeItem);
+  void simulateWithAlgorithmicDebugger(LibraryTreeItem *pLibraryTreeItem);
+#if !defined(WITHOUT_OSG)
+  void simulateWithAnimation(LibraryTreeItem *pLibraryTreeItem);
+#endif
+  void simulationSetup(LibraryTreeItem *pLibraryTreeItem);
+  void instantiateModel(LibraryTreeItem *pLibraryTreeItem);
+  void checkModel(LibraryTreeItem *pLibraryTreeItem);
+  void checkAllModels(LibraryTreeItem *pLibraryTreeItem);
+  void exportModelFMU(LibraryTreeItem *pLibraryTreeItem);
+  void exportModelXML(LibraryTreeItem *pLibraryTreeItem);
+  void exportModelFigaro(LibraryTreeItem *pLibraryTreeItem);
+  void fetchInterfaceData(LibraryTreeItem *pLibraryTreeItem, QString singleModel=QString());
+  void TLMSimulate(LibraryTreeItem *pLibraryTreeItem);
+  void exportModelToOMNotebook(LibraryTreeItem *pLibraryTreeItem);
+  void createOMNotebookTitleCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement);
+  void createOMNotebookImageCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement, QString filePath);
+  void createOMNotebookCodeCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement);
   TransformationsWidget* showTransformationsWidget(QString fileName);
+  void findFileAndGoToLine(QString fileName, QString lineNumber);
   static void PlotCallbackFunction(void *p, int externalWindow, const char* filename, const char* title, const char* grid,
                                    const char* plotType, const char* logX, const char* logY, const char* xLabel, const char* yLabel,
                                    const char* x1, const char* x2, const char* y1, const char* y2, const char* curveWidth,
                                    const char* curveStyle, const char* legendPosition, const char* footer, const char* autoScale,
                                    const char* variables);
 private:
+  bool mDebug;
   OMCProxy *mpOMCProxy;
   bool mExitApplicationStatus;
-  OptionsDialog *mpOptionsDialog;
-  MessagesWidget *mpMessagesWidget;
   QDockWidget *mpMessagesDockWidget;
-  QFile mOutputFile;
   FileDataNotifier *mpOutputFileDataNotifier;
-  QFile mErrorFile;
   FileDataNotifier *mpErrorFileDataNotifier;
-  SearchClassWidget *mpSearchClassWidget;
-  QDockWidget *mpSearchClassDockWidget;
-  LibraryTreeWidget *mpLibraryTreeWidget;
-  QDockWidget *mpLibraryTreeDockWidget;
+  LibraryWidget *mpLibraryWidget;
+  QDockWidget *mpLibraryDockWidget;
+  GDBAdapter *mpGDBAdapter;
+  StackFramesWidget *mpStackFramesWidget;
+  QDockWidget *mpStackFramesDockWidget;
+  BreakpointsWidget *mpBreakpointsWidget;
+  QDockWidget *mpBreakpointsDockWidget;
+  LocalsWidget *mpLocalsWidget;
+  QDockWidget *mpLocalsDockWidget;
+  TargetOutputWidget *mpTargetOutputWidget;
+  QDockWidget *mpTargetOutputDockWidget;
+  GDBLoggerWidget *mpGDBLoggerWidget;
+  QDockWidget *mpGDBLoggerDockWidget;
   DocumentationWidget *mpDocumentationWidget;
   QDockWidget *mpDocumentationDockWidget;
+  PlotWindowContainer *mpPlotWindowContainer;
   VariablesWidget *mpVariablesWidget;
   QDockWidget *mpVariablesDockWidget;
+  TraceabilityGraphViewWidget *mpTraceabilityGraphViewWidget;
+#if !defined(WITHOUT_OSG)
+  ThreeDViewer *mpThreeDViewer;
+  QDockWidget *mpThreeDViewerDockWidget;
+#endif
   SimulationDialog *mpSimulationDialog;
   TLMCoSimulationDialog *mpTLMCoSimulationDialog;
-  PlotWindowContainer *mpPlotWindowContainer;
-  QList<Qt::WindowStates> mPlotWindowsStatesList;
-  QList<QByteArray> mPlotWindowsGeometriesList;
   ModelWidgetContainer *mpModelWidgetContainer;
-  DebuggerMainWindow *mpDebuggerMainWindow;
   WelcomePageWidget *mpWelcomePageWidget;
-  AboutOMEditWidget *mpAboutOMEditDialog;
-  InfoBar *mpInfoBar;
+  GitCommands *mpGitCommands;
+  CommitChangesDialog *mpCommitChangesDialog;
+  TraceabilityInformationURI *mpTraceabilityInformationURI;
   QStackedWidget *mpCentralStackedWidget;
-  QStatusBar *mpStatusBar;
   QProgressBar *mpProgressBar;
-  Label *mpPointerXPositionLabel;
-  Label *mpPointerYPositionLabel;
+  Label *mpPositionLabel;
   QTabBar *mpPerspectiveTabbar;
+  QStatusBar *mpStatusBar;
   QTimer *mpAutoSaveTimer;
   // File Menu
   // Modelica File Actions
@@ -213,19 +266,23 @@ private:
   QAction *mpLoadModelicaLibraryAction;
   QAction *mpOpenResultFileAction;
   QAction *mpOpenTransformationFileAction;
-  // TLM File Actions
-  QAction *mpNewMetaModelFileAction;
-  QAction *mpOpenMetaModelFileAction;
+  // CompositeModel File Actions
+  QAction *mpNewCompositeModelFileAction;
+  QAction *mpOpenCompositeModelFileAction;
   QAction *mpLoadExternModelAction;
+  QAction *mpOpenDirectoryAction;
   QAction *mpSaveAction;
   QAction *mpSaveAsAction;
   QAction *mpSaveAllAction;
-  QAction *mpSaveTotalModelAction;
+  QAction *mpSaveTotalAction;
   QAction *mpRecentFileActions[MaxRecentFiles];
   QAction *mpClearRecentFilesAction;
   QAction *mpPrintModelAction;
   QAction *mpQuitAction;
   // Edit Menu
+  QAction *mpUndoAction;
+  QAction *mpRedoAction;
+  QAction *mpFilterClassesAction;
   QAction *mpCutAction;
   QAction *mpCopyAction;
   QAction *mpPasteAction;
@@ -234,13 +291,13 @@ private:
   QAction *mpResetZoomAction;
   QAction *mpZoomInAction;
   QAction *mpZoomOutAction;
-  QAction *mpShowAlgorithmicDebuggerAction;
   QAction *mpCloseWindowAction;
   QAction *mpCloseAllWindowsAction;
   QAction *mpCloseAllWindowsButThisAction;
   QAction *mpCascadeWindowsAction;
   QAction *mpTileWindowsHorizontallyAction;
   QAction *mpTileWindowsVerticallyAction;
+  QAction *mpToggleTabOrSubWindowView;
   // Simulation Menu
   QAction *mpInstantiateModelAction;
   QAction *mpCheckModelAction;
@@ -248,28 +305,48 @@ private:
   QAction *mpSimulateModelAction;
   QAction *mpSimulateWithTransformationalDebuggerAction;
   QAction *mpSimulateWithAlgorithmicDebuggerAction;
+#if !defined(WITHOUT_OSG)
+  QAction *mpSimulateWithAnimationAction;
+#endif
   QAction *mpSimulationSetupAction;
   // FMI Menu
   QAction *mpExportFMUAction;
   QAction *mpImportFMUAction;
+  QAction *mpImportFMUModelDescriptionAction;
   // Export Menu
   QAction *mpExportXMLAction;
   QAction *mpExportFigaroAction;
+  // Debug Menu
+  QAction *mpDebugConfigurationsAction;
+  QAction *mpAttachDebuggerToRunningProcessAction;
+  // Git Menu
+  QAction *mpCreateGitRepositoryAction;
+  QAction *mpLogCurrentFileAction;
+  QAction *mpStageCurrentFileForCommitAction;
+  QAction *mpUnstageCurrentFileFromCommitAction;
+  QAction *mpCommitFilesAction;
+  QAction *mpRevertCommitAction;
+  QAction *mpCleanWorkingDirectoryAction;
+  QAction *mpTraceabilityQueryAction;
   // Tools Menu
   QAction *mpShowOMCLoggerWidgetAction;
+  QAction *mpShowOpenModelicaCommandPromptAction;
+  QAction *mpShowOMCDiffWidgetAction;
   QAction *mpExportToOMNotebookAction;
   QAction *mpImportFromOMNotebookAction;
   QAction *mpImportNgspiceNetlistAction;
+  QAction *mpOpenWorkingDirectoryAction;
+  QAction *mpOpenTerminalAction;
   QAction *mpOptionsAction;
   // Help Menu
   QAction *mpUsersGuideAction;
   QAction *mpUsersGuidePdfAction;
-  QAction *mpUsersGuideOldPdfAction;
   QAction *mpSystemDocumentationAction;
   QAction *mpOpenModelicaScriptingAction;
   QAction *mpModelicaDocumentationAction;
   QAction *mpModelicaByExampleAction;
   QAction *mpModelicaWebReferenceAction;
+  QAction *mpOpenModelicaTLMSimulatorDocumentationAction;
   QAction *mpAboutOMEditAction;
   // Toolbar Actions
   // Shapes Toolbar Actions
@@ -281,6 +358,7 @@ private:
   QAction *mpTextShapeAction;
   QAction *mpBitmapShapeAction;
   QAction *mpConnectModeAction;
+  QAction *mpTransitionModeAction;
   // Model Switcher Toolbar Actions
   QAction *mpModelSwitcherActions[MaxRecentFiles];
   // Plot Toolbar Actions
@@ -288,12 +366,20 @@ private:
   QAction *mpReSimulateSetupAction;
   QAction *mpNewPlotWindowAction;
   QAction *mpNewParametricPlotWindowAction;
+  QAction *mpNewArrayPlotWindowAction;
+  QAction *mpNewArrayParametricPlotWindowAction;
+#if !defined(WITHOUT_OSG)
+  QAction *mpNewAnimationWindowAction;
+#endif
   QAction *mpClearPlotWindowAction;
+  QAction *mpExportVariablesAction;
   // Other Actions
   QAction *mpExportAsImageAction;
   QAction *mpExportToClipboardAction;
   // TLM Simulation Action
+  QAction *mpSimulationParamsAction;
   QAction *mpFetchInterfaceDataAction;
+  QAction *mpAlignInterfacesAction;
   QAction *mpTLMCoSimulationAction;
   // Toolbars
   QMenu *mpRecentFilesMenu;
@@ -302,10 +388,12 @@ private:
   QToolBar *mpEditToolBar;
   QToolBar *mpViewToolBar;
   QToolBar *mpShapesToolBar;
-  QToolBar *mpSimulationToolBar;
   QToolBar *mpModelSwitcherToolBar;
   QToolButton *mpModelSwitcherToolButton;
   QMenu *mpModelSwitcherMenu;
+  QToolBar *mpCheckToolBar;
+  QToolBar *mpSimulationToolBar;
+  QToolBar *mpReSimulationToolBar;
   QToolBar *mpPlotToolBar;
   QToolBar *mpTLMSimulationToolbar;
   QHash<QString, TransformationsWidget*> mTransformationsWidgetHash;
@@ -316,37 +404,43 @@ public slots:
   void loadModelicaLibrary();
   void showOpenResultFileDialog();
   void showOpenTransformationFileDialog();
-  void createNewMetaModelFile();
-  void openMetaModelFile();
+  void createNewCompositeModelFile();
+  void openCompositeModelFile();
   void loadExternalModels();
+  void openDirectory();
   void loadSystemLibrary();
-  void readOutputFile(qint64 bytes);
-  void readErrorFile(qint64 bytes);
-  void focusSearchClassWidget(bool visible);
+  void writeOutputFileData(QString data);
+  void writeErrorFileData(QString data);
   void openRecentFile();
   void clearRecentFilesList();
+  void undo();
+  void redo();
+  void focusFilterClasses();
   void setShowGridLines(bool On);
   void resetZoom();
   void zoomIn();
   void zoomOut();
-  void showAlgorithmicDebugger();
   void closeWindow();
   void closeAllWindows();
   void closeAllWindowsButThis();
   void cascadeSubWindows();
   void tileSubWindowsHorizontally();
   void tileSubWindowsVertically();
-  void instantiatesModel();
+  void toggleTabOrSubWindowView();
+  void instantiateModel();
   void checkModel();
   void checkAllModels();
   void simulateModel();
   void simulateModelWithTransformationalDebugger();
   void simulateModelWithAlgorithmicDebugger();
+  void simulateModelWithAnimation();
   void openSimulationDialog();
   void exportModelFMU();
   void importModelFMU();
+  void importFMUModelDescription();
   void exportModelXML();
   void exportModelFigaro();
+  void showOpenModelicaCommandPrompt();
   void exportModelToOMNotebook();
   void importModelfromOMNotebook();
   void importNgspiceNetlist();
@@ -354,6 +448,8 @@ public slots:
   void exportToClipboard();
   void fetchInterfaceData();
   void TLMSimulate();
+  void openWorkingDirectory();
+  void openTerminal();
   void openConfigurationOptions();
   void openUsersGuide();
   void openUsersGuidePdf();
@@ -363,63 +459,56 @@ public slots:
   void openModelicaDocumentation();
   void openModelicaByExample();
   void openModelicaWebReference();
+  void openOpenModelicaTLMSimulatorDocumentationAction();
   void openAboutOMEdit();
   void toggleShapesButton();
   void openRecentModelWidget();
-  void reSimulateModel();
-  void showReSimulateSetup();
-  void addNewPlotWindow();
-  void addNewParametricPlotWindow();
-  void clearPlotWindow();
-  void showProgressBar();
-  void hideProgressBar();
   void updateModelSwitcherMenu(QMdiSubWindow *pSubWindow);
   void toggleAutoSave();
-  void readInterfaceData(LibraryTreeNode *pLibraryTreeNode);
+  void readInterfaceData(LibraryTreeItem *pLibraryTreeItem);
+  void enableReSimulationToolbar(bool visible);
 private slots:
   void perspectiveTabChanged(int tabIndex);
+  void documentationDockWidgetVisibilityChanged(bool visible);
+  void threeDViewerDockWidgetVisibilityChanged(bool visible);
   void autoSave();
   void switchToWelcomePerspectiveSlot();
   void switchToModelingPerspectiveSlot();
   void switchToPlottingPerspectiveSlot();
+  void switchToAlgorithmicDebuggingPerspectiveSlot();
+  void showConfigureDialog();
+  void showAttachToProcessDialog();
+  void createGitRepository();
+  void logCurrentFile();
+  void stageCurrentFileForCommit();
+  void unstageCurrentFileFromCommit();
+  void commitFiles();
+  void revertCommit();
+  void cleanWorkingDirectory();
+  void queryTraceabilityInformation();
 private:
   void createActions();
   void createToolbars();
   void createMenus();
-  void storePlotWindowsStateAndGeometry();
+  void autoSaveHelper(LibraryTreeItem *pLibraryTreeItem);
   void switchToWelcomePerspective();
   void switchToModelingPerspective();
   void switchToPlottingPerspective();
+  void switchToAlgorithmicDebuggingPerspective();
   void closeAllWindowsButThis(QMdiArea *pMdiArea);
   void tileSubWindows(QMdiArea *pMdiArea, bool horizontally);
-  void fetchInterfaceDataHelper(LibraryTreeNode *pLibraryTreeNode);
+  void fetchInterfaceDataHelper(LibraryTreeItem *pLibraryTreeItem, QString singleModel=QString());
 protected:
   virtual void dragEnterEvent(QDragEnterEvent *event);
   virtual void dragMoveEvent(QDragMoveEvent *event);
   virtual void dropEvent(QDropEvent *event);
-  virtual void resizeEvent(QResizeEvent *event);
 };
 
-class InfoBar : public QFrame
-{
-public:
-  InfoBar(QWidget *pParent);
-  void showMessage(QString message);
-private:
-  Label *mpInfoLabel;
-  QToolButton *mpCloseButton;
-};
-
-class AboutOMEditWidget : public QWidget
+class AboutOMEditDialog : public QDialog
 {
   Q_OBJECT
 public:
-  AboutOMEditWidget(MainWindow *pMainWindow);
-  void paintEvent(QPaintEvent *pEvent);
-private:
-  QPixmap mBackgroundPixmap;
-protected:
-  virtual void keyPressEvent(QKeyEvent *pEvent);
+  AboutOMEditDialog(MainWindow *pMainWindow);
 };
 
 #endif // MAINWINDOW_H

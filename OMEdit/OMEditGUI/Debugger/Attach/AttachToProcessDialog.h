@@ -28,25 +28,26 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: AttachToProcessDialog.h 22008 2014-08-26 23:13:07Z hudson $
- *
  */
 
 #ifndef ATTACHTOPROCESSDIALOG_H
 #define ATTACHTOPROCESSDIALOG_H
 
-#include "DebuggerMainWindow.h"
+#include <QDialog>
+#include <QLineEdit>
+#include <QTreeView>
+#include <QDialogButtonBox>
 
+#include "ProcessListModel.h"
+
+class Label;
 class AttachToProcessDialog : public QDialog
 {
   Q_OBJECT
 public:
-  AttachToProcessDialog(DebuggerMainWindow *pDebuggerMainWindow);
+  AttachToProcessDialog(QWidget *pParent = 0);
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   Label *mpAttachToProcessIDLabel;
   QLineEdit *mpAttachToProcessIDTextBox;
   QLineEdit *mpFilterProcessesTextBox;
@@ -64,7 +65,6 @@ public slots:
   void setFilterString(const QString &filter);
   void processSelected(const QModelIndex &index);
   void processClicked(const QModelIndex &index);
-
 };
 
 #endif // ATTACHTOPROCESSDIALOG_H

@@ -29,23 +29,24 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TRANSFORMATIONSWIDGET_H
 #define TRANSFORMATIONSWIDGET_H
 
-#include "MainWindow.h"
-#include "OMDumpXML.h"
-#include "TransformationsEditor.h"
+#include <QTreeView>
+#include <QSortFilterProxyModel>
+#include <QTreeWidget>
+#include <QComboBox>
+#include <QSplitter>
 
-class MainWindow;
+#include "OMDumpXML.h"
+
 class TransformationsWidget;
 class TVariablesTreeView;
+class TreeSearchFilters;
+class Label;
 
 class TVariablesTreeItem
 {
@@ -158,8 +159,7 @@ class TransformationsWidget : public QWidget
 {
   Q_OBJECT
 public:
-  TransformationsWidget(QString infoXMLFullFileName, MainWindow *pMainWindow);
-  MainWindow* getMainWindow() {return mpMainWindow;}
+  TransformationsWidget(QString infoJSONFullFileName, QWidget *pParent = 0);
   MyHandler* getInfoXMLFileHandler() {return mpInfoXMLFileHandler;}
   QTreeWidget* getEquationsTreeWidget() {return mpEquationsTreeWidget;}
   InfoBar* getTSourceEditorInfoBar() {return mpTSourceEditorInfoBar;}
@@ -170,7 +170,6 @@ public:
   QSplitter* getEquationsNestedVerticalSplitter() {return mpEquationsNestedVerticalSplitter;}
   QSplitter* getEquationsHorizontalSplitter() {return mpEquationsHorizontalSplitter;}
   QSplitter* getTransformationsVerticalSplitter() {return mpTransformationsVerticalSplitter;}
-  QSplitter* getTransformationsHorizontalSplitter() {return mpTransformationsHorizontalSplitter;}
   void loadTransformations();
   void fetchDefinedInEquations(const OMVariable &variable);
   void fetchUsedInEquations(const OMVariable &variable);
@@ -181,18 +180,14 @@ public:
   void fetchEquationData(int equationIndex);
   void fetchDefines(OMEquation *equation);
   void fetchDepends(OMEquation *equation);
-  void fetchOperations(OMEquation *equation);
+  void fetchOperations(OMEquation *equation, HtmlDiff htmlDiff);
   void clearTreeWidgetItems(QTreeWidget *pTreeWidget);
 private:
-  MainWindow *mpMainWindow;
-  QString mInfoXMLFullFileName, mProfJSONFullFileName, mProfilingDataRealFileName;
+  QString mInfoJSONFullFileName, mProfJSONFullFileName, mProfilingDataRealFileName;
   int profilingNumSteps;
+  int mCurrentEquationIndex;
   MyHandler *mpInfoXMLFileHandler;
-  QLineEdit *mpFindVariablesTextBox;
-  QComboBox *mpFindSyntaxComboBox;
-  QCheckBox *mpFindCaseSensitiveCheckBox;
-  QPushButton *mpExpandAllButton;
-  QPushButton *mpCollapseAllButton;
+  TreeSearchFilters *mpTreeSearchFilters;
   TVariablesTreeView *mpTVariablesTreeView;
   TVariablesTreeModel *mpTVariablesTreeModel;
   TVariableTreeProxyModel *mpTVariableTreeProxyModel;
@@ -202,6 +197,7 @@ private:
   EquationTreeWidget *mpEquationsTreeWidget;
   QTreeWidget *mpDefinesVariableTreeWidget;
   QTreeWidget *mpDependsVariableTreeWidget;
+  QComboBox *mpEquationDiffFilterComboBox;
   QTreeWidget *mpEquationOperationsTreeWidget;
   Label *mpTSourceEditorFileLabel;
   InfoBar *mpTSourceEditorInfoBar;
@@ -213,7 +209,6 @@ private:
   QSplitter *mpEquationsNestedVerticalSplitter;
   QSplitter *mpEquationsHorizontalSplitter;
   QSplitter *mpTransformationsVerticalSplitter;
-  QSplitter *mpTransformationsHorizontalSplitter;
   QHash<QString,OMVariable> mVariables;
   QList<OMEquation*> mEquations;
   bool hasOperationsEnabled;
@@ -225,6 +220,7 @@ public slots:
   void findVariables();
   void fetchVariableData(const QModelIndex &index);
   void fetchEquationData(QTreeWidgetItem *pEquationTreeItem, int column);
+  void filterEquationOperations(int index);
 };
 
 #endif // TRANSFORMATIONSWIDGET_H

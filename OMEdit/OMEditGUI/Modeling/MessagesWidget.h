@@ -29,29 +29,22 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef MESSAGESWIDGET_H
 #define MESSAGESWIDGET_H
 
-#include "MainWindow.h"
+#include "Util/StringHandler.h"
 
-class MainWindow;
-class StringHandler;
-
-class MessagesWidget;
+#include <QTextBrowser>
 
 class MessageItem
 {
 public:
   enum MessageItemType {
     Modelica,   /* Used to represent error messages of Modelica models. */
-    TLM         /* Used to represent error messages of TLM files. */
+    CompositeModel   /* Used to represent error messages of CompositeModel files. */
   };
   QString mTime;
   QString mFileName;
@@ -83,14 +76,21 @@ class MessagesWidget : public QWidget
 {
   Q_OBJECT
 private:
-  MainWindow *mpMainWindow;
+  // the only class that is allowed to create and destroy
+  friend class MainWindow;
+
+  static void create();
+  static void destroy();
+  MessagesWidget(QWidget *pParent = 0);
+
+  static MessagesWidget *mpInstance;
   int mMessageNumber;
   QTextBrowser *mpMessagesTextBrowser;
   QAction *mpSelectAllAction;
   QAction *mpCopyAction;
   QAction *mpClearAllAction;
 public:
-  MessagesWidget(MainWindow *pMainWindow);
+  static MessagesWidget* instance() {return mpInstance;}
   void resetMessagesNumber() {mMessageNumber = 1;}
   QTextBrowser* getMessagesTextBrowser() {return mpMessagesTextBrowser;}
   void applyMessagesSettings();
@@ -100,6 +100,7 @@ signals:
 private slots:
   void openErrorMessageClass(QUrl url);
   void showContextMenu(QPoint point);
+public slots:
   void clearMessages();
 };
 

@@ -29,18 +29,15 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef STRINGHANDLER_H
 #define STRINGHANDLER_H
 
-#include <QtCore>
-#include <QtGui>
+#include <QObject>
+#include <QComboBox>
+#include <QProcessEnvironment>
 
 class StringHandler : public QObject
 {
@@ -49,7 +46,7 @@ public:
   StringHandler();
   ~StringHandler();
   enum ViewType {Icon, Diagram, ModelicaText, NoView};
-  enum ModelicaClasses {Model, Class, Connector, ExpandableConnector, Record, Block, Function, Package, Primitive, Type, Operator,
+  enum ModelicaClasses {Model, Class, ExpandableConnector, Connector, Record, Block, Function, Package, Primitive, Type, Operator,
                         OperatorRecord, OperatorFunction, Optimization, Parameter, Constant, Protected, Enumeration};
   enum OpenModelicaErrors {Notification, Warning, OMError, NoOMError};
   enum OpenModelicaErrorKinds {Syntax, Grammar, Translation, Symbolic, Simulation, Scripting, NoOMErrorKind};
@@ -70,6 +67,14 @@ public:
     Debug,
     OMEditInfo  /* used internally by OMEdit to mark message blue. */
   };
+  enum TLMCausality { TLMBidirectional, TLMInput, TLMOutput };
+  static QString getTLMCausality(int causality);
+  enum TLMDomain { Mechanical, Electric, Hydraulic, Pneumatic, Magnetic, Signal };
+  static QString getTLMDomain(int domain);
+  enum SimulationTools {Adams, Beast, Dymola, OpenModelica, Simulink, WolframSystemModeler, Other};
+  static QString getSimulationTool(int tool);
+  static QString getSimulationToolStartCommand(QString tool, QString simulationToolStartCommand);
+  static StringHandler::SimulationTools getSimulationTool(QString simulationToolStartCommand);
   static QString getModelicaClassType(int type);
   static StringHandler::ModelicaClasses getModelicaClassType(QString type);
   static QString getViewType(int type);
@@ -104,7 +109,7 @@ public:
   static QString removeFirstLastCurlBrackets(QString value);
   static QString removeFirstLastBrackets(QString value);
   static QString removeFirstLastQuotes(QString value);
-  static QString getSubStringBeforeDots(QString value);
+  static QString removeFirstLastSingleQuotes(QString value);
   static QStringList getStrings(QString value);
   static QStringList getStrings(QString value, char start, char end);
   /* Handles quoted identifiers A.B.'C.D' -> A.B, A.B.C.D -> A.B.C */
@@ -112,8 +117,8 @@ public:
   static QString removeLastWordAfterDot(QString value);
   static QString getFirstWordBeforeDot(QString value);
   static QString removeFirstWordAfterDot(QString value);
-  static QString getModifierValue(QString value);
   static QString escapeString(QString value);
+  static QString escapeStringQuotes(QString value);
   // Returns "" if the string is not a standard Modelica string. Else it unparses it into normal form.
   static QString unparse(QString value);
   // Returns empty list if the string is not a standard Modelica string-array. Else it unparses it into normal form.
@@ -122,26 +127,26 @@ public:
   static QStringList unparseArrays(QString value);
   // Returns false on failure
   static bool unparseBool(QString value);
-  static QString getSaveFileName(QWidget* parent = 0, const QString &caption = QString(), QString * dir = 0, const QString & filter = QString(),
-                                 QString * selectedFilter = 0, const QString &defaultSuffix = QString(), const QString *purposedName = 0);
-  static QString getOpenFileName(QWidget* parent = 0, const QString &caption = QString(), QString * dir = 0, const QString & filter = QString(),
+  static QString getSaveFileName(QWidget* parent = 0, const QString &caption = "", QString * dir = 0, const QString & filter = "",
+                                 QString * selectedFilter = 0, const QString &defaultSuffix = "", const QString *proposedName = 0);
+  static QString getSaveFolderName(QWidget* parent = 0, const QString &caption = "", QString * dir = 0, const QString & filter = "",
+                                   QString * selectedFilter = 0, const QString *proposedName = 0);
+  static QString getOpenFileName(QWidget* parent = 0, const QString &caption = "", QString * dir = 0, const QString & filter = "",
                                  QString * selectedFilter = 0);
-  static QStringList getOpenFileNames(QWidget* parent = 0, const QString &caption = QString(), QString * dir = 0, const QString & filter = QString(),
-                                 QString * selectedFilter = 0);
-  static QString getExistingDirectory(QWidget* parent = 0, const QString &caption = QString(), QString * dir = 0);
+  static QStringList getOpenFileNames(QWidget* parent = 0, const QString &caption = "", QString * dir = 0, const QString & filter = "",
+                                      QString * selectedFilter = 0);
+  static QString getExistingDirectory(QWidget* parent = 0, const QString &caption = "", QString * dir = 0);
   static void setLastOpenDirectory(QString lastOpenDirectory);
   static QString getLastOpenDirectory();
-  static QStringList getDialogAnnotation(QString componentAnnotation);
+  static QStringList getAnnotation(QString componentAnnotation, QString annotationName);
   static QString getPlacementAnnotation(QString componentAnnotation);
   static qreal getNormalizedAngle(qreal angle);
   static QStringList splitStringWithSpaces(QString value);
   static void fillEncodingComboBox(QComboBox *pEncodingComboBox);
   static QStringList makeVariableParts(QString variable);
-  static bool isCFile(QString extension);
-  static bool isModelicaFile(QString extension);
+  static QStringList makeVariablePartsWithInd(QString variable);
   static bool naturalSort(const QString &s1, const QString &s2);
 #ifdef WIN32
-  static QProcessEnvironment compilationProcessEnvironment(QString *pCompilationProcessPath);
   static QProcessEnvironment simulationProcessEnvironment();
 #endif
   static StringHandler::SimulationMessageType getSimulationMessageType(QString type);
@@ -149,6 +154,11 @@ public:
   static QColor getSimulationMessageTypeColor(StringHandler::SimulationMessageType type);
   static QString makeClassNameRelative(QString draggedClassName, QString droppedClassName);
   static QString toCamelCase(QString str);
+  static QMap<int, int> getLeadingSpaces(QString contents);
+  static int getLeadingSpacesSize(QString str);
+  static bool isFileWritAble(QString filePath);
+  static bool containsSpace(QString str);
+  static QString joinDerivativeAndPreviousVariable(QString fullVariableName, QString variableName, QString derivativeOrPrevious);
 protected:
   static QString mLastOpenDir;
 };

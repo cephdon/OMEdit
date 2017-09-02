@@ -29,11 +29,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "Helper.h"
@@ -53,10 +49,10 @@ QString Helper::omFileTypes = "Modelica Files (*.mo)";
 QString Helper::omnotebookFileTypes = "OMNotebook Files (*.onb *.onbz *.nb)";
 QString Helper::ngspiceNetlistFileTypes = "ngspice Netlist Files (*.cir *.sp *.spice)";
 QString Helper::imageFileTypes = "SVG (*.svg);;PNG image (*.png);;Windows BMP image (*.bmp);;TIFF (*.tiff)";
-QString Helper::bitmapFileTypes = "PNG image (*.png);;Windows BMP image (*.bmp);;JPEG (*.jpg *.jpeg)";
+QString Helper::bitmapFileTypes = "Image Files (*.png *.bmp *.jpg *.jpeg);;PNG image (*.png);;Windows BMP image (*.bmp);;JPEG (*.jpg *.jpeg)";
 QString Helper::fmuFileTypes = "FMU Files (*.fmu)";
 QString Helper::xmlFileTypes = "XML Files (*.xml)";
-QString Helper::infoXmlFileTypes = "OM Info Files (*_info.xml *_info.json)";
+QString Helper::infoXmlFileTypes = "OM Info Files (*_info.json)";
 QString Helper::matFileTypes = "MAT Files (*.mat)";
 QString Helper::omResultFileTypes = "OpenModelica Result Files (*.mat *.plt *.csv)";
 #ifdef WIN32
@@ -66,9 +62,9 @@ QString Helper::exeFileTypes = "Executable files (*)";
 #endif
 QString Helper::txtFileTypes = "TXT Files (*.txt)";
 QString Helper::figaroFileTypes = "Figaro Files (*.fi)";
+QString Helper::visualizationFileTypes = "Visualization Files (*.mat *.csv *.fmu);;Visualization MAT(*.mat);;Visualization CSV(*.csv);;Visualization FMU(*.fmu)";
 int Helper::treeIndentation = 13;
 QSize Helper::iconSize = QSize(20, 20);
-QSize Helper::buttonIconSize = QSize(16, 16);
 int Helper::tabWidth = 20;
 QString Helper::modelicaComponentFormat = "image/modelica-component";
 QString Helper::modelicaFileFormat = "text/uri-list";
@@ -92,13 +88,11 @@ QString Helper::textOutput = "Text";
 QString Helper::utf8 = "UTF-8";
 QFontInfo Helper::systemFontInfo = QFontInfo(QFont());
 QFontInfo Helper::monospacedFontInfo = QFontInfo(QFont());
-QString Helper::defaultComponentAnnotationString = QString("{-100.0,-100.0,100.0,100.0,true,0.1,2.0,2.0,"
-                                                  "{Rectangle(true, {0.0, 0.0}, 0, {0, 0, 0}, {240, 240, 240}, LinePattern.Solid, FillPattern.Solid, 0.25, BorderPattern.None, {{-100, 100}, {100, -100}}, 0),"
-                                                  "Text(true, {0.0, 0.0}, 0, {0, 0, 0}, {0, 0, 0}, LinePattern.Solid, FillPattern.None, 0.25, {{-100, 20}, {100, -20}}, \"%name\", 0, TextAlignment.Center)}}");
-QString Helper::errorComponentAnnotationString = QString("{-100.0,-100.0,100.0,100.0,false,0.1,2.0,2.0,"
-                                                         "{Rectangle(true, {0.0, 0.0}, 0, {255, 0, 0}, {0, 0, 0}, LinePattern.Solid, FillPattern.None, 0.25, BorderPattern.None, {{-100, -100}, {100, 100}}, 0),"
-                                                         "Line(true, {0.0, 0.0}, 0, {{-100, 100}, {100, -100}}, {255, 0, 0}, LinePattern.Solid, 0.25, {Arrow.None, Arrow.None}, 3, Smooth.None),"
-                                                         "Line(true, {0.0, 0.0}, 0, {{100, 100}, {-100, -100}}, {255, 0, 0}, LinePattern.Solid, 0.25, {Arrow.None, Arrow.None}, 3, Smooth.None)}}");
+#ifdef Q_OS_MAC
+QString Helper::toolsOptionsPath = "OMEdit->Preferences";
+#else
+QString Helper::toolsOptionsPath = "Tools->Options";
+#endif
 /* Meta Modelica Types */
 QString Helper::MODELICA_METATYPE = QString("modelica_metatype");
 QString Helper::MODELICA_STRING = QString("modelica_string");
@@ -120,16 +114,18 @@ QString Helper::REAL = QString("Real");
 /* Global translated variables */
 QString Helper::newModelicaClass;
 QString Helper::createNewModelicaClass;
-QString Helper::findClasses;
 QString Helper::openModelicaFiles;
 QString Helper::openConvertModelicaFiles;
 QString Helper::libraries;
 QString Helper::clearRecentFiles;
 QString Helper::encoding;
+QString Helper::fileLabel;
 QString Helper::file;
+QString Helper::folder;
 QString Helper::browse;
 QString Helper::ok;
 QString Helper::cancel;
+QString Helper::reset;
 QString Helper::close;
 QString Helper::error;
 QString Helper::chooseFile;
@@ -139,6 +135,11 @@ QString Helper::properties;
 QString Helper::add;
 QString Helper::edit;
 QString Helper::save;
+QString Helper::saveTip;
+QString Helper::saveAs;
+QString Helper::saveAsTip;
+QString Helper::saveTotal;
+QString Helper::saveTotalTip;
 QString Helper::apply;
 QString Helper::chooseDirectory;
 QString Helper::general;
@@ -150,6 +151,7 @@ QString Helper::path;
 QString Helper::type;
 QString Helper::information;
 QString Helper::rename;
+QString Helper::renameTip;
 QString Helper::checkModel;
 QString Helper::checkModelTip;
 QString Helper::checkAllModels;
@@ -177,6 +179,9 @@ QString Helper::OpenModelicaCompilerCLI;
 QString Helper::deleteStr;
 QString Helper::copy;
 QString Helper::paste;
+QString Helper::resetZoom;
+QString Helper::zoomIn;
+QString Helper::zoomOut;
 QString Helper::loading;
 QString Helper::question;
 QString Helper::search;
@@ -184,7 +189,7 @@ QString Helper::unloadClass;
 QString Helper::duplicate;
 QString Helper::duplicateTip;
 QString Helper::unloadClassTip;
-QString Helper::unloadXMLTip;
+QString Helper::unloadCompositeModelOrTextTip;
 QString Helper::refresh;
 QString Helper::simulate;
 QString Helper::simulateTip;
@@ -192,10 +197,13 @@ QString Helper::reSimulate;
 QString Helper::reSimulateTip;
 QString Helper::reSimulateSetup;
 QString Helper::reSimulateSetupTip;
+QString Helper::exportVariables;
 QString Helper::simulateWithTransformationalDebugger;
 QString Helper::simulateWithTransformationalDebuggerTip;
 QString Helper::simulateWithAlgorithmicDebugger;
 QString Helper::simulateWithAlgorithmicDebuggerTip;
+QString Helper::simulateWithAnimation;
+QString Helper::simulateWithAnimationTip;
 QString Helper::simulationSetup;
 QString Helper::simulationSetupTip;
 QString Helper::simulation;
@@ -223,7 +231,7 @@ QString Helper::arrowSize;
 QString Helper::size;
 QString Helper::lineStyle;
 QString Helper::color;
-QString Helper::fontAndColors;
+QString Helper::Colors;
 QString Helper::fontFamily;
 QString Helper::fontSize;
 QString Helper::pickColor;
@@ -248,15 +256,19 @@ QString Helper::iconView;
 QString Helper::diagramView;
 QString Helper::textView;
 QString Helper::documentationView;
-QString Helper::searchModelicaClass;
+QString Helper::filterClasses;
 QString Helper::findReplaceModelicaText;
 QString Helper::left;
 QString Helper::center;
 QString Helper::right;
-QString Helper::connectArray;
+QString Helper::createConnection;
+QString Helper::connectionAttributes;
+QString Helper::createTransition;
+QString Helper::editTransition;
 QString Helper::findVariables;
-QString Helper::viewClass;
-QString Helper::viewClassTip;
+QString Helper::filterVariables;
+QString Helper::openClass;
+QString Helper::openClassTip;
 QString Helper::viewDocumentation;
 QString Helper::viewDocumentationTip;
 QString Helper::dontShowThisMessageAgain;
@@ -277,6 +289,17 @@ QString Helper::executionFraction;
 QString Helper::debuggingFileNotSaveInfo;
 QString Helper::algorithmicDebugger;
 QString Helper::debugConfigurations;
+QString Helper::debugConfigurationsTip;
+QString Helper::createGitReposiory;
+QString Helper::createGitReposioryTip;
+QString Helper::logCurrentFile;
+QString Helper::logCurrentFileTip;
+QString Helper::stageCurrentFileForCommit;
+QString Helper::stageCurrentFileForCommitTip;
+QString Helper::unstageCurrentFileFromCommit;
+QString Helper::unstageCurrentFileFromCommitTip;
+QString Helper::commitFiles;
+QString Helper::commitFilesTip;
 QString Helper::resume;
 QString Helper::interrupt;
 QString Helper::exit;
@@ -284,6 +307,7 @@ QString Helper::stepOver;
 QString Helper::stepInto;
 QString Helper::stepReturn;
 QString Helper::attachToRunningProcess;
+QString Helper::attachToRunningProcessTip;
 QString Helper::crashReport;
 QString Helper::parsingFailedJson;
 QString Helper::expandAll;
@@ -294,27 +318,60 @@ QString Helper::simulationOutput;
 QString Helper::cancelSimulation;
 QString Helper::fetchInterfaceData;
 QString Helper::fetchInterfaceDataTip;
+QString Helper::alignInterfaces;
+QString Helper::alignInterfacesTip;
 QString Helper::tlmCoSimulationSetup;
 QString Helper::tlmCoSimulationSetupTip;
 QString Helper::tlmCoSimulation;
+QString Helper::animationChooseFile;
+QString Helper::animationChooseFileTip;
+QString Helper::animationInitialize;
+QString Helper::animationInitializeTip;
+QString Helper::animationPlay;
+QString Helper::animationPlayTip;
+QString Helper::animationPause;
+QString Helper::animationPauseTip;
+QString Helper::simulationParams;
+QString Helper::simulationParamsTip;
 QString Helper::running;
 QString Helper::finished;
+QString Helper::newVariable;
+QString Helper::library;
+QString Helper::moveUp;
+QString Helper::moveDown;
+QString Helper::fixErrorsManually;
+QString Helper::revertToLastCorrectVersion;
+QString Helper::OMCFlags;
+QString Helper::OMCFlagsTip;
+QString Helper::saveExperimentAnnotation;
+QString Helper::saveOpenModelicaSimulationFlagsAnnotation;
+QString Helper::item;
+QString Helper::bold;
+QString Helper::italic;
+QString Helper::underline;
+QString Helper::condition;
+QString Helper::immediate;
+QString Helper::synchronize;
+QString Helper::priority;
+QString Helper::secs;
 
 void Helper::initHelperVariables()
 {
   /* Global translated variables */
   Helper::newModelicaClass = tr("New Modelica Class");
   Helper::createNewModelicaClass = tr("Create New Modelica Class");
-  Helper::findClasses = tr("Find Classes");
   Helper::openModelicaFiles = tr("Open Model/Library File(s)");
   Helper::openConvertModelicaFiles = tr("Open/Convert Modelica File(s) With Encoding");
   Helper::libraries = tr("Libraries");
   Helper::clearRecentFiles = tr("Clear Recent Files");
   Helper::encoding = tr("Encoding:");
-  Helper::file = tr("File:");
+  Helper::fileLabel = tr("File:");
+  Helper::file = tr("File");
+  Helper::folder = tr("Folder");
   Helper::browse = tr("Browse...");
   Helper::ok = tr("OK");
   Helper::cancel = tr("Cancel");
+  Helper::reset = tr("Reset");
   Helper::close = tr("Close");
   Helper::error = tr("Error");
   Helper::chooseFile = tr("Choose File");
@@ -324,6 +381,11 @@ void Helper::initHelperVariables()
   Helper::add = tr("Add");
   Helper::edit = tr("Edit");
   Helper::save = tr("Save");
+  Helper::saveTip = tr("Save a file");
+  Helper::saveAs = tr("Save As");
+  Helper::saveAsTip = tr("Save a copy of the class in a new file");
+  Helper::saveTotal = tr("Save Total");
+  Helper::saveTotalTip = tr("Save class with all used classes");
   Helper::apply = tr("Apply");
   Helper::importFMU = tr("Import FMU");
   Helper::chooseDirectory = tr("Choose Directory");
@@ -335,7 +397,8 @@ void Helper::initHelperVariables()
   Helper::path = tr("Path:");
   Helper::type = tr("Type");
   Helper::information = tr("Information");
-  Helper::rename = tr("rename");
+  Helper::rename = tr("Rename");
+  Helper::renameTip = tr("Renames an item");
   Helper::checkModel = tr("Check Model");
   Helper::checkModelTip = tr("Check the Modelica class");
   Helper::checkAllModels = tr("Check All Models");
@@ -363,6 +426,9 @@ void Helper::initHelperVariables()
   Helper::deleteStr = tr("Delete");
   Helper::copy = tr("Copy");
   Helper::paste = tr("Paste");
+  Helper::resetZoom = tr("Reset Zoom");
+  Helper::zoomIn = tr("Zoom In");
+  Helper::zoomOut = tr("Zoom Out");
   Helper::loading = tr("Loading");
   Helper::question = tr("Question");
   Helper::search = tr("Search");
@@ -370,7 +436,7 @@ void Helper::initHelperVariables()
   Helper::duplicateTip = tr("Duplicates the item");
   Helper::unloadClass = tr("Unload");
   Helper::unloadClassTip = tr("Unload the Modelica class");
-  Helper::unloadXMLTip = tr("Unload the XML file");
+  Helper::unloadCompositeModelOrTextTip = tr("Unloads the CompositeModel/Text file");
   Helper::refresh = tr("Refresh");
   Helper::simulate = tr("Simulate");
   Helper::simulateTip = tr("Simulates the Modelica class");
@@ -378,10 +444,13 @@ void Helper::initHelperVariables()
   Helper::reSimulateTip = tr("Re-simulates the Modelica class");
   Helper::reSimulateSetup = tr("Re-simulate Setup");
   Helper::reSimulateSetupTip = tr("Setup re-simulation settings");
+  Helper::exportVariables = tr("Export Variables");
   Helper::simulateWithTransformationalDebugger = tr("Simulate with Transformational Debugger");
   Helper::simulateWithTransformationalDebuggerTip = tr("Simulates the Modelica class with Transformational Debugger");
   Helper::simulateWithAlgorithmicDebugger = tr("Simulate with Algorithmic Debugger");
   Helper::simulateWithAlgorithmicDebuggerTip = tr("Simulates the Modelica class with Algorithmic Debugger");
+  Helper::simulateWithAnimation = tr("Simulate with Animation");
+  Helper::simulateWithAnimationTip = tr("Simulates the Modelica class with Animation");
   Helper::simulationSetup = tr("Simulation Setup");
   Helper::simulationSetupTip = tr("Setup simulation settings");
   Helper::simulation = tr("Simulation");
@@ -409,7 +478,7 @@ void Helper::initHelperVariables()
   Helper::size = tr("Size:");
   Helper::lineStyle = tr("Line Style");
   Helper::color = tr("Color:");
-  Helper::fontAndColors = tr("Font and Colors");
+  Helper::Colors = tr("Colors");
   Helper::fontFamily = tr("Font Family:");
   Helper::fontSize = tr("Font Size:");
   Helper::pickColor = tr("Pick Color");
@@ -434,15 +503,19 @@ void Helper::initHelperVariables()
   Helper::diagramView = tr("Diagram View");
   Helper::textView = tr("Text View");
   Helper::documentationView = tr("Documentation View");
-  Helper::searchModelicaClass = tr("Search Modelica Class");
+  Helper::filterClasses = tr("Filter Classes");
   Helper::findReplaceModelicaText = tr("Find/Replace...");
   Helper::left = tr("Left");
   Helper::center = tr("Center");
   Helper::right = tr("Right");
-  Helper::connectArray = tr("Connect Array");
+  Helper::createConnection = tr("Create Connection");
+  Helper::connectionAttributes = tr("Connection Attributes");
+  Helper::createTransition = tr("Create Transition");
+  Helper::editTransition = tr("Edit Transition");
   Helper::findVariables = tr("Find Variables");
-  Helper::viewClass = tr("View Class");
-  Helper::viewClassTip = tr("Opens the class details");
+  Helper::filterVariables = tr("Filter Variables");
+  Helper::openClass = tr("Open Class");
+  Helper::openClassTip = tr("Opens the class details");
   Helper::viewDocumentation = tr("View Documentation");
   Helper::viewDocumentationTip = tr("Opens the class documentation");
   Helper::dontShowThisMessageAgain = tr("Don't show this message again");
@@ -463,6 +536,17 @@ void Helper::initHelperVariables()
   Helper::debuggingFileNotSaveInfo = tr("<b>Info: </b>Update the actual model in <b>Modeling</b> perspective and simulate again. This is only shown for debugging purpose. Your changes will not be saved.");
   Helper::algorithmicDebugger = tr("Algorithmic Debugger");
   Helper::debugConfigurations = tr("Debug Configurations");
+  Helper::debugConfigurationsTip = tr("Manage debug configurations");
+  Helper::createGitReposiory = tr("Create Repository");
+  Helper::createGitReposioryTip = tr("Create a Git repository");
+  Helper::logCurrentFile = tr("Log Current File");
+  Helper::logCurrentFileTip = tr("Logging current file");
+  Helper::stageCurrentFileForCommit = tr("Stage Current File");
+  Helper::stageCurrentFileForCommitTip = tr("Staging current file for next commit");
+  Helper::unstageCurrentFileFromCommit = tr("Unstage Current File");
+  Helper::unstageCurrentFileFromCommitTip = tr("Unstaging current file from next commit");
+  Helper::commitFiles = tr("Commit");
+  Helper::commitFilesTip = tr("Commiting modified files to the repository");
   Helper::resume = tr("Resume");
   Helper::interrupt = tr("Interrupt");
   Helper::exit = tr("Exit");
@@ -470,21 +554,53 @@ void Helper::initHelperVariables()
   Helper::stepInto = tr("Step Into");
   Helper::stepReturn = tr("Step Return");
   Helper::attachToRunningProcess = tr("Attach to Running Process");
+  Helper::attachToRunningProcessTip = tr("Attach the debugger to running process");
   Helper::crashReport = tr("Crash Report");
   Helper::parsingFailedJson = tr("Parsing of JSON file failed");
   Helper::expandAll = tr("Expand All");
   Helper::collapseAll = tr("Collapse All");
-  Helper::version = tr("Version:");
+  Helper::version = tr("Version");
   Helper::unlimited = tr("unlimited");
   Helper::simulationOutput = tr("Simulation Output");
   Helper::cancelSimulation = tr("Cancel Simulation");
   Helper::fetchInterfaceData = tr("Fetch Interface Data");
-  Helper::fetchInterfaceDataTip = tr("Fetches the interface data for TLM co-simulation");
+  Helper::fetchInterfaceDataTip = tr("Fetches the interface data");
+  Helper::alignInterfaces = tr("Align Interfaces");
+  Helper::alignInterfacesTip = tr("Aligns the interfaces");
   Helper::tlmCoSimulationSetup = tr("TLM Co-Simulation Setup");
   Helper::tlmCoSimulationSetupTip = tr("Opens the TLM co-simulation setup");
   Helper::tlmCoSimulation = tr("TLM Co-Simulation");
+  Helper::animationChooseFile = tr("Animation File");
+  Helper::animationChooseFileTip = tr("Open an animation.");
+  Helper::animationInitialize = tr("Initialize");
+  Helper::animationInitializeTip = tr("Initialize the animation scene");
+  Helper::animationPlay = tr("Play");
+  Helper::animationPlayTip = tr("Play the animation");
+  Helper::animationPause = tr("Pause");
+  Helper::animationPauseTip = tr("Pause the animation");
+  Helper::simulationParams = tr("Simulation Parameters");
+  Helper::simulationParamsTip = tr("Shows the Simulation Parameters dialog");
   Helper::running = tr("Running");
   Helper::finished = tr("Finished");
+  Helper::newVariable = tr("<New Variable>");
+  Helper::library = tr("Library");
+  Helper::moveUp = tr("Move Up");
+  Helper::moveDown = tr("Move Down");
+  Helper::fixErrorsManually = tr("Fix error(s) manually");
+  Helper::revertToLastCorrectVersion = tr("Revert to last correct version");
+  Helper::OMCFlags = tr("OMC Flags");
+  Helper::OMCFlagsTip = tr("Space separated list of flags e.g., -d=initialization --cheapmatchingAlgorithm=3");
+  Helper::saveExperimentAnnotation = tr("Save experiment annotation inside model");
+  Helper::saveOpenModelicaSimulationFlagsAnnotation = tr("Save __OpenModelica_simulationFlags annotation inside model");
+  Helper::item = tr("item");
+  Helper::bold = tr("Bold");
+  Helper::italic = tr("Italic");
+  Helper::underline = tr("Underline");
+  Helper::condition = tr("Condition:");
+  Helper::immediate = tr("Immediate");
+  Helper::synchronize = tr("Synchronize");
+  Helper::priority = tr("Priority:");
+  Helper::secs = tr("secs");
 }
 
 QString GUIMessages::getMessage(int type)
@@ -494,7 +610,7 @@ QString GUIMessages::getMessage(int type)
     case CHECK_MESSAGES_BROWSER:
       return tr("Please check the Messages Browser for more error specific details.");
     case SAME_COMPONENT_NAME:
-      return tr("A Component with the same name already exists. Please choose another Name.");
+      return tr("A component with the name <b>%1</b> already exists. Please choose another name.");
     case SAME_COMPONENT_CONNECT:
       return tr("You cannot connect a component to itself.");
     case NO_MODELICA_CLASS_OPEN:
@@ -516,11 +632,11 @@ QString GUIMessages::getMessage(int type)
     case OPENMODELICAHOME_NOT_FOUND:
       return tr("Could not find environment variable OPENMODELICAHOME. Please make sure OpenModelica is installed properly.");
     case ERROR_OCCURRED:
-      return tr("Following error has occurred. \n\n%1");
-    case ERROR_IN_MODELICA_TEXT:
-      return tr("Problems are found in Modelica Text. <br />");
+      return tr("Following error has occurred.<br />%1");
+    case ERROR_IN_TEXT:
+      return tr("Problems are found in %1 Text. <br />");
     case REVERT_PREVIOUS_OR_FIX_ERRORS_MANUALLY:
-      return tr("<br /><br />For normal users it is recommended to choose <b>Revert from previous</b>. You can also choose <b>Fix errors manually</b> if you want to fix them by your own.");
+      return tr("<br /><br />If you cannot find the source of the error, you can always <b>revert to the last correct version</b>.");
     case NO_OPENMODELICA_KEYWORDS:
       return tr("Please make sure you are not using any OpenModelica Keywords like (model, package, record, class etc.)");
     case UNABLE_TO_LOAD_FILE:
@@ -528,7 +644,9 @@ QString GUIMessages::getMessage(int type)
     case UNABLE_TO_OPEN_FILE:
       return tr("Unable to open file <b>%1</b>.");
     case UNABLE_TO_SAVE_FILE:
-      return tr("Unable to save the file <b>%1</b>.");
+      return tr("Unable to save the file <b>%1</b>. %2");
+    case UNABLE_TO_DELETE_FILE:
+      return tr("Unable to delete <b>%1</b>.");
     case FILE_NOT_FOUND:
       return tr("The file <b>%1</b> not found.");
     case ERROR_OPENING_FILE:
@@ -547,10 +665,10 @@ QString GUIMessages::getMessage(int type)
       return tr("You cannot insert <b>%1</b>, it is a <b>%2</b>. Only <b>connector</b> is allowed on the icon layer.");
     case PLOT_PARAMETRIC_DIFF_FILES:
       return tr("You cannot do a plot parametric between two different simulation result files. Make sure you select two variables from the same simulation result file.");
-    case FILE_FORMAT_NOT_SUPPORTED:
-      return tr("The file <b>%1</b> is not a valid Modelica file. The file format is not supported. You can only open <b>%2</b>.");
     case ENTER_VALID_NUMBER:
       return tr("Enter a valid number value for <b>%1</b>.");
+    case ENTER_VALUE:
+      return tr("Enter a value for <b>%1</b>.");
     case ITEM_DROPPED_ON_ITSELF:
       return tr("You cannot drop an item on itself.");
     case MAKE_REPLACEABLE_IF_PARTIAL:
@@ -558,29 +676,23 @@ QString GUIMessages::getMessage(int type)
     case INNER_MODEL_NAME_CHANGED:
       return tr("A component with the name <b>%1</b> already exists. The name is changed from <b>%1</b> to <b>%2</b>.<br /><br />This is probably wrong because the component is declared as <b>inner</b>.");
     case FMU_GENERATED:
-      return tr("The FMU %1.fmu is generated at %2");
+      return tr("The FMU is generated at <b>%1</b>.");
     case XML_GENERATED:
-      return tr("The XML is generated at %1/%2.xml");
+      return tr("The XML is generated at <b>%1</b>.");
     case FIGARO_GENERATED:
       return tr("The FIGARO is generated.");
     case UNLOAD_CLASS_MSG:
       return tr("Are you sure you want to unload <b>%1</b>? Everything contained inside this class will also be unloaded.");
     case DELETE_CLASS_MSG:
       return tr("Are you sure you want to delete <b>%1</b>? Everything contained inside this class will also be deleted.");
-    case DELETE_TEXT_FILE_MSG:
+    case UNLOAD_TEXT_FILE_MSG:
       return tr("Are you sure you want to unload <b>%1</b>?");
+    case DELETE_TEXT_FILE_MSG:
+      return tr("Are you sure you want to delete <b>%1</b>?<br /><br />This will also delete from file system.");
     case WRONG_MODIFIER:
       return tr("The Modifier <b>%1</b> format is invalid. The correct format is <b>phi(start=1)</b>");
     case SET_INFO_XML_FLAG:
-      return tr("The operations were not generated. Check Generate Operations in %1 OR you must set the +d=infoXmlOperations flag via %2 and simulate again.");
-    case GENERATE_OPERATIONS_MSG:
-      return tr("Tools->Options->Debugger->Transformational Debugger");
-    case GENERATE_OPERATIONS_MSG_MAC:
-      return tr("OMEdit->Preferences->Debugger->Transformational Debugger");
-    case SET_INFO_XML_FLAG_MSG:
-      return tr("Tools->Options->Simulation->OMC Flags");
-    case SET_INFO_XML_FLAG_MSG_MAC:
-      return tr("OMEdit->Preferences->Simulation->OMC Flags");
+      return tr("The operations were not generated. Check Generate Operations in <b>%1->Debugger->Transformational Debugger</b> OR you must set the -d=infoXmlOperations flag via <b>%2->Simulation->OMC Flags</b> and simulate again.");
     case DEBUG_CONFIGURATION_EXISTS_MSG:
       return tr("A debug configuration with name <b>%1</b> already exists. Error occurred while saving the debug configuration <b>%2<b>.");
     case DEBUG_CONFIGURATION_SIZE_EXCEED:
@@ -596,48 +708,31 @@ QString GUIMessages::getMessage(int type)
     case BREAKPOINT_INSERT_NOT_MODELICA_CLASS:
       return tr("The class <b>%1</b> is not a modelica class. Breakpoints are only allowed on modelica classes.");
     case TLMMANAGER_NOT_SET:
-      return tr("TLM Manager executable path is not set. Set it via <b>%1</b>");
-    case TLMMANAGER_NOT_SET_MSG:
-      return tr("Tools->Options->TLM");
-    case TLMMANAGER_NOT_SET_MSG_MAC:
-      return tr("OMEdit->Preferences->TLM");
-    case METAMODEL_UNSAVED:
-      return tr("Metamodel <b>%1</b> has unsaved changes. Do you want to save?");
+      return tr("TLM Manager executable path is not set. Set it via <b>%1->TLM</b>");
+    case COMPOSITEMODEL_UNSAVED:
+      return tr("CompositeModel <b>%1</b> has unsaved changes. Do you want to save?");
     case TLMCOSIMULATION_ALREADY_RUNNING:
       return tr("TLM co-simulation session is already running. Only one session is allowed.");
+    case TERMINAL_COMMAND_NOT_SET:
+      return tr("Terminal command is not set. You can define a new terminal command in <b>%1->General->Terminal Command</b>.");
+    case UNABLE_FIND_COMPONENT_IN_CONNECTION:
+      return tr("Unable to find component %1 while parsing connection %2.");
+    case UNABLE_FIND_COMPONENT_IN_TRANSITION:
+      return tr("Unable to find component %1 while parsing transition(%2).");
+    case UNABLE_FIND_COMPONENT_IN_INITIALSTATE:
+      return tr("Unable to find component %1 while parsing initialState(%2).");
+    case SELECT_SIMULATION_OPTION:
+      return tr("Select at least one of the following options, <br /><br />* %1<br />* %2<br />* %3")
+          .arg(Helper::saveExperimentAnnotation)
+          .arg(Helper::saveOpenModelicaSimulationFlagsAnnotation)
+          .arg(Helper::simulate);
+    case INVALID_TRANSITION_CONDITION:
+      return tr("Please enter a valid condition e.g., x >=0.");
+    case MULTIPLE_DECLARATIONS_COMPONENT:
+      return tr("Multiple declarations of component <b>%1</b> are found.");
+    case GDB_ERROR:
+      return tr("Following error has occurred <b>%1</b> GDB arguments are <b>\"%2\"</b>");
     default:
       return "";
   }
 }
-
-QString& OpenModelica::tempDirectory()
-{
-  static int init = 0;
-  static QString tmpPath;
-  if (!init) {
-    init = 1;
-#ifdef WIN32
-    tmpPath = QDir::tempPath() + "/OpenModelica/OMEdit/";
-#else // UNIX environment
-    char *user = getenv("USER");
-    tmpPath = QDir::tempPath() + "/OpenModelica_" + QString(user ? user : "nobody") + "/OMEdit/";
-#endif
-    tmpPath.remove("\"");
-    if (!QDir().exists(tmpPath))
-      QDir().mkpath(tmpPath);
-  }
-  return tmpPath;
-}
-
-QSettings* OpenModelica::getApplicationSettings()
-{
-  static int init = 0;
-  static QSettings *pSettings;
-  if (!init) {
-    init = 1;
-    pSettings = new QSettings(QSettings::IniFormat, QSettings::UserScope, Helper::organization, Helper::application);
-    pSettings->setIniCodec(Helper::utf8.toStdString().data());
-  }
-  return pSettings;
-}
-

@@ -29,39 +29,39 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "ImportFMUDialog.h"
+#include "MainWindow.h"
+#include "OMC/OMCProxy.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Util/Helper.h"
+#include "Util/Utilities.h"
+#include "Util/StringHandler.h"
+#include "Options/OptionsDialog.h"
+#include "Git/CommitChangesDialog.h"
+
+#include <QMessageBox>
 
 /*!
-  \class ImportFMUDialog
-  \brief Creates an interface for importing FMU package.
-  */
-
+ * \class ImportFMUDialog
+ * \brief Creates an interface for importing FMU package.
+ */
 /*!
-  \param pParent - pointer to MainWindow
-  */
-ImportFMUDialog::ImportFMUDialog(MainWindow *pParent)
-  : QDialog(pParent, Qt::WindowTitleHint)
+ * \brief ImportFMUDialog::ImportFMUDialog
+ * \param pParent
+ */
+ImportFMUDialog::ImportFMUDialog(QWidget *pParent)
+  : QDialog(pParent)
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::importFMU));
   setAttribute(Qt::WA_DeleteOnClose);
   setMinimumWidth(550);
-  setModal(true);
-  // set parent widget
-  mpMainWindow = pParent;
   // set import heading
-  mpImportFMUHeading = new Label(Helper::importFMU);
-  mpImportFMUHeading->setFont(QFont(Helper::systemFontInfo.family(), Helper::headingFontSize));
-  // set seperator line
-  mpHorizontalLine = new QFrame();
-  mpHorizontalLine->setFrameShape(QFrame::HLine);
-  mpHorizontalLine->setFrameShadow(QFrame::Sunken);
+  mpImportFMUHeading = Utilities::getHeadingLabel(Helper::importFMU);
+  // set separator line
+  mpHorizontalLine = Utilities::getHeadingLine();
   // create FMU File selection controls
   mpFmuFileLabel = new Label(tr("FMU File:"));
   mpFmuFileTextBox = new QLineEdit;
@@ -81,7 +81,7 @@ ImportFMUDialog::ImportFMUDialog(MainWindow *pParent)
   mpLogLevelComboBox->addItem(tr("Fatal"), QVariant(1));
   mpLogLevelComboBox->addItem(tr("Error"), QVariant(2));
   mpLogLevelComboBox->addItem(tr("Warning"), QVariant(3));
-  mpLogLevelComboBox->addItem(tr("Information"), QVariant(4));
+  mpLogLevelComboBox->addItem(Helper::information, QVariant(4));
   mpLogLevelComboBox->addItem(tr("Verbose"), QVariant(5));
   mpLogLevelComboBox->addItem(tr("Debug"), QVariant(6));
   mpLogLevelComboBox->setCurrentIndex(3);
@@ -147,18 +147,26 @@ void ImportFMUDialog::setSelectedDirectory()
   */
 void ImportFMUDialog::importFMU()
 {
-  if (mpFmuFileTextBox->text().isEmpty())
-  {
+  if (mpFmuFileTextBox->text().isEmpty()) {
     QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::error),
                           GUIMessages::getMessage(GUIMessages::ENTER_NAME).arg(tr("FMU File")), Helper::ok);
     return;
   }
-  QString fmuFileName = mpMainWindow->getOMCProxy()->importFMU(mpFmuFileTextBox->text(), mpOutputDirectoryTextBox->text(),
-                                                               mpLogLevelComboBox->itemData(mpLogLevelComboBox->currentIndex()).toInt(),
-                                                               mpDebugLoggingCheckBox->isChecked(),
-                                                               mpGenerateIntputConnectors->isChecked(),
-                                                               mpGenerateOutputConnectors->isChecked());
-  if (!fmuFileName.isEmpty())
-    mpMainWindow->getLibraryTreeWidget()->openFile(fmuFileName);
+  QString fmuFileName = MainWindow::instance()->getOMCProxy()->importFMU(mpFmuFileTextBox->text(), mpOutputDirectoryTextBox->text(),
+                                                                         mpLogLevelComboBox->itemData(mpLogLevelComboBox->currentIndex()).toInt(),
+                                                                         mpDebugLoggingCheckBox->isChecked(),
+                                                                         mpGenerateIntputConnectors->isChecked(),
+                                                                         mpGenerateOutputConnectors->isChecked());
+  if (!fmuFileName.isEmpty()) {
+    MainWindow::instance()->getLibraryWidget()->openFile(fmuFileName);
+  }
+  // trace import modeldescription
+  if (OptionsDialog::instance()->getTraceabilityPage()->getTraceabilityGroupBox()->isChecked() && !fmuFileName.isEmpty()) {
+    QFileInfo file(fmuFileName);
+    // Get the name of the file without the extension
+    QString base_name = file.baseName();
+    // Push traceability information automaticaly to Daemon
+    MainWindow::instance()->getCommitChangesDialog()->generateTraceabilityURI("fmuImport", fmuFileName, base_name, mpFmuFileTextBox->text());
+  }
   accept();
 }

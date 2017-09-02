@@ -29,25 +29,42 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "ShapeAnnotation.h"
-#include "ModelWidgetContainer.h"
+#include "Util/Helper.h"
+#include "MainWindow.h"
+#include "Options/OptionsDialog.h"
+#include "Modeling/ModelWidgetContainer.h"
 #include "ShapePropertiesDialog.h"
+#include "Modeling/Commands.h"
+#include "Component/ComponentProperties.h"
+#include "TLM/FetchInterfaceDataDialog.h"
+#include "Plotting/VariablesWidget.h"
 
 /*!
-  Sets the default value.
-  */
+ * \brief GraphicItem::setDefaults
+ * Sets the default value.
+ */
 void GraphicItem::setDefaults()
 {
   mVisible = true;
   mOrigin = QPointF(0, 0);
   mRotation = 0;
+}
+
+/*!
+ * \brief GraphicItem::setDefaults
+ * Sets the default value from ShapeAnnotation.
+ * \param pShapeAnnotation
+ */
+void GraphicItem::setDefaults(ShapeAnnotation *pShapeAnnotation)
+{
+  mVisible = pShapeAnnotation->mVisible;
+  mOrigin = pShapeAnnotation->mOrigin;
+  mRotation = pShapeAnnotation->mRotation;
+  mDynamicVisible = pShapeAnnotation->mDynamicVisible;
 }
 
 /*!
@@ -61,7 +78,17 @@ void GraphicItem::parseShapeAnnotation(QString annotation)
   if (list.size() < 3)
     return;
   // if first item of list is true then the shape should be visible.
-  mVisible = list.at(0).contains("true");
+  if (list.at(0).startsWith("{")) {
+    // DynamicSelect
+    QStringList args = StringHandler::getStrings(StringHandler::removeFirstLastCurlBrackets(list.at(0)));
+    if (args.count() > 0)
+      mVisible = args.at(0).contains("true");
+    if (args.count() > 1)
+      mDynamicVisible = args.at(1);  // variable name
+  }
+  else {
+    mVisible = list.at(0).contains("true");
+  }
   // 2nd item is the origin
   QStringList originList = StringHandler::getStrings(StringHandler::removeFirstLastCurlBrackets(list.at(1)));
   if (originList.size() >= 2)
@@ -74,20 +101,39 @@ void GraphicItem::parseShapeAnnotation(QString annotation)
 }
 
 /*!
-  Returns the annotation values of the GraphicItem.
-  \return the annotation values as a list.
-  */
+ * \brief GraphicItem::getOMCShapeAnnotation
+ * Returns the annotation values of the GraphicItem in format as returned by OMC.
+ * \return the annotation values as a list.
+ */
+QStringList GraphicItem::getOMCShapeAnnotation()
+{
+  QStringList annotationString;
+  /* get visible */
+  annotationString.append(mVisible ? "true" : "false");
+  /* get origin */
+  QString originString;
+  originString.append("{").append(QString::number(mOrigin.x())).append(",");
+  originString.append(QString::number(mOrigin.y())).append("}");
+  annotationString.append(originString);
+  /* get rotation */
+  annotationString.append(QString::number(mRotation));
+  return annotationString;
+}
+
+/*!
+ * \brief GraphicItem::getShapeAnnotation
+ * Returns the annotation values of the GraphicItem.
+ * \return the annotation values as a list.
+ */
 QStringList GraphicItem::getShapeAnnotation()
 {
   QStringList annotationString;
   /* get visible */
-  if (!mVisible)
-  {
+  if (!mVisible) {
     annotationString.append("visible=false");
   }
   /* get origin */
-  if (mOrigin != QPointF(0, 0))
-  {
+  if (mOrigin != QPointF(0, 0)) {
     QString originString;
     originString.append("origin=");
     originString.append("{").append(QString::number(mOrigin.x())).append(",");
@@ -95,53 +141,16 @@ QStringList GraphicItem::getShapeAnnotation()
     annotationString.append(originString);
   }
   /* get rotation */
-  if (mRotation != 0)
-  {
+  if (mRotation != 0) {
     annotationString.append(QString("rotation=").append(QString::number(mRotation)));
   }
   return annotationString;
 }
 
 /*!
-  Sets the origin value.
-  \param origin - the origin value.
-  */
-void GraphicItem::setOrigin(QPointF origin)
-{
-  mOrigin = origin;
-}
-
-/*!
-  Returns the origin value.
-  \return the origin value.
-  */
-QPointF GraphicItem::getOrigin()
-{
-  return mOrigin;
-}
-
-/*!
-  Sets the rotation value.
-  \param rotation - the rotation value.
-  */
-void GraphicItem::setRotationAngle(qreal rotation)
-{
-  mRotation = rotation;
-}
-
-/*!
-  Returns the rotation value.
-  \return the rotation value.
-  */
-qreal GraphicItem::getRotation()
-{
-  return mRotation;
-}
-
-/*!
-  Sets the default values.
-  \return the annotation values as a list.
-  */
+ * \brief FilledShape::setDefaults
+ * Sets the default values.
+ */
 void FilledShape::setDefaults()
 {
   mLineColor = QColor(0, 0, 0);
@@ -149,6 +158,20 @@ void FilledShape::setDefaults()
   mLinePattern = StringHandler::LineSolid;
   mFillPattern = StringHandler::FillNone;
   mLineThickness = 0.25;
+}
+
+/*!
+ * \brief FilledShape::setDefaults
+ * Sets the default value from ShapeAnnotation.
+ * \param pShapeAnnotation
+ */
+void FilledShape::setDefaults(ShapeAnnotation *pShapeAnnotation)
+{
+  mLineColor = pShapeAnnotation->mLineColor;
+  mFillColor = pShapeAnnotation->mFillColor;
+  mLinePattern = pShapeAnnotation->mLinePattern;
+  mFillPattern = pShapeAnnotation->mFillPattern;
+  mLineThickness = pShapeAnnotation->mLineThickness;
 }
 
 /*!
@@ -190,15 +213,48 @@ void FilledShape::parseShapeAnnotation(QString annotation)
 }
 
 /*!
-  Returns the annotation values of the FilledShape.
-  \return the annotation values as a list.
-  */
+ * \brief FilledShape::getOMCShapeAnnotation
+ * Returns the annotation values of the FilledShape in format as returned by OMC.
+ * \return the annotation values as a list.
+ */
+QStringList FilledShape::getOMCShapeAnnotation()
+{
+  QStringList annotationString;
+  /* get the line color */
+  QString lineColorString;
+  lineColorString.append("{");
+  lineColorString.append(QString::number(mLineColor.red())).append(",");
+  lineColorString.append(QString::number(mLineColor.green())).append(",");
+  lineColorString.append(QString::number(mLineColor.blue()));
+  lineColorString.append("}");
+  annotationString.append(lineColorString);
+  /* get the fill color */
+  QString fillColorString;
+  fillColorString.append("{");
+  fillColorString.append(QString::number(mFillColor.red())).append(",");
+  fillColorString.append(QString::number(mFillColor.green())).append(",");
+  fillColorString.append(QString::number(mFillColor.blue()));
+  fillColorString.append("}");
+  annotationString.append(fillColorString);
+  /* get the line pattern */
+  annotationString.append(StringHandler::getLinePatternString(mLinePattern));
+  /* get the fill pattern */
+  annotationString.append(StringHandler::getFillPatternString(mFillPattern));
+  // get the thickness
+  annotationString.append(QString::number(mLineThickness));
+  return annotationString;
+}
+
+/*!
+ * \brief FilledShape::getShapeAnnotation
+ * Returns the annotation values of the FilledShape.
+ * \return the annotation values as a list.
+ */
 QStringList FilledShape::getShapeAnnotation()
 {
   QStringList annotationString;
   /* get the line color */
-  if (mLineColor != Qt::black)
-  {
+  if (mLineColor != Qt::black) {
     QString lineColorString;
     lineColorString.append("lineColor={");
     lineColorString.append(QString::number(mLineColor.red())).append(",");
@@ -208,8 +264,7 @@ QStringList FilledShape::getShapeAnnotation()
     annotationString.append(lineColorString);
   }
   /* get the fill color */
-  if (mFillColor != Qt::black)
-  {
+  if (mFillColor != Qt::black) {
     QString fillColorString;
     fillColorString.append("fillColor={");
     fillColorString.append(QString::number(mFillColor.red())).append(",");
@@ -219,105 +274,18 @@ QStringList FilledShape::getShapeAnnotation()
     annotationString.append(fillColorString);
   }
   /* get the line pattern */
-  if (mLinePattern != StringHandler::LineSolid)
+  if (mLinePattern != StringHandler::LineSolid) {
     annotationString.append(QString("pattern=").append(StringHandler::getLinePatternString(mLinePattern)));
+  }
   /* get the fill pattern */
-  if (mFillPattern != StringHandler::FillNone)
+  if (mFillPattern != StringHandler::FillNone) {
     annotationString.append(QString("fillPattern=").append(StringHandler::getFillPatternString(mFillPattern)));
+  }
   // get the thickness
-  if (mLineThickness != 0.25)
+  if (mLineThickness != 0.25) {
     annotationString.append(QString("lineThickness=").append(QString::number(mLineThickness)));
+  }
   return annotationString;
-}
-
-/*!
-  Sets the line color value.
-  \param color - the line color.
-  */
-void FilledShape::setLineColor(QColor color)
-{
-  mLineColor = color;
-}
-
-/*!
-  Returns the line color value.
-  \return the line color value.
-  */
-QColor FilledShape::getLineColor()
-{
-  return mLineColor;
-}
-
-/*!
-  Sets the fill color value.
-  \param color - the fill color.
-  */
-void FilledShape::setFillColor(QColor color)
-{
-  mFillColor = color;
-}
-
-/*!
-  Returns the fill color value.
-  \return the fill color value.
-  */
-QColor FilledShape::getFillColor()
-{
-  return mFillColor;
-}
-
-/*!
-  Sets the line pattern value.
-  \param pattern - the line pattern.
-  */
-void FilledShape::setLinePattern(StringHandler::LinePattern pattern)
-{
-  mLinePattern = pattern;
-}
-
-/*!
-  Returns the line pattern value.
-  \return the line pattern value.
-  */
-StringHandler::LinePattern FilledShape::getLinePattern()
-{
-  return mLinePattern;
-}
-
-/*!
-  Sets the fill pattern value.
-  \param pattern - the fill pattern.
-  */
-void FilledShape::setFillPattern(StringHandler::FillPattern pattern)
-{
-  mFillPattern = pattern;
-}
-
-/*!
-  Returns the fill pattern value.
-  \return the fill pattern value.
-  */
-StringHandler::FillPattern FilledShape::getFillPattern()
-{
-  return mFillPattern;
-}
-
-/*!
-  Sets the thickness value.
-  \param thickness - the line thickness.
-  */
-void FilledShape::setLineThickness(qreal thickness)
-{
-  mLineThickness = thickness;
-}
-
-/*!
-  Returns the thickness value.
-  \return the thickness value.
-  */
-qreal FilledShape::getLineThickness()
-{
-  return mLineThickness;
 }
 
 /*!
@@ -332,10 +300,11 @@ ShapeAnnotation::ShapeAnnotation(QGraphicsItem *pParent)
   : QGraphicsItem(pParent)
 {
   mpGraphicsView = 0;
-  mpTransformation = 0;
+  mpParentComponent = dynamic_cast<Component*>(pParent);
+  //mTransformation = 0;
   mIsCustomShape = false;
   mIsInheritedShape = false;
-  setOldPosition(QPointF(0, 0));
+  setOldScenePosition(QPointF(0, 0));
   mIsCornerItemClicked = false;
 }
 
@@ -347,27 +316,20 @@ ShapeAnnotation::ShapeAnnotation(bool inheritedShape, GraphicsView *pGraphicsVie
   : QGraphicsItem(pParent)
 {
   mpGraphicsView = pGraphicsView;
-  setZValue(mpGraphicsView->getShapesList().size() + 1);
-  mpTransformation = new Transformation(StringHandler::Diagram);
+  mpParentComponent = 0;
+  mTransformation = Transformation(StringHandler::Diagram);
   mIsCustomShape = true;
   mIsInheritedShape = inheritedShape;
-  setOldPosition(QPointF(0, 0));
+  setOldScenePosition(QPointF(0, 0));
   mIsCornerItemClicked = false;
   createActions();
 }
 
 /*!
-  Deletes the Transformation object.
-  */
-ShapeAnnotation::~ShapeAnnotation()
-{
-  if (mpTransformation) delete mpTransformation;
-}
-
-/*!
-  Sets the default values for the shape annotations. Defaults valued as defined in Modelica specification 3.2 are used.
-  \sa setUserDefaults()
-  */
+ * \brief ShapeAnnotation::setDefaults
+ * Sets the default values for the shape annotations. Defaults valued as defined in Modelica specification 3.2 are used.
+ * \sa setUserDefaults()
+ */
 void ShapeAnnotation::setDefaults()
 {
   mLineColor = QColor(0, 0, 0);
@@ -386,7 +348,7 @@ void ShapeAnnotation::setDefaults()
   mOriginalTextString = "";
   mTextString = "";
   mFontSize = 0;
-  mFontName = "";
+  mFontName = Helper::systemFontInfo.family();
   mHorizontalAlignment = StringHandler::TextAlignmentCenter;
   mOriginalFileName = "";
   mFileName = "";
@@ -395,15 +357,49 @@ void ShapeAnnotation::setDefaults()
 }
 
 /*!
+ * \brief ShapeAnnotation::setDefaults
+ * Sets the default values for the shape annotations using another ShapeAnnotation.
+ * \param pShapeAnnotation
+ * \sa setUserDefaults()
+ */
+void ShapeAnnotation::setDefaults(ShapeAnnotation *pShapeAnnotation)
+{
+  mLineColor = pShapeAnnotation->mLineColor;
+  mLinePattern = pShapeAnnotation->mLinePattern;
+  mLineThickness = pShapeAnnotation->mLineThickness;
+  mArrow.append(StringHandler::ArrowNone);
+  mArrow.append(StringHandler::ArrowNone);
+  setStartArrow(pShapeAnnotation->getStartArrow());
+  setEndArrow(pShapeAnnotation->getEndArrow());
+  mArrowSize = pShapeAnnotation->mArrowSize;
+  mSmooth = pShapeAnnotation->mSmooth;
+  setExtents(pShapeAnnotation->getExtents());
+  mBorderPattern = pShapeAnnotation->mBorderPattern;
+  mRadius = pShapeAnnotation->mRadius;
+  mStartAngle = pShapeAnnotation->mStartAngle;
+  mEndAngle = pShapeAnnotation->mEndAngle;
+  mOriginalTextString = pShapeAnnotation->mOriginalTextString;
+  mTextString = pShapeAnnotation->mTextString;
+  mFontSize = pShapeAnnotation->mFontSize;
+  mFontName = pShapeAnnotation->mFontName;
+  mHorizontalAlignment = pShapeAnnotation->mHorizontalAlignment;
+  mOriginalFileName = mOriginalFileName;
+  mFileName = pShapeAnnotation->mFileName;
+  mClassFileName = pShapeAnnotation->mClassFileName;
+  mImageSource = pShapeAnnotation->mImageSource;
+  mImage = pShapeAnnotation->mImage;
+  mDynamicTextString = pShapeAnnotation->mDynamicTextString;
+}
+
+/*!
   Reads the user defined line and fill style values. Overrides the Modelica specification 3.2 default values.
   \sa setDefaults()
   */
 void ShapeAnnotation::setUserDefaults()
 {
-  OptionsDialog *pOptionsDialog = mpGraphicsView->getModelWidget()->getModelWidgetContainer()->getMainWindow()->getOptionsDialog();
+  OptionsDialog *pOptionsDialog = OptionsDialog::instance();
   /* Set user Line Style settings */
-  if (pOptionsDialog->getLineStylePage()->getLineColor().isValid())
-  {
+  if (pOptionsDialog->getLineStylePage()->getLineColor().isValid()) {
     mLineColor = pOptionsDialog->getLineStylePage()->getLineColor();
   }
   mLinePattern = StringHandler::getLinePatternType(pOptionsDialog->getLineStylePage()->getLinePattern());
@@ -411,17 +407,13 @@ void ShapeAnnotation::setUserDefaults()
   mArrow.replace(0, StringHandler::getArrowType(pOptionsDialog->getLineStylePage()->getLineStartArrow()));
   mArrow.replace(1, StringHandler::getArrowType(pOptionsDialog->getLineStylePage()->getLineEndArrow()));
   mArrowSize = pOptionsDialog->getLineStylePage()->getLineArrowSize();
-  if (pOptionsDialog->getLineStylePage()->getLineSmooth())
-  {
+  if (pOptionsDialog->getLineStylePage()->getLineSmooth()) {
     mSmooth = StringHandler::SmoothBezier;
-  }
-  else
-  {
+  } else {
     mSmooth = StringHandler::SmoothNone;
   }
   /* Set user Fill Style settings */
-  if (pOptionsDialog->getFillStylePage()->getFillColor().isValid())
-  {
+  if (pOptionsDialog->getFillStylePage()->getFillColor().isValid()) {
     mFillColor = pOptionsDialog->getFillStylePage()->getFillColor();
   }
   mFillPattern = StringHandler::getFillPatternType(pOptionsDialog->getFillStylePage()->getFillPattern());
@@ -433,18 +425,27 @@ bool ShapeAnnotation::isInheritedShape()
 }
 
 /*!
-  Defines the actions used by the shape's context menu.
-  */
+ * \brief ShapeAnnotation::createActions
+ * Defines the actions used by the shape's context menu.
+ */
 void ShapeAnnotation::createActions()
 {
   // shape properties
   mpShapePropertiesAction = new QAction(Helper::properties, mpGraphicsView);
   mpShapePropertiesAction->setStatusTip(tr("Shows the shape properties"));
   connect(mpShapePropertiesAction, SIGNAL(triggered()), SLOT(showShapeProperties()));
-  // manhattanize properties
-  mpManhattanizeShapeAction = new QAction(tr("Manhattanize"), mpGraphicsView);
-  mpManhattanizeShapeAction->setStatusTip(tr("Manhattanize the lines"));
-  connect(mpManhattanizeShapeAction, SIGNAL(triggered()), SLOT(manhattanizeShape()));
+  // shape attributes
+  mpAlignInterfacesAction = new QAction(QIcon(":/Resources/icons/align-interfaces.svg"), Helper::alignInterfaces, mpGraphicsView);
+  mpAlignInterfacesAction->setStatusTip(Helper::alignInterfacesTip);
+  connect(mpAlignInterfacesAction, SIGNAL(triggered()), SLOT(alignInterfaces()));
+  // shape attributes
+  mpShapeAttributesAction = new QAction(Helper::attributes, mpGraphicsView);
+  mpShapeAttributesAction->setStatusTip(tr("Shows the shape attributes"));
+  connect(mpShapeAttributesAction, SIGNAL(triggered()), SLOT(showShapeAttributes()));
+  // edit transition action
+  mpEditTransitionAction = new QAction(Helper::editTransition, mpGraphicsView);
+  mpEditTransitionAction->setStatusTip(tr("Edits the transition"));
+  connect(mpEditTransitionAction, SIGNAL(triggered()), SLOT(editTransition()));
 }
 
 /*!
@@ -476,14 +477,21 @@ QRectF ShapeAnnotation::getBoundingRect() const
 }
 
 /*!
-  Applies the shape line pattern.
-  \param painter - pointer to QPainter
-  */
+ * \brief ShapeAnnotation::applyLinePattern
+ * Applies the shape line pattern.
+ * \param painter - pointer to QPainter
+ */
 void ShapeAnnotation::applyLinePattern(QPainter *painter)
 {
-  qreal thicknessFactor = mLineThickness / 0.5;
-  qreal thickness = thicknessFactor < 1 ? 1.0 : thicknessFactor;
+  qreal thickness = Utilities::convertMMToPixel(mLineThickness);
   QPen pen(mLineColor, thickness, StringHandler::getLinePatternType(mLinePattern), Qt::SquareCap, Qt::MiterJoin);
+  /* The specification doesn't say anything about it.
+   * But just to keep this consist with Dymola we use Qt::BevelJoin for Line shapes.
+   * All other shapes use Qt::MiterJoin
+   */
+  if (dynamic_cast<LineAnnotation*>(this)) {
+    pen.setJoinStyle(Qt::BevelJoin);
+  }
   /* Ticket #3222
    * Make all the shapes use cosmetic pens so that they perserve their pen widht when scaled i.e zoomed in/out.
    * Only shapes with border patterns raised & sunken don't use cosmetic pens. We need better handling of border patterns.
@@ -491,16 +499,15 @@ void ShapeAnnotation::applyLinePattern(QPainter *painter)
   if (mBorderPattern != StringHandler::BorderRaised && mBorderPattern != StringHandler::BorderSunken) {
     pen.setCosmetic(true);
   }
-  Component *pComponent = dynamic_cast<Component*>(parentItem());
-  if (pComponent && pComponent->isLibraryComponent()) {
-    /* Ticket #2272, Ticket #2268.
-     * If thickness is greater than 2 then don't make the pen cosmetic since cosmetic pens don't change the width with respect to zoom.
-     */
-    if (thickness <= 2) {
-      pen.setCosmetic(true);
-    } else {
-      pen.setCosmetic(false);
-    }
+  /* Ticket #2272, Ticket #2268.
+   * If thickness is greater than 2 then don't make the pen cosmetic since cosmetic pens don't change the width with respect to zoom.
+   */
+  if (mpGraphicsView && mpGraphicsView->isRenderingLibraryPixmap() && thickness > 2) {
+    pen.setCosmetic(false);
+  }
+  // if thickness is greater than 1 pixel then use antialiasing.
+  if (thickness > 1) {
+    painter->setRenderHint(QPainter::Antialiasing);
   }
   painter->setPen(pen);
 }
@@ -511,38 +518,35 @@ void ShapeAnnotation::applyLinePattern(QPainter *painter)
   */
 void ShapeAnnotation::applyFillPattern(QPainter *painter)
 {
-  switch (mFillPattern)
-  {
+  QRectF boundingRectangle;
+  if (dynamic_cast<PolygonAnnotation*>(this)) {
+    boundingRectangle = boundingRect();
+  } else {
+    boundingRectangle = getBoundingRect();
+  }
+  QLinearGradient linearGradient;
+  QRadialGradient radialGradient;
+  switch (mFillPattern) {
     case StringHandler::FillHorizontalCylinder:
-    {
-      QLinearGradient gradient(getBoundingRect().center().x(), getBoundingRect().center().y(),
-                               getBoundingRect().center().x(), getBoundingRect().y());
-      gradient.setColorAt(0.0, mFillColor);
-      gradient.setColorAt(1.0, mLineColor);
-      gradient.setSpread(QGradient::ReflectSpread);
-      painter->setBrush(gradient);
+      linearGradient = QLinearGradient(boundingRectangle.center().x(), boundingRectangle.top(), boundingRectangle.center().x(), boundingRectangle.bottom());
+      linearGradient.setColorAt(0.0, mLineColor);
+      linearGradient.setColorAt(0.5, mFillColor);
+      linearGradient.setColorAt(1.0, mLineColor);
+      painter->setBrush(linearGradient);
       break;
-    }
     case StringHandler::FillVerticalCylinder:
-    {
-      QLinearGradient gradient(getBoundingRect().center().x(), getBoundingRect().center().y(),
-                               getBoundingRect().x(), getBoundingRect().center().y());
-      gradient.setColorAt(0.0, mFillColor);
-      gradient.setColorAt(1.0, mLineColor);
-      gradient.setSpread(QGradient::ReflectSpread);
-      painter->setBrush(gradient);
+      linearGradient = QLinearGradient(boundingRectangle.left(), boundingRectangle.center().y(), boundingRectangle.right(), boundingRectangle.center().y());
+      linearGradient.setColorAt(0.0, mLineColor);
+      linearGradient.setColorAt(0.5, mFillColor);
+      linearGradient.setColorAt(1.0, mLineColor);
+      painter->setBrush(linearGradient);
       break;
-    }
     case StringHandler::FillSphere:
-    {
-      QRadialGradient gradient(getBoundingRect().center().x(), getBoundingRect().center().y(),
-                               getBoundingRect().width());
-      gradient.setColorAt(0.0, mFillColor);
-      gradient.setColorAt(1.0, mLineColor);
-      //gradient.setSpread(QGradient::ReflectSpread);
-      painter->setBrush(gradient);
+      radialGradient = QRadialGradient(boundingRectangle.center().x(), boundingRectangle.center().y(), boundingRectangle.width());
+      radialGradient.setColorAt(0.0, mFillColor);
+      radialGradient.setColorAt(1.0, mLineColor);
+      painter->setBrush(radialGradient);
       break;
-    }
     case StringHandler::FillSolid:
       painter->setBrush(QBrush(mFillColor, StringHandler::getFillPatternType(mFillPattern)));
       break;
@@ -559,32 +563,55 @@ void ShapeAnnotation::applyFillPattern(QPainter *painter)
 }
 
 /*!
-  Returns the shape annotation. Reimplemented by each child shape class to return their annotation.
-  \return the shape annotation string.
-  */
+ * \brief ShapeAnnotation::parseShapeAnnotation
+ * Parses the shape annotation. Reimplemented by each child shape class to parse their annotation.
+ * \param annotation
+ */
+void ShapeAnnotation::parseShapeAnnotation(QString annotation)
+{
+  Q_UNUSED(annotation);
+}
+
+/*!
+ * \brief ShapeAnnotation::getOMCShapeAnnotation
+ * Returns the shape annotation in format as returned by OMC. Reimplemented by each child shape class to return their annotation.
+ * \return the shape annotation string.
+ */
+QString ShapeAnnotation::getOMCShapeAnnotation()
+{
+  return "";
+}
+
+/*!
+ * \brief ShapeAnnotation::getShapeAnnotation
+ * Returns the shape annotation. Reimplemented by each child shape class to return their annotation.
+ * \return the shape annotation string.
+ */
 QString ShapeAnnotation::getShapeAnnotation()
 {
-  return QString();
+  return "";
 }
 
 /*!
-  Initializes the transformation matrix with the default transformation values of the shape.
-  */
+ * \brief ShapeAnnotation::initializeTransformation
+ * Initializes the transformation matrix with the default transformation values of the shape.
+ */
 void ShapeAnnotation::initializeTransformation()
 {
-  mpTransformation->setOrigin(mOrigin);
-  mpTransformation->setExtent1(QPointF(-100.0, -100.0));
-  mpTransformation->setExtent2(QPointF(100.0, 100.0));
-  mpTransformation->setRotateAngle(mRotation);
-  setTransform(mpTransformation->getTransformationMatrix());
+  mTransformation.setOrigin(mOrigin);
+  mTransformation.setExtent1(QPointF(-100.0, -100.0));
+  mTransformation.setExtent2(QPointF(100.0, 100.0));
+  mTransformation.setRotateAngle(mRotation);
+  setTransform(mTransformation.getTransformationMatrix());
 }
 
 /*!
-  Draws the CornerItem around the shape.\n
-  If the shape is LineAnnotation or PolygonAnnotation then their points are used to draw CornerItem's.\n
-  If the shape is RectangleAnnotation, EllipseAnnotation, TextAnnotation or BitmapAnnotation
-  then their extents are used to draw CornerItem's.
-  */
+ * \brief ShapeAnnotation::drawCornerItems
+ * Draws the CornerItem around the shape.\n
+ * If the shape is LineAnnotation or PolygonAnnotation then their points are used to draw CornerItem's.\n
+ * If the shape is RectangleAnnotation, EllipseAnnotation, TextAnnotation or BitmapAnnotation
+ * then their extents are used to draw CornerItem's.
+ */
 void ShapeAnnotation::drawCornerItems()
 {
   if (dynamic_cast<LineAnnotation*>(this) || dynamic_cast<PolygonAnnotation*>(this)) {
@@ -596,8 +623,11 @@ void ShapeAnnotation::drawCornerItems()
     for (int i = 0 ; i < mPoints.size() ; i++) {
       QPointF point = mPoints.at(i);
       CornerItem *pCornerItem = new CornerItem(point.x(), point.y(), i, this);
-      /* if line is a connection then make the first and last point non moveable. */
-      if ((lineType == LineAnnotation::ConnectionType) && (i == 0 || i == mPoints.size() - 1)) {
+      /* if line is a connection or transition then make the first and last point non movable.
+       * if line is initial state then make the first point non movable.
+       */
+      if ((((lineType == LineAnnotation::ConnectionType || lineType == LineAnnotation::TransitionType) && (i == 0 || i == mPoints.size() - 1))
+           || (lineType == LineAnnotation::InitialStateType && i == 0))) {
         pCornerItem->setFlag(QGraphicsItem::ItemIsMovable, false);
       }
       mCornerItemsList.append(pCornerItem);
@@ -612,253 +642,57 @@ void ShapeAnnotation::drawCornerItems()
 }
 
 /*!
-  Makes the corner points of the shape visible.
-  */
-void ShapeAnnotation::setCornerItemsActive()
+ * \brief ShapeAnnotation::setCornerItemsActiveOrPassive
+ * Makes the corner points of the shape active/passive.
+ */
+void ShapeAnnotation::setCornerItemsActiveOrPassive()
 {
-  foreach (CornerItem *pCornerItem, mCornerItemsList)
-  {
-    pCornerItem->setVisible(true);
+  foreach (CornerItem *pCornerItem, mCornerItemsList) {
+    if (isSelected()) {
+      pCornerItem->setToolTip(Helper::clickAndDragToResize);
+      pCornerItem->setVisible(true);
+    } else {
+      pCornerItem->setToolTip("");
+      pCornerItem->setVisible(false);
+    }
   }
 }
 
 /*!
-  Makes the corner points of the shape hidden.
-  */
-void ShapeAnnotation::setCornerItemsPassive()
-{
-  foreach (CornerItem *pCornerItem, mCornerItemsList)
-  {
-    pCornerItem->setVisible(false);
-  }
-}
-
-/*!
-  Removes the CornerItem's around the shape.
-  */
+ * \brief ShapeAnnotation::removeCornerItems
+ * Removes the CornerItem's around the shape.
+ */
 void ShapeAnnotation::removeCornerItems()
 {
-  foreach (CornerItem *pCornerItem, mCornerItemsList)
-  {
+  foreach (CornerItem *pCornerItem, mCornerItemsList) {
     pCornerItem->deleteLater();
   }
   mCornerItemsList.clear();
 }
 
 /*!
-  Saves the old position of the shape.
-  \param oldPosition - the old position of the shape.
-  */
-void ShapeAnnotation::setOldPosition(QPointF oldPosition)
-{
-  mOldPosition = oldPosition;
-}
-
-/*!
-  Returns the old position of the shape.
-  \return the old position of the shape.
-  */
-QPointF ShapeAnnotation::getOldPosition()
-{
-  return mOldPosition;
-}
-
-void ShapeAnnotation::addPoint(QPointF point)
-{
-  Q_UNUSED(point);
-}
-
-void ShapeAnnotation::clearPoints()
-{
-
-}
-
-/*!
-  Adds the extent point value.
-  \param index - the index of extent point.
-  \param point - the point value to add.
-  */
+ * \brief ShapeAnnotation::replaceExtent
+ * Adds the extent point value.
+ * \param index - the index of extent point.
+ * \param point - the point value to add.
+ */
 void ShapeAnnotation::replaceExtent(int index, QPointF point)
 {
-  if (index >= 0 && index <= 1)
-  {
+  if (index >= 0 && index <= 1) {
     mExtents.replace(index, point);
   }
 }
 
 /*!
-  Returns the GraphicsView object.
-  \return the pointer to GraphicsView.
-  */
+ * \brief ShapeAnnotation::updateEndExtent
+ * Updates the end extent point.
+ * \param point
+ */
 void ShapeAnnotation::updateEndExtent(QPointF point)
 {
-  if (mExtents.size() > 1)
-  {
+  if (mExtents.size() > 1) {
     mExtents.replace(1, point);
   }
-}
-
-/*!
-  Sets the start arrow value.
-  \return startArrow - the start arrow value.
-  */
-void ShapeAnnotation::setStartArrow(StringHandler::Arrow startArrow)
-{
-  mArrow.replace(0, startArrow);
-}
-
-/*!
-  Returns the start arrow value.
-  \return the start arrow value.
-  */
-StringHandler::Arrow ShapeAnnotation::getStartArrow()
-{
-  return mArrow.at(0);
-}
-
-/*!
-  Sets the end arrow value.
-  \return endArrow - the end arrow value.
-  */
-void ShapeAnnotation::setEndArrow(StringHandler::Arrow endArrow)
-{
-  mArrow.replace(1, endArrow);
-}
-
-/*!
-  Returns the end arrow value.
-  \return the end arrow value.
-  */
-StringHandler::Arrow ShapeAnnotation::getEndArrow()
-{
-  return mArrow.at(1);
-}
-
-/*!
-  Sets the arrow size.
-  \return arrowSize - the arrow size.
-  */
-void ShapeAnnotation::setArrowSize(qreal arrowSize)
-{
-  mArrowSize = arrowSize;
-}
-
-/*!
-  Returns the arrow size value.
-  \return the arrow size value.
-  */
-qreal ShapeAnnotation::getArrowSize()
-{
-  return mArrowSize;
-}
-
-/*!
-  Sets the smooth value.
-  \return smooth - the smooth value.
-  */
-void ShapeAnnotation::setSmooth(StringHandler::Smooth smooth)
-{
-  mSmooth = smooth;
-}
-
-
-/*!
-  Returns the smooth value.
-  \return the smooth value.
-  */
-StringHandler::Smooth ShapeAnnotation::getSmooth()
-{
-  return mSmooth;
-}
-
-/*!
-  Sets the extents list.
-  \param extents - the extents list.
-  */
-void ShapeAnnotation::setExtents(QList<QPointF> extents)
-{
-  mExtents = extents;
-}
-
-/*!
-  Returns the points list.
-  \return the points list.
-  */
-QList<QPointF> ShapeAnnotation::getExtents()
-{
-  return mExtents;
-}
-
-/*!
-  Sets the border pattern value.
-  \param pattern - the border pattern.
-  */
-void ShapeAnnotation::setBorderPattern(StringHandler::BorderPattern pattern)
-{
-  mBorderPattern = pattern;
-}
-
-/*!
-  Returns the border pattern value.
-  \return the border pattern value.
-  */
-StringHandler::BorderPattern ShapeAnnotation::getBorderPattern()
-{
-  return mBorderPattern;
-}
-
-/*!
-  Sets the corner radius size.
-  \return radius - the corner radius.
-  */
-void ShapeAnnotation::setRadius(qreal radius)
-{
-  mRadius = radius;
-}
-
-/*!
-  Returns the corner radius value.
-  \return the corner radius.
-  */
-qreal ShapeAnnotation::getRadius()
-{
-  return mRadius;
-}
-
-/*!
-  Sets the start angle.
-  \return startAngle - the start angle.
-  */
-void ShapeAnnotation::setStartAngle(qreal startAngle)
-{
-  mStartAngle = startAngle;
-}
-
-/*!
-  Returns the start angle.
-  \return the start angle.
-  */
-qreal ShapeAnnotation::getStartAngle()
-{
-  return mStartAngle;
-}
-
-/*!
-  Sets the end angle.
-  \return endAngle - the end angle.
-  */
-void ShapeAnnotation::setEndAngle(qreal endAngle)
-{
-  mEndAngle = endAngle;
-}
-
-/*!
-  Returns the end angle.
-  \return the end angle.
-  */
-qreal ShapeAnnotation::getEndAngle()
-{
-  return mEndAngle;
 }
 
 /*!
@@ -872,129 +706,31 @@ void ShapeAnnotation::setTextString(QString textString)
 }
 
 /*!
-  Returns the text string.
-  \return the text string.
-  */
-QString ShapeAnnotation::getTextString()
+ * \brief ShapeAnnotation::setFileName
+ * Sets the file name.
+ * \param fileName
+ */
+void ShapeAnnotation::setFileName(QString fileName)
 {
-  return mOriginalTextString;
-}
-
-/*!
-  Sets the font name.
-  \return fontName - the font name.
-  */
-void ShapeAnnotation::setFontName(QString fontName)
-{
-  mFontName = fontName;
-}
-
-/*!
-  Returns the font name.
-  \return the font name.
-  */
-QString ShapeAnnotation::getFontName()
-{
-  return mFontName;
-}
-
-/*!
-  Sets the font size.
-  \return fontSize - the font size.
-  */
-void ShapeAnnotation::setFontSize(qreal fontSize)
-{
-  mFontSize = fontSize;
-}
-
-/*!
-  Returns the font size.
-  \return the font size.
-  */
-qreal ShapeAnnotation::getFontSize()
-{
-  return mFontSize;
-}
-
-/*!
-  Sets the text styles.
-  \return textStyles - the text styles.
-  */
-void ShapeAnnotation::setTextStyles(QList<StringHandler::TextStyle> textStyles)
-{
-  mTextStyles = textStyles;
-}
-
-/*!
-  Returns the text styles.
-  \return the text styles.
-  */
-QList<StringHandler::TextStyle> ShapeAnnotation::getTextStyles()
-{
-  return mTextStyles;
-}
-
-/*!
-  Sets the text horizontal alignment.
-  \return textStyles - the text horizontal alignment.
-  */
-void ShapeAnnotation::setTextHorizontalAlignment(StringHandler::TextAlignment textAlignment)
-{
-  mHorizontalAlignment = textAlignment;
-}
-
-/*!
-  Returns the text horizontal alignment.
-  \return the text horizontal alignment.
-  */
-StringHandler::TextAlignment ShapeAnnotation::getTextHorizontalAlignment()
-{
-  return mHorizontalAlignment;
-}
-
-/*!
-  Sets the file name.
-  \return fileName - the file name to set.
-  */
-void ShapeAnnotation::setFileName(QString fileName, Component *pComponent)
-{
-  if (fileName.isEmpty())
-  {
+  if (fileName.isEmpty()) {
     mOriginalFileName = fileName;
     mFileName = fileName;
     return;
   }
 
-  OMCProxy *pOMCProxy = 0;
-  if (pComponent)
-  {
-    pOMCProxy = pComponent->getOMCProxy();
-  }
-  else
-  {
-     pOMCProxy = mpGraphicsView->getModelWidget()->getModelWidgetContainer()->getMainWindow()->getOMCProxy();
-  }
-
+  OMCProxy *pOMCProxy = MainWindow::instance()->getOMCProxy();
   mOriginalFileName = fileName;
   QUrl fileUrl(mOriginalFileName);
   QFileInfo fileInfo(mOriginalFileName);
   QFileInfo classFileInfo(mClassFileName);
-
   /* if its a modelica:// link then make it absolute path */
-  if (fileUrl.scheme().toLower().compare("modelica") == 0)
-  {
+  if (fileUrl.scheme().toLower().compare("modelica") == 0) {
     mFileName = pOMCProxy->uriToFilename(mOriginalFileName);
-  }
-  else if (fileInfo.isRelative())
-  {
+  } else if (fileInfo.isRelative()) {
     mFileName = QString(classFileInfo.absoluteDir().absolutePath()).append("/").append(mOriginalFileName);
-  }
-  else if (fileInfo.isAbsolute())
-  {
+  } else if (fileInfo.isAbsolute()) {
     mFileName = mOriginalFileName;
-  }
-  else
-  {
+  } else {
     mFileName = "";
   }
 }
@@ -1045,70 +781,41 @@ QImage ShapeAnnotation::getImage()
 }
 
 /*!
-  Rotates the shape clockwise.
-  \sa rotateAntiClockwise(),
-      applyRotation(),
-      rotateClockwiseKeyPress(),
-      rotateAntiClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick(),
-      rotateAntiClockwiseMouseRightClick()
+  Returns a dynamic value or null if no dynamic value exists
   */
-void ShapeAnnotation::rotateClockwise()
+QVariant ShapeAnnotation::getDynamicValue(QString name)
 {
-  qreal oldRotation = StringHandler::getNormalizedAngle(mpTransformation->getRotateAngle());
-  qreal rotateIncrement = -90;
-  qreal angle = 0;
-  if (oldRotation == -270)
-  {
-    angle = 0;
+  QVariant dynamicValue; // isNull() per default
+  if (mpParentComponent) {
+    ModelWidget *pModelWidget = mpParentComponent->getGraphicsView()->getModelWidget();
+    if (!pModelWidget->getResultFileName().isEmpty()) {
+      QString fullName = pModelWidget->getResultFileName() + "." + mpParentComponent->getComponentInfo()->getName() + "." + name;
+      MainWindow *pMainWindow = MainWindow::instance();
+      VariablesTreeModel *pVariablesTreeModel = pMainWindow->getVariablesWidget()->getVariablesTreeModel();
+      VariablesTreeItem *pVariablesTreeItem = pVariablesTreeModel->findVariablesTreeItem(fullName, pVariablesTreeModel->getRootVariablesTreeItem());
+      if (pVariablesTreeItem != NULL) {
+        dynamicValue = pVariablesTreeItem->getValue(pVariablesTreeItem->getPreviousUnit(), pVariablesTreeItem->getUnit());
+      }
+    }
   }
-  else
-  {
-    angle = oldRotation + rotateIncrement;
-  }
-  applyRotation(angle);
+  return dynamicValue;
 }
 
 /*!
-  Rotates the shape anti clockwise.
-  \sa rotateClockwise(),
-      applyRotation(),
-      rotateClockwiseKeyPress(),
-      rotateAntiClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick(),
-      rotateAntiClockwiseMouseRightClick()
-  */
-void ShapeAnnotation::rotateAntiClockwise()
-{
-  qreal oldRotation = StringHandler::getNormalizedAngle(mpTransformation->getRotateAngle());
-  qreal rotateIncrement = 90;
-  qreal angle = 0;
-  if (oldRotation == 270)
-  {
-    angle = 0;
-  }
-  else
-  {
-    angle = oldRotation + rotateIncrement;
-  }
-  applyRotation(angle);
-}
-
-/*!
-  Applies the rotation on the shape and sets the shape transformation matrix accordingly.
-  \param angle - the rotation angle to apply.
-  \sa rotateClockwise(),
-      rotateAntiClockwise(),
-      rotateClockwiseKeyPress(),
-      rotateAntiClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick(),
-      rotateAntiClockwiseMouseRightClick()
-  */
+ * \brief ShapeAnnotation::applyRotation
+ * Applies the rotation on the shape and sets the shape transformation matrix accordingly.
+ * \param angle - the rotation angle to apply.
+ * \sa rotateClockwise() and rotateAntiClockwise()
+ */
 void ShapeAnnotation::applyRotation(qreal angle)
 {
-  mpTransformation->setRotateAngle(angle);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mRotation = angle;
+  if (angle == 360) {
+    angle = 0;
+  }
+  QString oldAnnotation = getOMCShapeAnnotation();
+  setRotationAngle(angle);
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
@@ -1213,6 +920,9 @@ void ShapeAnnotation::adjustCornerItemsConnectedIndexes()
 void ShapeAnnotation::removeRedundantPointsGeometriesAndCornerItems()
 {
   for (int i = 0 ; i < mPoints.size() ; i++) {
+    if (mPoints.size() <= 2) {
+      break;
+    }
     if ((i+1 < mPoints.size() && mPoints[i].y() == mPoints[i + 1].y() && i+2 < mPoints.size() && mPoints[i + 1].y() == mPoints[i + 2].y()) ||
         (i+1 < mPoints.size() && mPoints[i].x() == mPoints[i + 1].x() && i+2 < mPoints.size() && mPoints[i + 1].x() == mPoints[i + 2].x())) {
       mPoints.removeAt(i + 1);
@@ -1261,19 +971,60 @@ void ShapeAnnotation::setShapeFlags(bool enable)
     Only set the ItemIsMovable & ItemSendsGeometryChanges flags on shape if the class is not a system library class
     AND shape is not an inherited shape.
     */
-  if (!mpGraphicsView->getModelWidget()->getLibraryTreeNode()->isSystemLibrary() && !isInheritedShape()) {
+  if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()) {
     setFlag(QGraphicsItem::ItemIsMovable, enable);
     setFlag(QGraphicsItem::ItemSendsGeometryChanges, enable);
   }
   setFlag(QGraphicsItem::ItemIsSelectable, enable);
 }
 
-/*!
-  Slot activated when mpManhattanizeShapeAction triggered signal is raised.\n
-  Finds the curved lines in the Line shape and makes in manhattanize/right-angle line.
-  */
-void ShapeAnnotation::manhattanizeShape()
+void ShapeAnnotation::updateShape(ShapeAnnotation *pShapeAnnotation)
 {
+  Q_UNUSED(pShapeAnnotation);
+}
+
+/*!
+ * \brief ShapeAnnotation::initUpdateVisible
+ * Initialize optional DynamicSelect for the visible status
+ */
+void ShapeAnnotation::initUpdateVisible()
+{
+  if (mpParentComponent) {
+    if (!mDynamicVisible.isEmpty()) {
+      updateVisible();
+      connect(mpParentComponent, SIGNAL(displayTextChanged()), SLOT(updateVisible()), Qt::UniqueConnection);
+    }
+  }
+}
+
+/*!
+ * \brief ShapeAnnotation::updateVisible
+ * DynamicSelect for the visible status
+ */
+void ShapeAnnotation::updateVisible()
+{
+  bool visible = mVisible; // model provided default value
+  if (!mDynamicVisible.isEmpty()) {
+    QVariant dynamicValue = getDynamicValue(mDynamicVisible);
+    if (!dynamicValue.isNull()) {
+      visible = dynamicValue.toBool();
+    }
+  }
+  setVisible(visible);
+}
+
+/*!
+ * \brief ShapeAnnotation::manhattanizeShape
+ * Slot activated when mpManhattanizeShapeAction triggered signal is raised.\n
+ * Finds the curved lines in the Line shape and makes in manhattanize/right-angle line.
+ * \param addToStack
+ */
+void ShapeAnnotation::manhattanizeShape(bool addToStack)
+{
+  if (mSmooth == StringHandler::SmoothBezier) {
+    return;
+  }
+  QString oldAnnotation = getOMCShapeAnnotation();
   int startIndex = -1;
   for (int i = 0 ; i < mPoints.size() ; i++) {
     if (i + 1 < mPoints.size()) {
@@ -1319,45 +1070,100 @@ void ShapeAnnotation::manhattanizeShape()
     for (int i = lastIndex ; i < oldPoints.size() ; i++) {
       addPoint(oldPoints[i]);
     }
-    removeCornerItems();
-    drawCornerItems();
+    if (addToStack) {
+      ModelWidget *pModelWidget = mpGraphicsView->getModelWidget();
+      pModelWidget->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, getOMCShapeAnnotation()));
+    }
     cornerItemReleased();
   }
 }
 
 /*!
-  Slot activated when Delete option is choosen from context menu of the shape.\n
-  Deletes the connection.
-  */
-void ShapeAnnotation::deleteConnection()
+ * \brief ShapeAnnotation::referenceShapeAdded
+ */
+void ShapeAnnotation::referenceShapeAdded()
 {
-  LineAnnotation *pLineAnnotation = dynamic_cast<LineAnnotation*>(this);
-  if (pLineAnnotation)
-  {
-    mpGraphicsView->deleteConnection(pLineAnnotation->getStartComponentName(), pLineAnnotation->getEndComponentName());
-    mpGraphicsView->deleteConnectionObject(pLineAnnotation);
-    deleteLater();
+  ShapeAnnotation *pShapeAnnotation = qobject_cast<ShapeAnnotation*>(sender());
+  if (pShapeAnnotation) {
+    if (mpGraphicsView) {
+      mpGraphicsView->addItem(this);
+    } else if (mpParentComponent) {
+      setVisible(true);
+      mpParentComponent->shapeAdded();
+    }
   }
 }
 
 /*!
-  Slot activated when Del key is pressed pressed while selecting the shape.\n
-  Slot activated when Delete option is choosen from context menu of the shape.\n
-  Deletes the shape. Emits the GraphicsView::updateClassAnnotation() SIGNAL.\n
-  Since GraphicsView::addClassAnnotation() sets the GraphicsView::mCanAddClassAnnotation flag to false we must set it true again.
-  */
-void ShapeAnnotation::deleteMe()
+ * \brief ShapeAnnotation::referenceShapeChanged
+ */
+void ShapeAnnotation::referenceShapeChanged()
 {
-  // delete the shape
-  mpGraphicsView->deleteShapeObject(this);
-  emit updateClassAnnotation();
-  mpGraphicsView->setCanAddClassAnnotation(true);
-  deleteLater();
+  ShapeAnnotation *pShapeAnnotation = qobject_cast<ShapeAnnotation*>(sender());
+  if (pShapeAnnotation) {
+    if (mpGraphicsView) {
+      prepareGeometryChange();
+      updateShape(pShapeAnnotation);
+      setTransform(pShapeAnnotation->mTransformation.getTransformationMatrix());
+      removeCornerItems();
+      drawCornerItems();
+      setCornerItemsActiveOrPassive();
+      update();
+    } else if (mpParentComponent) {
+      prepareGeometryChange();
+      updateShape(pShapeAnnotation);
+      setPos(mOrigin);
+      setRotation(mRotation);
+      if (dynamic_cast<TextAnnotation*>(this)) {
+        TextAnnotation *pTextAnnotation = dynamic_cast<TextAnnotation*>(this);
+        pTextAnnotation->updateTextString();
+      }
+      update();
+      mpParentComponent->shapeUpdated();
+    }
+  }
 }
 
 /*!
-  Reimplemented by each child shape class to duplicate the shape.
-  */
+ * \brief ShapeAnnotation::referenceShapeDeleted
+ */
+void ShapeAnnotation::referenceShapeDeleted()
+{
+  ShapeAnnotation *pShapeAnnotation = qobject_cast<ShapeAnnotation*>(sender());
+  if (pShapeAnnotation) {
+    if (mpGraphicsView) {
+      mpGraphicsView->removeItem(this);
+    } else if (mpParentComponent) {
+      setVisible(false);
+      mpParentComponent->shapeDeleted();
+    }
+  }
+}
+
+/*!
+ * \brief ShapeAnnotation::deleteMe
+ * Deletes the shape. Slot activated when Del key is pressed while the shape is selected.\n
+ * Slot activated when Delete option is chosen from context menu of the shape.\n
+ */
+void ShapeAnnotation::deleteMe()
+{
+  // delete the shape
+  LineAnnotation *pLineAnnotation = dynamic_cast<LineAnnotation*>(this);
+  if (pLineAnnotation && pLineAnnotation->getLineType() == LineAnnotation::ConnectionType) {
+    mpGraphicsView->deleteConnection(pLineAnnotation);
+  } else if (pLineAnnotation && pLineAnnotation->getLineType() == LineAnnotation::TransitionType) {
+    mpGraphicsView->deleteTransition(pLineAnnotation);
+  } else if (pLineAnnotation && pLineAnnotation->getLineType() == LineAnnotation::InitialStateType) {
+    mpGraphicsView->deleteInitialState(pLineAnnotation);
+  } else {
+    mpGraphicsView->deleteShape(this);
+  }
+}
+
+/*!
+ * \brief ShapeAnnotation::duplicate
+ * Reimplemented by each child shape class to duplicate the shape.
+ */
 void ShapeAnnotation::duplicate()
 {
   /* duplicate code is implemented in each child shape class. */
@@ -1400,325 +1206,227 @@ void ShapeAnnotation::sendBackward()
 }
 
 /*!
-  Slot activated when ctrl+r is pressed while selecting the shape.
-  \sa rotateClockwise(),
-      rotateAntiClockwise(),
-      applyRotation(),
-      rotateAntiClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick(),
-      rotateAntiClockwiseMouseRightClick()
-  */
-void ShapeAnnotation::rotateClockwiseKeyPress()
+ * \brief ShapeAnnotation::rotateClockwise
+ * Rotates the shape clockwise.
+ * \sa rotateAntiClockwise() and applyRotation()
+ */
+void ShapeAnnotation::rotateClockwise()
 {
-  rotateClockwise();
+  qreal oldRotation = StringHandler::getNormalizedAngle(mTransformation.getRotateAngle());
+  qreal rotateIncrement = -90;
+  qreal angle = oldRotation + rotateIncrement;
+  applyRotation(angle);
 }
 
 /*!
-  Slot activated when ctrl+shift+r is pressed while selecting the shape.
-  \sa rotateClockwise(),
-      rotateAntiClockwise(),
-      applyRotation(),
-      rotateClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick(),
-      rotateAntiClockwiseMouseRightClick()
-  */
-void ShapeAnnotation::rotateAntiClockwiseKeyPress()
+ * \brief ShapeAnnotation::rotateAntiClockwise
+ * Rotates the shape anti clockwise.
+ * \sa rotateClockwise() and applyRotation()
+ */
+void ShapeAnnotation::rotateAntiClockwise()
 {
-  rotateAntiClockwise();
+  qreal oldRotation = StringHandler::getNormalizedAngle(mTransformation.getRotateAngle());
+  qreal rotateIncrement = 90;
+  qreal angle = oldRotation + rotateIncrement;
+  applyRotation(angle);
 }
 
 /*!
-  Slot activated when Rotate Clockwise option is choosen from context menu of the shape.\n
-  Emits the GraphicsView::updateClassAnnotation() SIGNAL.\n
-  Since GraphicsView::addClassAnnotation() sets the GraphicsView::mCanAddClassAnnotation flag to false we must set it to true again.
-  \sa rotateClockwise(),
-      rotateAntiClockwise(),
-      applyRotation(),
-      rotateClockwiseKeyPress(),
-      rotateAntiClockwiseKeyPress(),
-      rotateAntiClockwiseMouseRightClick()
-  */
-void ShapeAnnotation::rotateClockwiseMouseRightClick()
-{
-  rotateClockwise();
-  emit updateClassAnnotation();
-  mpGraphicsView->setCanAddClassAnnotation(true);
-}
-
-/*!
-  Slot activated when Rotate Anti Clockwise option is choosen from context menu of the shape.\n
-  Emits the GraphicsView::updateClassAnnotation() SIGNAL.\n
-  Since GraphicsView::addClassAnnotation() sets the GraphicsView::mCanAddClassAnnotation flag to false we must set it to true again.
-  \sa rotateClockwise(),
-      rotateAntiClockwise(),
-      applyRotation(),
-      rotateClockwiseKeyPress(),
-      rotateAntiClockwiseKeyPress(),
-      rotateClockwiseMouseRightClick()
-  */
-void ShapeAnnotation::rotateAntiClockwiseMouseRightClick()
-{
-  rotateAntiClockwise();
-  emit updateClassAnnotation();
-  mpGraphicsView->setCanAddClassAnnotation(true);
-}
-
-/*!
-  Slot that moves shape upwards depending on the grid step size value
-  \sa moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveUp
+ * Slot that moves shape upwards depending on the grid step size value
+ * \sa moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveUp()
 {
-  mpTransformation->adjustPosition(0, mpGraphicsView->getCoOrdinateSystem()->getVerticalGridStep());
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, mpGraphicsView->mCoOrdinateSystem.getVerticalGridStep());
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape upwards depending on the grid step size value multiplied by 5
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveShiftUp
+ * Slot that moves shape upwards depending on the grid step size value multiplied by 5
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveShiftUp()
 {
-  mpTransformation->adjustPosition(0, mpGraphicsView->getCoOrdinateSystem()->getVerticalGridStep() * 5);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, mpGraphicsView->mCoOrdinateSystem.getVerticalGridStep() * 5);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape one pixel upwards
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveCtrlUp
+ * Slot that moves shape one pixel upwards
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveCtrlUp()
 {
-  mpTransformation->adjustPosition(0, 1);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, 1);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape downwards depending on the grid step size value
-  \sa moveUp(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveDown
+ * Slot that moves shape downwards depending on the grid step size value
+ * \sa moveUp(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveDown()
 {
-  mpTransformation->adjustPosition(0, -mpGraphicsView->getCoOrdinateSystem()->getVerticalGridStep());
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, -mpGraphicsView->mCoOrdinateSystem.getVerticalGridStep());
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
-
 /*!
-  Slot that moves shape downwards depending on the grid step size value multiplied by 5
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveShiftDown
+ * Slot that moves shape downwards depending on the grid step size value multiplied by 5
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveShiftDown()
 {
-  mpTransformation->adjustPosition(0, -(mpGraphicsView->getCoOrdinateSystem()->getVerticalGridStep() * 5));
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, -(mpGraphicsView->mCoOrdinateSystem.getVerticalGridStep() * 5));
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape one pixel downwards
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveCtrlDown
+ * Slot that moves shape one pixel downwards
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveCtrlDown()
 {
-  mpTransformation->adjustPosition(0, -1);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(0, -1);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape leftwards depending on the grid step size
-  \sa moveUp(),
-      moveDown(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveLeft
+ * Slot that moves shape leftwards depending on the grid step size
+ * \sa moveUp(), moveDown(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveLeft()
 {
-  mpTransformation->adjustPosition(-mpGraphicsView->getCoOrdinateSystem()->getHorizontalGridStep(), 0);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(-mpGraphicsView->mCoOrdinateSystem.getHorizontalGridStep(), 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape leftwards depending on the grid step size value multiplied by 5
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveShiftLeft
+ * Slot that moves shape leftwards depending on the grid step size value multiplied by 5
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveShiftLeft()
 {
-  mpTransformation->adjustPosition(-(mpGraphicsView->getCoOrdinateSystem()->getHorizontalGridStep() * 5), 0);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(-(mpGraphicsView->mCoOrdinateSystem.getHorizontalGridStep() * 5), 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape one pixel leftwards
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveCtrlLeft
+ * Slot that moves shape one pixel leftwards
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(),
+ * moveCtrlDown() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveCtrlLeft()
 {
-  mpTransformation->setOrigin(QPointF(mpTransformation->getPosition().x() - 1, mpTransformation->getPosition().y()));
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(-1, 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape rightwards depending on the grid step size
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveRight
+ * Slot that moves shape rightwards depending on the grid step size
+ * \sa moveUp(), moveDown(), moveLeft(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveRight()
 {
-  mpTransformation->adjustPosition(mpGraphicsView->getCoOrdinateSystem()->getHorizontalGridStep(), 0);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(mpGraphicsView->mCoOrdinateSystem.getHorizontalGridStep(), 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape rightwards depending on the grid step size value multiplied by 5
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft(),
-      moveCtrlRight()
-  */
+ * \brief ShapeAnnotation::moveShiftRight
+ * Slot that moves shape rightwards depending on the grid step size value multiplied by 5
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveCtrlUp(), moveCtrlDown(),
+ * moveCtrlLeft() and moveCtrlRight()
+ */
 void ShapeAnnotation::moveShiftRight()
 {
-  mpTransformation->adjustPosition(mpGraphicsView->getCoOrdinateSystem()->getHorizontalGridStep() * 5, 0);
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(mpGraphicsView->mCoOrdinateSystem.getHorizontalGridStep() * 5, 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot that moves shape one pixel rightwards
-  \sa moveUp(),
-      moveDown(),
-      moveLeft(),
-      moveRight(),
-      moveShiftUp(),
-      moveShiftDown(),
-      moveShiftLeft(),
-      moveShiftRight(),
-      moveCtrlUp(),
-      moveCtrlDown(),
-      moveCtrlLeft()
-  */
+ * \brief ShapeAnnotation::moveCtrlRight
+ * Slot that moves shape one pixel rightwards
+ * \sa moveUp(), moveDown(), moveLeft(), moveRight(), moveShiftUp(), moveShiftDown(), moveShiftLeft(), moveShiftRight(), moveCtrlUp(),
+ * moveCtrlDown() and moveCtrlLeft()
+ */
 void ShapeAnnotation::moveCtrlRight()
 {
-  mpTransformation->setOrigin(QPointF(mpTransformation->getPosition().x() + 1, mpTransformation->getPosition().y()));
-  setTransform(mpTransformation->getTransformationMatrix());
-  mOrigin = mpTransformation->getPosition();
+  QString oldAnnotation = getOMCShapeAnnotation();
+  mTransformation.adjustPosition(1, 0);
+  setTransform(mTransformation.getTransformationMatrix());
+  setOrigin(mTransformation.getPosition());
+  QString newAnnotation = getOMCShapeAnnotation();
+  mpGraphicsView->getModelWidget()->getUndoStack()->push(new UpdateShapeCommand(this, oldAnnotation, newAnnotation));
 }
 
 /*!
-  Slot activated when CornerItem around the shape is pressed. Sets the flag that CornerItem is pressed.
-  */
+ * \brief ShapeAnnotation::cornerItemPressed
+ * Slot activated when CornerItem around the shape is pressed. Sets the flag that CornerItem is pressed.
+ */
 void ShapeAnnotation::cornerItemPressed()
 {
   mIsCornerItemClicked = true;
@@ -1726,64 +1434,69 @@ void ShapeAnnotation::cornerItemPressed()
 }
 
 /*!
-  Slot activated when CornerItem around the shape is release. Unsets the flag that CornerItem is pressed.
-  */
+ * \brief ShapeAnnotation::cornerItemReleased
+ * Slot activated when CornerItem around the shape is release. Unsets the flag that CornerItem is pressed.
+ */
 void ShapeAnnotation::cornerItemReleased()
 {
   mIsCornerItemClicked = false;
   if (isSelected()) {
-    setCornerItemsActive();
+    setCornerItemsActiveOrPassive();
   } else {
     setSelected(true);
   }
 }
 
 /*!
-  Slot activated when CornerItem around the shape is moved. Sends the new position values for the associated shape point.
-  \param index - the index of the CornerItem
-  \param point - the new CornerItem position
-  */
+ * \brief ShapeAnnotation::updateCornerItemPoint
+ * Slot activated when CornerItem around the shape is moved. Sends the new position values for the associated shape point.
+ * \param index - the index of the CornerItem
+ * \param point - the new CornerItem position
+ */
 void ShapeAnnotation::updateCornerItemPoint(int index, QPointF point)
 {
+  prepareGeometryChange();
   if (dynamic_cast<LineAnnotation*>(this)) {
     LineAnnotation *pLineAnnotation = dynamic_cast<LineAnnotation*>(this);
     if (pLineAnnotation->getLineType() == LineAnnotation::ConnectionType) {
-      // if moving the 2nd last point then we need to add more points after it to keep the last point manhattanized with connector
-      int secondLastIndex = mPoints.size() - 2;
-      if (index == secondLastIndex) {
-        // just check if additional points are really needed or not.
-        if ((mGeometries[secondLastIndex] == ShapeAnnotation::HorizontalLine && mPoints[index].y() != point.y()) ||
-            (mGeometries[secondLastIndex] == ShapeAnnotation::VerticalLine && mPoints[index].x() != point.x())) {
-          insertPointsGeometriesAndCornerItems(mPoints.size() - 1);
+      if (mPoints.size() > index) {
+        // if moving the 2nd last point then we need to add more points after it to keep the last point manhattanized with connector
+        int secondLastIndex = mPoints.size() - 2;
+        if (index == secondLastIndex) {
+          // just check if additional points are really needed or not.
+          if ((mGeometries[secondLastIndex] == ShapeAnnotation::HorizontalLine && mPoints[index].y() != point.y()) ||
+              (mGeometries[secondLastIndex] == ShapeAnnotation::VerticalLine && mPoints[index].x() != point.x())) {
+            insertPointsGeometriesAndCornerItems(mPoints.size() - 1);
+          }
         }
-      }
-      // if moving the 2nd point then we need to add more points behind it to keep the first point manhattanized with connector
-      if (index == 1) {
-        // just check if additional points are really needed or not.
-        if ((mGeometries[0] == ShapeAnnotation::HorizontalLine && mPoints[index].y() != point.y()) ||
-            (mGeometries[0] == ShapeAnnotation::VerticalLine && mPoints[index].x() != point.x())) {
-          insertPointsGeometriesAndCornerItems(1);
-          index = index + 2;
+        // if moving the 2nd point then we need to add more points behind it to keep the first point manhattanized with connector
+        if (index == 1) {
+          // just check if additional points are really needed or not.
+          if ((mGeometries[0] == ShapeAnnotation::HorizontalLine && mPoints[index].y() != point.y()) ||
+              (mGeometries[0] == ShapeAnnotation::VerticalLine && mPoints[index].x() != point.x())) {
+            insertPointsGeometriesAndCornerItems(1);
+            index = index + 2;
+          }
         }
-      }
-      qreal dx = point.x() - mPoints[index].x();
-      qreal dy = point.y() - mPoints[index].y();
-      mPoints.replace(index, point);
-      // update previous point
-      if (mGeometries[index - 1] == ShapeAnnotation::HorizontalLine) {
-        mPoints[index - 1] = QPointF(mPoints[index - 1].x(), mPoints[index - 1].y() +  dy);
-        updateCornerItem(index - 1);
-      } else if (mGeometries[index - 1] == ShapeAnnotation::VerticalLine) {
-        mPoints[index - 1] = QPointF(mPoints[index - 1].x() + dx, mPoints[index - 1].y());
-        updateCornerItem(index - 1);
-      }
-      // update next point
-      if (mGeometries[index] == ShapeAnnotation::HorizontalLine) {
-        mPoints[index + 1] = QPointF(mPoints[index + 1].x(), mPoints[index + 1].y() +  dy);
-        updateCornerItem(index + 1);
-      } else if (mGeometries[index] == ShapeAnnotation::VerticalLine) {
-        mPoints[index + 1] = QPointF(mPoints[index + 1].x() + dx, mPoints[index + 1].y());
-        updateCornerItem(index + 1);
+        qreal dx = point.x() - mPoints[index].x();
+        qreal dy = point.y() - mPoints[index].y();
+        mPoints.replace(index, point);
+        // update previous point
+        if (mGeometries.size() > index - 1 && mGeometries[index - 1] == ShapeAnnotation::HorizontalLine && mPoints.size() > index - 1) {
+          mPoints[index - 1] = QPointF(mPoints[index - 1].x(), mPoints[index - 1].y() +  dy);
+          updateCornerItem(index - 1);
+        } else if (mGeometries.size() > index - 1 && mGeometries[index - 1] == ShapeAnnotation::VerticalLine && mPoints.size() > index - 1) {
+          mPoints[index - 1] = QPointF(mPoints[index - 1].x() + dx, mPoints[index - 1].y());
+          updateCornerItem(index - 1);
+        }
+        // update next point
+        if (mGeometries.size() > index && mGeometries[index] == ShapeAnnotation::HorizontalLine && mPoints.size() > index + 1) {
+          mPoints[index + 1] = QPointF(mPoints[index + 1].x(), mPoints[index + 1].y() +  dy);
+          updateCornerItem(index + 1);
+        } else if (mGeometries.size() > index && mGeometries[index] == ShapeAnnotation::VerticalLine && mPoints.size() > index + 1) {
+          mPoints[index + 1] = QPointF(mPoints[index + 1].x() + dx, mPoints[index + 1].y());
+          updateCornerItem(index + 1);
+        }
       }
     } else {
       mPoints.replace(index, point);
@@ -1828,23 +1541,70 @@ bool ShapeAnnotation::isLineStraight(QPointF point1, QPointF point2)
 }
 
 /*!
-  Slot activated when Properties option is choosen from context menu of the shape.
-  */
+ * \brief ShapeAnnotation::showShapeProperties
+ * Slot activated when Properties option is chosen from context menu of the shape.
+ */
 void ShapeAnnotation::showShapeProperties()
 {
-  if (!mpGraphicsView || mpGraphicsView->getModelWidget()->getLibraryTreeNode()->getLibraryType()== LibraryTreeNode::TLM)
+  if (!mpGraphicsView || mpGraphicsView->getModelWidget()->getLibraryTreeItem()->getLibraryType() == LibraryTreeItem::CompositeModel) {
     return;
-  MainWindow *pMainWindow = mpGraphicsView->getModelWidget()->getModelWidgetContainer()->getMainWindow();
+  }
+  MainWindow *pMainWindow = MainWindow::instance();
   ShapePropertiesDialog *pShapePropertiesDialog = new ShapePropertiesDialog(this, pMainWindow);
   pShapePropertiesDialog->exec();
 }
 
 /*!
-  Reimplementation of contextMenuEvent.\n
-  Creates a context menu for the shape.\n
-  No context menu for the shapes that are part of Component.
-  \param pEvent - pointer to QGraphicsSceneContextMenuEvent
-  */
+ * \brief ShapeAnnotation::showShapeAttributes
+ * Slot activated when Attributes option is chosen from context menu of the shape.
+ */
+void ShapeAnnotation::showShapeAttributes()
+{
+  if (!mpGraphicsView) {
+    return;
+  }
+  LineAnnotation *pConnectionLineAnnotation = dynamic_cast<LineAnnotation*>(this);
+  CompositeModelConnectionAttributes *pCompositeModelConnectionAttributes;
+  pCompositeModelConnectionAttributes = new CompositeModelConnectionAttributes(mpGraphicsView, pConnectionLineAnnotation, true, MainWindow::instance());
+  pCompositeModelConnectionAttributes->exec();
+}
+
+/*!
+ * \brief ShapeAnnotation::editTransition
+ * Slot activated when edit transition option is chosen from context menu of the transition.
+ */
+void ShapeAnnotation::editTransition()
+{
+  if (!mpGraphicsView) {
+    return;
+  }
+  LineAnnotation *pTransitionLineAnnotation = dynamic_cast<LineAnnotation*>(this);
+  CreateOrEditTransitionDialog *pCreateOrEditTransitionDialog = new CreateOrEditTransitionDialog(mpGraphicsView, pTransitionLineAnnotation,
+                                                                                                 true, MainWindow::instance());
+  pCreateOrEditTransitionDialog->exec();
+}
+
+/*!
+ * \brief ShapeAnnotation::alignInterfaces
+ * Slot activated when Align Interfaces option is chosen from context menu of the shape.
+ */
+void ShapeAnnotation::alignInterfaces()
+{
+  if (!mpGraphicsView) {
+    return;
+  }
+  LineAnnotation *pConnectionLineAnnotation = dynamic_cast<LineAnnotation*>(this);
+  AlignInterfacesDialog *pAlignInterfacesDialog = new AlignInterfacesDialog(mpGraphicsView->getModelWidget(), pConnectionLineAnnotation);
+  pAlignInterfacesDialog->exec();
+}
+
+/*!
+ * \brief ShapeAnnotation::contextMenuEvent
+ * Reimplementation of contextMenuEvent.\n
+ * Creates a context menu for the shape.\n
+ * No context menu for the shapes that are part of Component.
+ * \param pEvent - pointer to QGraphicsSceneContextMenuEvent
+ */
 void ShapeAnnotation::contextMenuEvent(QGraphicsSceneContextMenuEvent *pEvent)
 {
   if (!mIsCustomShape) {
@@ -1856,14 +1616,33 @@ void ShapeAnnotation::contextMenuEvent(QGraphicsSceneContextMenuEvent *pEvent)
   }
 
   QMenu menu(mpGraphicsView);
-  if(mpGraphicsView->getModelWidget()->getLibraryTreeNode()->getLibraryType()== LibraryTreeNode::TLM){
-    menu.addAction(mpGraphicsView->getDeleteConnectionAction());
+  if (mpGraphicsView->getModelWidget()->getLibraryTreeItem()->getLibraryType()== LibraryTreeItem::CompositeModel) {
+    menu.addAction(mpShapeAttributesAction);
+
+    //Only show align interfaces action for bidirectional connections
+    LineAnnotation *pConnectionLineAnnotation = dynamic_cast<LineAnnotation*>(this);
+    QString startName = pConnectionLineAnnotation->getStartComponentName();
+    QString endName = pConnectionLineAnnotation->getEndComponentName();
+    CompositeModelEditor *pEditor = dynamic_cast<CompositeModelEditor*>(mpGraphicsView->getModelWidget()->getEditor());
+    if(pEditor->getInterfaceCausality(startName) == StringHandler::getTLMCausality(StringHandler::TLMBidirectional) &&
+       pEditor->getInterfaceCausality(endName) == StringHandler::getTLMCausality(StringHandler::TLMBidirectional)) {
+        menu.addSeparator();
+        menu.addAction(mpAlignInterfacesAction);
+    }
+
+    menu.addSeparator();
+    menu.addAction(mpGraphicsView->getDeleteAction());
   } else {
     menu.addAction(mpShapePropertiesAction);
     menu.addSeparator();
     if (isInheritedShape()) {
+      mpGraphicsView->getManhattanizeAction()->setDisabled(true);
       mpGraphicsView->getDeleteAction()->setDisabled(true);
       mpGraphicsView->getDuplicateAction()->setDisabled(true);
+      mpGraphicsView->getBringToFrontAction()->setDisabled(true);
+      mpGraphicsView->getBringForwardAction()->setDisabled(true);
+      mpGraphicsView->getSendToBackAction()->setDisabled(true);
+      mpGraphicsView->getSendBackwardAction()->setDisabled(true);
       mpGraphicsView->getRotateClockwiseAction()->setDisabled(true);
       mpGraphicsView->getRotateAntiClockwiseAction()->setDisabled(true);
     }
@@ -1871,12 +1650,12 @@ void ShapeAnnotation::contextMenuEvent(QGraphicsSceneContextMenuEvent *pEvent)
     LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
     if (pLineAnnotation) {
       lineType = pLineAnnotation->getLineType();
-      menu.addAction(mpManhattanizeShapeAction);
+      if (lineType != LineAnnotation::ConnectionType && lineType != LineAnnotation::TransitionType) {
+        menu.addAction(mpGraphicsView->getManhattanizeAction());
+      }
     }
-    if (lineType == LineAnnotation::ConnectionType) {
-      menu.addAction(mpGraphicsView->getDeleteConnectionAction());
-    } else {
-      menu.addAction(mpGraphicsView->getDeleteAction());
+    menu.addAction(mpGraphicsView->getDeleteAction());
+    if (lineType != LineAnnotation::ConnectionType && lineType != LineAnnotation::TransitionType) {
       menu.addAction(mpGraphicsView->getDuplicateAction());
       menu.addSeparator();
       menu.addAction(mpGraphicsView->getBringToFrontAction());
@@ -1886,6 +1665,9 @@ void ShapeAnnotation::contextMenuEvent(QGraphicsSceneContextMenuEvent *pEvent)
       menu.addSeparator();
       menu.addAction(mpGraphicsView->getRotateClockwiseAction());
       menu.addAction(mpGraphicsView->getRotateAntiClockwiseAction());
+    } else if (lineType == LineAnnotation::TransitionType) {
+      menu.addSeparator();
+      menu.addAction(mpEditTransitionAction);
     }
   }
   menu.exec(pEvent->screenPos());
@@ -1908,26 +1690,26 @@ QVariant ShapeAnnotation::itemChange(GraphicsItemChange change, const QVariant &
       lineType = pLineAnnotation->getLineType();
     }
     if (isSelected()) {
-      setCornerItemsActive();
+      setCornerItemsActiveOrPassive();
       setCursor(Qt::SizeAllCursor);
       /* Only allow manipulations on shapes if the class is not a system library class OR shape is not an inherited component. */
-      if (!mpGraphicsView->getModelWidget()->getLibraryTreeNode()->isSystemLibrary() && !isInheritedShape()) {
-        if (lineType == LineAnnotation::ConnectionType) {
-          connect(mpGraphicsView->getDeleteConnectionAction(), SIGNAL(triggered()), SLOT(deleteConnection()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyPressDelete()), SLOT(deleteConnection()), Qt::UniqueConnection);
-        } else {
-          connect(mpGraphicsView->getDeleteAction(), SIGNAL(triggered()), this, SLOT(deleteMe()), Qt::UniqueConnection);
-          connect(mpGraphicsView->getDuplicateAction(), SIGNAL(triggered()), this, SLOT(duplicate()), Qt::UniqueConnection);
+      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()) {
+        if (pLineAnnotation) {
+          connect(mpGraphicsView, SIGNAL(mouseManhattanize()), this, SLOT(manhattanizeShape()), Qt::UniqueConnection);
+        }
+        connect(mpGraphicsView, SIGNAL(mouseDelete()), this, SLOT(deleteMe()), Qt::UniqueConnection);
+        connect(mpGraphicsView, SIGNAL(keyPressDelete()), this, SLOT(deleteMe()), Qt::UniqueConnection);
+        if (lineType == LineAnnotation::ShapeType) {
+          connect(mpGraphicsView, SIGNAL(mouseDuplicate()), this, SLOT(duplicate()), Qt::UniqueConnection);
           connect(mpGraphicsView->getBringToFrontAction(), SIGNAL(triggered()), this, SLOT(bringToFront()), Qt::UniqueConnection);
           connect(mpGraphicsView->getBringForwardAction(), SIGNAL(triggered()), this, SLOT(bringForward()), Qt::UniqueConnection);
           connect(mpGraphicsView->getSendToBackAction(), SIGNAL(triggered()), this, SLOT(sendToBack()), Qt::UniqueConnection);
           connect(mpGraphicsView->getSendBackwardAction(), SIGNAL(triggered()), this, SLOT(sendBackward()), Qt::UniqueConnection);
-          connect(mpGraphicsView->getRotateClockwiseAction(), SIGNAL(triggered()), this, SLOT(rotateClockwiseMouseRightClick()), Qt::UniqueConnection);
-          connect(mpGraphicsView->getRotateAntiClockwiseAction(), SIGNAL(triggered()), this, SLOT(rotateAntiClockwiseMouseRightClick()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyPressDelete()), this, SLOT(deleteMe()), Qt::UniqueConnection);
+          connect(mpGraphicsView, SIGNAL(mouseRotateClockwise()), this, SLOT(rotateClockwise()), Qt::UniqueConnection);
+          connect(mpGraphicsView, SIGNAL(mouseRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressDuplicate()), this, SLOT(duplicate()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwiseKeyPress()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwiseKeyPress()), Qt::UniqueConnection);
+          connect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwise()), Qt::UniqueConnection);
+          connect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressUp()), this, SLOT(moveUp()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressShiftUp()), this, SLOT(moveShiftUp()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressCtrlUp()), this, SLOT(moveCtrlUp()), Qt::UniqueConnection);
@@ -1940,30 +1722,29 @@ QVariant ShapeAnnotation::itemChange(GraphicsItemChange change, const QVariant &
           connect(mpGraphicsView, SIGNAL(keyPressRight()), this, SLOT(moveRight()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressShiftRight()), this, SLOT(moveShiftRight()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressCtrlRight()), this, SLOT(moveCtrlRight()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyRelease()), this, SIGNAL(updateClassAnnotation()), Qt::UniqueConnection);
         }
       }
     } else if (!mIsCornerItemClicked) {
-      setCornerItemsPassive();
+      setCornerItemsActiveOrPassive();
       unsetCursor();
       /* Only allow manipulations on shapes if the class is not a system library class OR shape is not an inherited component. */
-      if (!mpGraphicsView->getModelWidget()->getLibraryTreeNode()->isSystemLibrary() && !isInheritedShape()) {
-        if (lineType == LineAnnotation::ConnectionType) {
-          disconnect(mpGraphicsView->getDeleteConnectionAction(), SIGNAL(triggered()), this, SLOT(deleteConnection()));
-          disconnect(mpGraphicsView, SIGNAL(keyPressDelete()), this, SLOT(deleteConnection()));
-        } else {
-          disconnect(mpGraphicsView->getDeleteAction(), SIGNAL(triggered()), this, SLOT(deleteMe()));
-          disconnect(mpGraphicsView->getDuplicateAction(), SIGNAL(triggered()), this, SLOT(duplicate()));
+      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()) {
+        if (pLineAnnotation) {
+          disconnect(mpGraphicsView, SIGNAL(mouseManhattanize()), this, SLOT(manhattanizeShape()));
+        }
+        disconnect(mpGraphicsView, SIGNAL(mouseDelete()), this, SLOT(deleteMe()));
+        disconnect(mpGraphicsView, SIGNAL(keyPressDelete()), this, SLOT(deleteMe()));
+        if (lineType == LineAnnotation::ShapeType) {
+          disconnect(mpGraphicsView, SIGNAL(mouseDuplicate()), this, SLOT(duplicate()));
           disconnect(mpGraphicsView->getBringToFrontAction(), SIGNAL(triggered()), this, SLOT(bringToFront()));
           disconnect(mpGraphicsView->getBringForwardAction(), SIGNAL(triggered()), this, SLOT(bringForward()));
           disconnect(mpGraphicsView->getSendToBackAction(), SIGNAL(triggered()), this, SLOT(sendToBack()));
           disconnect(mpGraphicsView->getSendBackwardAction(), SIGNAL(triggered()), this, SLOT(sendBackward()));
-          disconnect(mpGraphicsView->getRotateClockwiseAction(), SIGNAL(triggered()), this, SLOT(rotateClockwiseMouseRightClick()));
-          disconnect(mpGraphicsView->getRotateAntiClockwiseAction(), SIGNAL(triggered()), this, SLOT(rotateAntiClockwiseMouseRightClick()));
-          disconnect(mpGraphicsView, SIGNAL(keyPressDelete()), this, SLOT(deleteMe()));
+          disconnect(mpGraphicsView, SIGNAL(mouseRotateClockwise()), this, SLOT(rotateClockwise()));
+          disconnect(mpGraphicsView, SIGNAL(mouseRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()));
           disconnect(mpGraphicsView, SIGNAL(keyPressDuplicate()), this, SLOT(duplicate()));
-          disconnect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwiseKeyPress()));
-          disconnect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwiseKeyPress()));
+          disconnect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwise()));
+          disconnect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()));
           disconnect(mpGraphicsView, SIGNAL(keyPressUp()), this, SLOT(moveUp()));
           disconnect(mpGraphicsView, SIGNAL(keyPressShiftUp()), this, SLOT(moveShiftUp()));
           disconnect(mpGraphicsView, SIGNAL(keyPressCtrlUp()), this, SLOT(moveCtrlUp()));
@@ -1976,7 +1757,6 @@ QVariant ShapeAnnotation::itemChange(GraphicsItemChange change, const QVariant &
           disconnect(mpGraphicsView, SIGNAL(keyPressRight()), this, SLOT(moveRight()));
           disconnect(mpGraphicsView, SIGNAL(keyPressShiftRight()), this, SLOT(moveShiftRight()));
           disconnect(mpGraphicsView, SIGNAL(keyPressCtrlRight()), this, SLOT(moveCtrlRight()));
-          disconnect(mpGraphicsView, SIGNAL(keyRelease()), this, SIGNAL(updateClassAnnotation()));
         }
       }
     }

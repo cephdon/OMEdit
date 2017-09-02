@@ -28,23 +28,24 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: StackFramesWidget.h 22009 2014-08-26 23:13:38Z hudson $
- *
  */
 
 #ifndef STACKFRAMESWIDGET_H
 #define STACKFRAMESWIDGET_H
 
-#include "DebuggerMainWindow.h"
-#include "GDBMIParser.h"
+#include <QTreeWidget>
+#include <QWidget>
+#include <QComboBox>
+#include <QToolButton>
+#include <QStatusBar>
+
+#include "Debugger/Parser/GDBMIParser.h"
 
 using namespace GDBMIParser;
-class DebuggerMainWindow;
 class StackFramesWidget;
 class StackFramesTreeWidget;
+class Label;
 
 class StackFrameItem : public QTreeWidgetItem
 {
@@ -94,23 +95,28 @@ class StackFramesWidget : public QWidget
 {
   Q_OBJECT
 public:
-  StackFramesWidget(DebuggerMainWindow *pDebuggerMainWindow);
-  DebuggerMainWindow *getDebuggerMainWindow() {return mpDebuggerMainWindow;}
+  StackFramesWidget(QWidget *pParent = 0);
+  QComboBox* getThreadsComboBox() {return mpThreadsComboBox;}
   StackFramesTreeWidget* getStackFramesTreeWidget() {return mpStackFramesTreeWidget;}
+  void setSelectedThread(int thread) {mSelectedThread = thread;}
+  int getSelectedThread() {return mSelectedThread;}
+  void setSelectedFrame(int frame) {mSelectedFrame = frame;}
+  int getSelectedFrame() {return mSelectedFrame;}
   void setStatusMessage(QString statusMessage);
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   QToolButton *mpResumeToolButton;
   QToolButton *mpInterruptToolButton;
   QToolButton *mpExitToolButton;
-  QToolButton *mpStepOverToolButton;
   QToolButton *mpStepIntoToolButton;
+  QToolButton *mpStepOverToolButton;
   QToolButton *mpStepReturnToolButton;
   Label *mpThreadsLabel;
   QComboBox *mpThreadsComboBox;
   Label *mpStatusLabel;
   QStatusBar *mpStatusBar;
   StackFramesTreeWidget *mpStackFramesTreeWidget;
+  int mSelectedThread;
+  int mSelectedFrame;
 public slots:
   void resumeButtonClicked();
   void interruptButtonClicked();
@@ -124,7 +130,7 @@ public slots:
   void handleInferiorResumed();
   void threadChanged(int threadIndex);
   void fillThreadComboBox(GDBMIValue *pThreadsGDBMIValue, QString currentThreadId);
-  bool stackItemDoubleClicked(QTreeWidgetItem *pQTreeWidgetItem);
+  void stackCurrentItemChanged(QTreeWidgetItem *pTreeWidgetItem);
 };
 
 #endif // STACKFRAMESWIDGET_H

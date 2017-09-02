@@ -28,17 +28,16 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: LocalsWidget.h 22009 2014-08-26 23:13:38Z hudson $
- *
  */
 
 #ifndef LOCALSWIDGET_H
 #define LOCALSWIDGET_H
 
-#include "DebuggerMainWindow.h"
+#include <QVector>
+#include <QSortFilterProxyModel>
+#include <QTreeView>
+#include <QPlainTextEdit>
 
 class LocalsWidget;
 class LocalsTreeModel;
@@ -76,7 +75,6 @@ public:
   void removeChildren();
   void removeChild(LocalsTreeItem *pLocalsTreeItem);
   int columnCount() const;
-  bool setData(int column, const QVariant &value, int role = Qt::EditRole);
   QVariant data(int column, int role = Qt::DisplayRole) const;
   int row() const;
   LocalsTreeItem *parent();
@@ -115,7 +113,6 @@ public:
   QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
   QModelIndex index(int row, int column, const QModelIndex &parent = QModelIndex()) const;
   QModelIndex parent(const QModelIndex & index) const;
-  bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole);
   QVariant data(const QModelIndex & index, int role = Qt::DisplayRole) const;
   LocalsTreeItem* findLocalsTreeItem(const QString &name, LocalsTreeItem *root) const;
   QModelIndex localsTreeItemIndex(const LocalsTreeItem *pLocalsTreeItem) const;
@@ -125,6 +122,7 @@ public:
   void insertLocalsList(const QList<QVector<QVariant> > &locals);
   void removeLocalItem(LocalsTreeItem *pLocalsTreeItem);
   void removeLocalItems();
+  void updateLocalsTreeItem(LocalsTreeItem *pLocalsTreeItem);
 private:
   LocalsWidget *mpLocalsWidget;
   LocalsTreeItem *mpRootLocalsTreeItem;
@@ -135,9 +133,8 @@ class LocalsTreeProxyModel : public QSortFilterProxyModel
   Q_OBJECT
 public:
   LocalsTreeProxyModel(QObject *parent = 0);
-  void clearfilter();
 protected:
-  bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const;
+  virtual bool lessThan(const QModelIndex &left, const QModelIndex &right) const;
 };
 
 class LocalsTreeView : public QTreeView
@@ -154,13 +151,11 @@ class LocalsWidget : public QWidget
 {
   Q_OBJECT
 public:
-  LocalsWidget(DebuggerMainWindow *pDebuggerMainWindow);
-  DebuggerMainWindow* getDebuggerMainWindow() {return mpDebuggerMainWindow;}
+  LocalsWidget(QWidget *pParent = 0);
   LocalsTreeView* getLocalsTreeView() {return mpLocalsTreeView;}
   LocalsTreeModel* getLocalsTreeModel() {return mpLocalsTreeModel;}
   LocalsTreeProxyModel* getLocalsTreeProxyModel() {return mpLocalsTreeProxyModel;}
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   LocalsTreeView *mpLocalsTreeView;
   LocalsTreeModel *mpLocalsTreeModel;
   LocalsTreeProxyModel *mpLocalsTreeProxyModel;

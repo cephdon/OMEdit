@@ -33,8 +33,9 @@
 
 #include "FetchInterfaceDataDialog.h"
 
-class FetchInterfaceDataDialog;
+#include <QThread>
 
+class FetchInterfaceDataDialog;
 class FetchInterfaceDataThread : public QThread
 {
   Q_OBJECT
@@ -48,6 +49,7 @@ protected:
 private:
   FetchInterfaceDataDialog *mpFetchInterfaceDataDialog;
   QProcess *mpManagerProcess;
+  qint64 mManagerProcessId;
   bool mIsManagerProcessRunning;
 private slots:
   void managerProcessStarted();

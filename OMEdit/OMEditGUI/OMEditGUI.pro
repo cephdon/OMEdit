@@ -28,7 +28,10 @@
  #
  #/
 
-QT += network core gui webkit xml xmlpatterns svg
+QT += network core gui webkit xml xmlpatterns svg opengl
+greaterThan(QT_MAJOR_VERSION, 4) {
+  QT += printsupport widgets webkitwidgets opengl
+}
 
 TRANSLATIONS = Resources/nls/OMEdit_de.ts \
   Resources/nls/OMEdit_es.ts \
@@ -51,39 +54,62 @@ evil_hack_to_fool_lupdate {
 # Windows libraries and includes
 win32 {
   OPENMODELICAHOME = $$(OPENMODELICAHOME)
-  QMAKE_LFLAGS += -enable-auto-import
-
+  # define used for OpenModelica C-API
   DEFINES += IMPORT_INTO=1
-
-  QMAKE_CXXFLAGS += -Wl,--stack,16777216
-
-  CONFIG(release, debug|release) {
+  # win32 vs. win64
+  contains(QT_ARCH, i386) { # 32-bit
+    QMAKE_LFLAGS += -Wl,--stack,16777216,--enable-auto-import,--large-address-aware
+  } else { # 64-bit
+    QMAKE_LFLAGS += -Wl,--stack,33554432,--enable-auto-import
+  }
+  # release vs debug
+  CONFIG(release, debug|release) { # release
+    # required for backtrace
     # In order to get the stack trace in Windows we must add -g flag. Qt automatically adds the -O2 flag for optimization.
     # We should also unset the QMAKE_LFLAGS_RELEASE define because it is defined as QMAKE_LFLAGS_RELEASE = -Wl,-s in qmake.conf file for MinGW
     # -s will remove all symbol table and relocation information from the executable.
     QMAKE_CXXFLAGS += -g
     QMAKE_LFLAGS_RELEASE =
-    # required for backtrace
-    LIBS += -L$$(OMDEV)/tools/mingw/bin -lintl-8 -lbfd -liberty -limagehlp
+    # win32 vs. win64
+    contains(QT_ARCH, i386) { # 32-bit
+      LIBS += -L$$(OMDEV)/tools/msys/mingw32/lib/binutils -L$$(OMDEV)/tools/msys/mingw32/bin -L$$(OMDEV)/tools/msys/mingw32/lib -L$$(OPENMODELICAHOME)/../OMCompiler/3rdParty/FMIL/install/lib
+    } else { # 64-bit
+      LIBS += -L$$(OMDEV)/tools/msys/mingw64/lib/binutils -L$$(OMDEV)/tools/msys/mingw64/bin -L$$(OMDEV)/tools/msys/mingw64/lib -L$$(OPENMODELICAHOME)/../OMCompiler/3rdParty/FMIL/install/lib
+    }
+    LIBS += -limagehlp -lbfd -lintl -liberty -llibosg.dll -llibosgViewer.dll -llibOpenThreads.dll -llibosgDB.dll -llibosgGA.dll
+  } else { # debug
+    contains(QT_ARCH, i386) { # 32-bit
+      LIBS += -L$$(OMDEV)/tools/msys/mingw32/lib -L$$(OPENMODELICAHOME)/../OMCompiler/3rdParty/FMIL/install/lib
+    } else { # 64-bit
+      LIBS += -L$$(OMDEV)/tools/msys/mingw64/lib -L$$(OPENMODELICAHOME)/../OMCompiler/3rdParty/FMIL/install/lib
+    }
+    LIBS += -llibosgd.dll -llibosgViewerd.dll -llibOpenThreadsd.dll -llibosgDBd.dll -llibosgGAd.dll
   }
   LIBS += -L../OMEditGUI/Debugger/Parser -lGDBMIParser \
     -L$$(OMBUILDDIR)/lib/omc -lomantlr3 -lOMPlot -lomqwt \
-    -lOpenModelicaCompiler -lOpenModelicaRuntimeC -lfmilib -lModelicaExternalC -lomcgc -lpthread \
+    -lOpenModelicaCompiler -lOpenModelicaRuntimeC -lfmilib -lModelicaExternalC -lomcgc -lpthread -llibfmilib -lshlwapi\
     -lws2_32
+
   INCLUDEPATH += $$(OMBUILDDIR)/include/omplot \
     $$(OMBUILDDIR)/include/omplot/qwt \
     $$(OMBUILDDIR)/include/omc/antlr3 $$(OMBUILDDIR)/include/omc/c
 
   RC_FILE = rc_omedit.rc
+  CONFIG += osg
 } else { # Unix libraries and includes
   include(OMEdit.config)
+  # required for backtrace
+  # In order to get the stack trace in Windows we must add -g flag. Qt automatically adds the -O2 flag for optimization.
+  # We should also unset the QMAKE_LFLAGS_RELEASE define because it is defined as QMAKE_LFLAGS_RELEASE = -Wl,-s in qmake.conf file for MinGW
+  # -s will remove all symbol table and relocation information from the executable.
   # On unix we use backtrace of execinfo.h which requires -rdynamic
   # The symbol names may be unavailable without the use of special linker
   # options.  For systems using the GNU linker, it is necessary to use
   # the -rdynamic linker option.  Note that names of "static" functions
   # are not exposed, and won't be available in the backtrace.
-  CONFIG(release, debug|release){
-    QMAKE_LFLAGS_RELEASE += -rdynamic
+  CONFIG(release, debug|release) {
+    QMAKE_CXXFLAGS += -g
+    QMAKE_LFLAGS_RELEASE = -rdynamic
   }
 }
 
@@ -96,16 +122,19 @@ SOURCES += main.cpp \
   OMC/OMCProxy.cpp \
   Modeling/MessagesWidget.cpp \
   Modeling/LibraryTreeWidget.cpp \
+  Modeling/Commands.cpp \
+  Modeling/CoOrdinateSystem.cpp \
   Modeling/ModelWidgetContainer.cpp \
   Modeling/ModelicaClassDialog.cpp \
   Options/OptionsDialog.cpp \
   Editors/BaseEditor.cpp \
-  Editors/ModelicaTextEditor.cpp \
+  Editors/ModelicaEditor.cpp \
   Editors/TransformationsEditor.cpp \
-  Editors/DebuggerSourceEditor.cpp \
   Editors/TextEditor.cpp \
   Editors/CEditor.cpp \
-  Editors/TLMEditor.cpp \
+  Editors/CompositeModelEditor.cpp \
+  Editors/MetaModelicaEditor.cpp \
+  Editors/HTMLEditor.cpp \
   Plotting/PlotWindowContainer.cpp \
   Component/Component.cpp \
   Annotations/ShapeAnnotation.cpp \
@@ -129,6 +158,7 @@ SOURCES += main.cpp \
   TLM/TLMCoSimulationOutputWidget.cpp \
   TLM/TLMCoSimulationThread.cpp \
   FMI/ImportFMUDialog.cpp \
+  FMI/ImportFMUModelDescriptionDialog.cpp \
   Plotting/VariablesWidget.cpp \
   Options/NotificationsDialog.cpp \
   Annotations/ShapePropertiesDialog.cpp \
@@ -143,13 +173,20 @@ SOURCES += main.cpp \
   Debugger/Breakpoints/BreakpointMarker.cpp \
   Debugger/Breakpoints/BreakpointsWidget.cpp \
   Debugger/Breakpoints/BreakpointDialog.cpp \
-  Debugger/DebuggerMainWindow.cpp \
+  Debugger/DebuggerConfigurationsDialog.cpp \
   Debugger/Attach/AttachToProcessDialog.cpp \
   Debugger/Attach/ProcessListModel.cpp \
   CrashReport/backtrace.c \
+  CrashReport/GDBBacktrace.cpp \
   CrashReport/CrashReportDialog.cpp \
-  OMC/Parser/OMCOutputParser.cpp \
-  OMC/Parser/OMCOutputLexer.cpp
+  Git/GitCommands.cpp \
+  Git/CommitChangesDialog.cpp \
+  Git/RevertCommitsDialog.cpp \
+  Git/CleanDialog.cpp \
+  Traceability/TraceabilityQueryDialog.cpp \
+  OMEditApplication.cpp \
+  Traceability/TraceabilityGraphViewWidget.cpp \
+    Traceability/TraceabilityInformationURI.cpp
 
 HEADERS  += Util/Helper.h \
   Util/Utilities.h \
@@ -159,16 +196,19 @@ HEADERS  += Util/Helper.h \
   OMC/OMCProxy.h \
   Modeling/MessagesWidget.h \
   Modeling/LibraryTreeWidget.h \
+  Modeling/Commands.h \
+  Modeling/CoOrdinateSystem.h \
   Modeling/ModelWidgetContainer.h \
   Modeling/ModelicaClassDialog.h \
   Options/OptionsDialog.h \
   Editors/BaseEditor.h \
-  Editors/ModelicaTextEditor.h \
+  Editors/ModelicaEditor.h \
   Editors/TransformationsEditor.h \
-  Editors/DebuggerSourceEditor.h \
   Editors/TextEditor.h \
   Editors/CEditor.h \
-  Editors/TLMEditor.h \
+  Editors/CompositeModelEditor.h \
+  Editors/MetaModelicaEditor.h \
+  Editors/HTMLEditor.h \
   Plotting/PlotWindowContainer.h \
   Component/Component.h \
   Annotations/ShapeAnnotation.h \
@@ -194,6 +234,7 @@ HEADERS  += Util/Helper.h \
   TLM/TLMCoSimulationOutputWidget.h \
   TLM/TLMCoSimulationThread.h \
   FMI/ImportFMUDialog.h \
+  FMI/ImportFMUModelDescriptionDialog.h \
   Plotting/VariablesWidget.h \
   Options/NotificationsDialog.h \
   Annotations/ShapePropertiesDialog.h \
@@ -208,40 +249,73 @@ HEADERS  += Util/Helper.h \
   Debugger/Breakpoints/BreakpointMarker.h \
   Debugger/Breakpoints/BreakpointsWidget.h \
   Debugger/Breakpoints/BreakpointDialog.h \
-  Debugger/DebuggerMainWindow.h \
+  Debugger/DebuggerConfigurationsDialog.h \
   Debugger/Attach/AttachToProcessDialog.h \
   Debugger/Attach/ProcessListModel.h \
   CrashReport/backtrace.h \
+  CrashReport/GDBBacktrace.h \
   CrashReport/CrashReportDialog.h \
-  OMC/Parser/OMCOutputParser.h \
-  OMC/Parser/OMCOutputLexer.h
+  Git/GitCommands.h \
+  Git/CommitChangesDialog.h \
+  Git/RevertCommitsDialog.h \
+  Git/CleanDialog.h \
+  Traceability/TraceabilityQueryDialog.h \
+  OMEditApplication.h \
+  Traceability/TraceabilityGraphViewWidget.h \
+    Traceability/TraceabilityInformationURI.h
+
+CONFIG(osg) {
+
+#    CONFIG += opengl
+#  }
+
+greaterThan(QT_MAJOR_VERSION, 4):greaterThan(QT_MINOR_VERSION, 3) { # if Qt 5.4 or greater
+  SOURCES += Animation/OpenGLWidget.cpp
+} else {
+  SOURCES += Animation/GLWidget.cpp
+}
+SOURCES += Animation/AbstractAnimationWindow.cpp \
+  Animation/ViewerWidget.cpp \
+  Animation/AnimationWindow.cpp \
+  Animation/ThreeDViewer.cpp \
+  Animation/ExtraShapes.cpp \
+  Animation/Visualizer.cpp \
+  Animation/VisualizerMAT.cpp \
+  Animation/VisualizerCSV.cpp \
+  Animation/VisualizerFMU.cpp \
+  Animation/FMUSettingsDialog.cpp \
+  Animation/FMUWrapper.cpp \
+  Animation/Shapes.cpp \
+  Animation/TimeManager.cpp
+
+greaterThan(QT_MAJOR_VERSION, 4):greaterThan(QT_MINOR_VERSION, 3) { # if Qt 5.4 or greater
+  HEADERS += Animation/OpenGLWidget.h
+} else {
+  HEADERS += Animation/GLWidget.h
+}
+HEADERS += Animation/AbstractAnimationWindow.h \
+  Animation/ViewerWidget.h \
+  Animation/AnimationWindow.h \
+  Animation/ThreeDViewer.h \
+  Animation/AnimationUtil.h \
+  Animation/ExtraShapes.h \
+  Animation/Visualizer.h \
+  Animation/VisualizerMAT.h \
+  Animation/VisualizerCSV.h \
+  Animation/VisualizerFMU.h \
+  Animation/FMUSettingsDialog.h \
+  Animation/FMUWrapper.h \
+  Animation/Shapes.h \
+  Animation/TimeManager.h \
+  Animation/rapidxml.hpp
+}
 
 LIBS += -lqjson
-INCLUDEPATH += ../../qjson-0.8.1/build/include
+INCLUDEPATH += ../../qjson/build/include
 
-INCLUDEPATH += . \
-  Annotations \
-  Component \
-  CrashReport \
-  Debugger \
-  Debugger/Attach \
-  Debugger/Breakpoints \
-  Debugger/GDB \
-  Debugger/Locals \
-  Debugger/Parser \
-  Debugger/StackFrames \
-  Editors \
-  FMI \
-  Modeling \
-  OMC \
-  Options \
-  Plotting \
-  Simulation \
-  TLM \
-  TransformationalDebugger \
-  Util \
-  $$OPENMODELICAHOME/include/omc/scripting-API \
-  $$OPENMODELICAHOME/include/omc/c/util
+INCLUDEPATH += $$OPENMODELICAHOME/include/omc/scripting-API \
+  $$OPENMODELICAHOME/include/omc/c/util \
+  $$OPENMODELICAHOME/../OMCompiler/3rdParty/FMIL/install/include
 
 OTHER_FILES += Resources/css/stylesheet.qss \
   Resources/XMLSchema/tlmModelDescription.xsd \
@@ -252,6 +326,10 @@ OTHER_FILES += Resources/css/stylesheet.qss \
 
 # Please read the warnings. They are like vegetables; good for you even if you hate them.
 CONFIG += warn_on
+# Only disable the unused variable/function/parameter warning
+win32 {
+  QMAKE_CXXFLAGS += -Wno-clobbered -Wno-unused-variable -Wno-unused-function -Wno-unused-parameter
+}
 
 RESOURCES += resource_omedit.qrc
 
@@ -264,3 +342,5 @@ MOC_DIR = ../generatedfiles/moc
 RCC_DIR = ../generatedfiles/rcc
 
 ICON = Resources/icons/omedit.icns
+
+QMAKE_INFO_PLIST = Info.plist

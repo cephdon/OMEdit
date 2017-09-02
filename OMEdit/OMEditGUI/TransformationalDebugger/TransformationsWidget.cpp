@@ -29,15 +29,23 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
+#include "MainWindow.h"
 #include "TransformationsWidget.h"
+#include "Options/OptionsDialog.h"
+#include "Util/StringHandler.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Editors/TransformationsEditor.h"
+#include "Editors/ModelicaEditor.h"
 #include <qjson/parser.h>
+#include "diff_match_patch.h"
+
+#include <QStatusBar>
+#include <QGridLayout>
+#include <QVBoxLayout>
+#include <QMessageBox>
 
 /*!
   \class TVariablesTreeItem
@@ -307,7 +315,11 @@ void TVariablesTreeModel::insertTVariablesItems(QHashIterator<QString, OMVariabl
       QString findVariable;
       /* if last item */
       if (tVariables.size() == count && variable.name.startsWith("der(")) {
-        findVariable = parentTVariable.isEmpty() ? "der(" + tVariable + ")" : parentTVariable + ".der(" + tVariable + ")";
+        if (parentTVariable.isEmpty()) {
+          findVariable = StringHandler::joinDerivativeAndPreviousVariable(variable.name, tVariable, "der(");
+        } else {
+          findVariable = QString("%1.%2").arg(parentTVariable, StringHandler::joinDerivativeAndPreviousVariable(variable.name, tVariable, "der("));
+        }
       } else {
         findVariable = parentTVariable.isEmpty() ? tVariable : parentTVariable + "." + tVariable;
       }
@@ -335,7 +347,7 @@ void TVariablesTreeModel::insertTVariablesItems(QHashIterator<QString, OMVariabl
       parentVarName = parentVarName.isEmpty() ? parentVarName : parentVarName.append(".");
       /* if last item */
       if (tVariables.size() == count && variable.name.startsWith("der(")) {
-        tVariableData << variable.name << "der(" + tVariable + ")" << variable.comment << variable.info.lineStart << variable.info.file;
+        tVariableData << variable.name << StringHandler::joinDerivativeAndPreviousVariable(variable.name, tVariable, "der(") << variable.comment << variable.info.lineStart << variable.info.file;
       } else {
         tVariableData << parentVarName + tVariable << tVariable << variable.comment << variable.info.lineStart << variable.info.file;
       }
@@ -387,7 +399,7 @@ bool TVariableTreeProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex 
       if (pTVariablesTreeItem)
       {
         QString variableName = pTVariablesTreeItem->getVariableName();
-        variableName.remove(QRegExp("(_res.mat|_res.plt|_res.csv)"));
+        variableName.remove(QRegExp("(\\.mat|\\.plt|\\.csv|_res.mat|_res.plt|_res.csv)"));
         return variableName.contains(filterRegExp());
       }
       else
@@ -405,13 +417,13 @@ TVariablesTreeView::TVariablesTreeView(TransformationsWidget *pTransformationsWi
   : QTreeView(pTransformationsWidget)
 {
   mpTransformationsWidget = pTransformationsWidget;
-  setObjectName("TreeWithBranches");
   setItemDelegate(new ItemDelegate(this));
   setTextElideMode(Qt::ElideMiddle);
   setIndentation(Helper::treeIndentation);
   setSortingEnabled(true);
   sortByColumn(0, Qt::AscendingOrder);
   setExpandsOnDoubleClick(false);
+  setUniformRowHeights(true);
 }
 
 EquationTreeWidget::EquationTreeWidget(TransformationsWidget *pTransformationWidget)
@@ -437,17 +449,18 @@ EquationTreeWidget::EquationTreeWidget(TransformationsWidget *pTransformationWid
   connect(this, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)), mpTransformationWidget, SLOT(fetchEquationData(QTreeWidgetItem*,int)));
 }
 
-TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWindow *pMainWindow)
-  : mpMainWindow(pMainWindow), mInfoXMLFullFileName(infoXMLFullFileName)
+TransformationsWidget::TransformationsWidget(QString infoJSONFullFileName, QWidget *pParent)
+  : QWidget(pParent), mInfoJSONFullFileName(infoJSONFullFileName)
 {
-  if (!mInfoXMLFullFileName.endsWith("_info.json")) {
+  if (!mInfoJSONFullFileName.endsWith("_info.json")) {
     mProfJSONFullFileName = "";
     mProfilingDataRealFileName = "";
   } else {
-    mProfJSONFullFileName = infoXMLFullFileName.left(infoXMLFullFileName.size() - 9) + "prof.json";
-    mProfilingDataRealFileName = infoXMLFullFileName.left(infoXMLFullFileName.size() - 9) + "prof.realdata";
+    mProfJSONFullFileName = infoJSONFullFileName.left(infoJSONFullFileName.size() - 9) + "prof.json";
+    mProfilingDataRealFileName = infoJSONFullFileName.left(infoJSONFullFileName.size() - 9) + "prof.realdata";
   }
-  setWindowIcon(QIcon(":/Resources/icons/debugger.svg"));
+  mCurrentEquationIndex = 0;
+  setWindowIcon(QIcon(":/Resources/icons/equational-debugger.svg"));
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::transformationalDebugger));
   QToolButton *pReloadToolButton = new QToolButton;
   pReloadToolButton->setToolTip(Helper::reload);
@@ -455,7 +468,7 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   pReloadToolButton->setIcon(QIcon(":/Resources/icons/refresh.svg"));
   connect(pReloadToolButton, SIGNAL(clicked()), SLOT(reloadTransformations()));
   /* info xml file path label */
-  Label *pInfoXMLFilePathLabel = new Label(mInfoXMLFullFileName, this);
+  Label *pInfoXMLFilePathLabel = new Label(mInfoJSONFullFileName, this);
   pInfoXMLFilePathLabel->setElideMode(Qt::ElideMiddle);
   /* create status bar */
   QStatusBar *pStatusBar = new QStatusBar;
@@ -466,27 +479,13 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   /* Variables Heading */
   Label *pVariablesBrowserLabel = new Label(Helper::variablesBrowser);
   pVariablesBrowserLabel->setObjectName("LabelWithBorder");
-  // create the find text box
-  mpFindVariablesTextBox = new QLineEdit;
-  mpFindVariablesTextBox->setPlaceholderText(Helper::findVariables);
-  connect(mpFindVariablesTextBox, SIGNAL(returnPressed()), SLOT(findVariables()));
-  connect(mpFindVariablesTextBox, SIGNAL(textEdited(QString)), SLOT(findVariables()));
-  // create the case sensitivity checkbox
-  mpFindCaseSensitiveCheckBox = new QCheckBox(tr("Case Sensitive"));
-  connect(mpFindCaseSensitiveCheckBox, SIGNAL(toggled(bool)), SLOT(findVariables()));
-  // create the find syntax combobox
-  mpFindSyntaxComboBox = new QComboBox;
-  mpFindSyntaxComboBox->addItem(tr("Regular Expression"), QRegExp::RegExp);
-  mpFindSyntaxComboBox->setItemData(0, tr("A rich Perl-like pattern matching syntax."), Qt::ToolTipRole);
-  mpFindSyntaxComboBox->addItem(tr("Wildcard"), QRegExp::Wildcard);
-  mpFindSyntaxComboBox->setItemData(1, tr("A simple pattern matching syntax similar to that used by shells (command interpreters) for \"file globbing\"."), Qt::ToolTipRole);
-  mpFindSyntaxComboBox->addItem(tr("Fixed String"), QRegExp::FixedString);
-  mpFindSyntaxComboBox->setItemData(2, tr("Fixed string matching."), Qt::ToolTipRole);
-  connect(mpFindSyntaxComboBox, SIGNAL(currentIndexChanged(int)), SLOT(findVariables()));
-  // expand all button
-  mpExpandAllButton = new QPushButton(Helper::expandAll);
-  // collapse all button
-  mpCollapseAllButton = new QPushButton(Helper::collapseAll);
+  // tree search filters
+  mpTreeSearchFilters = new TreeSearchFilters(this);
+  mpTreeSearchFilters->getFilterTextBox()->setPlaceholderText(Helper::filterVariables);
+  connect(mpTreeSearchFilters->getFilterTextBox(), SIGNAL(returnPressed()), SLOT(findVariables()));
+  connect(mpTreeSearchFilters->getFilterTextBox(), SIGNAL(textEdited(QString)), SLOT(findVariables()));
+  connect(mpTreeSearchFilters->getCaseSensitiveCheckBox(), SIGNAL(toggled(bool)), SLOT(findVariables()));
+  connect(mpTreeSearchFilters->getSyntaxComboBox(), SIGNAL(currentIndexChanged(int)), SLOT(findVariables()));
   /* variables tree view */
   mpTVariablesTreeView = new TVariablesTreeView(this);
   mpTVariablesTreeModel = new TVariablesTreeModel(mpTVariablesTreeView);
@@ -496,18 +495,14 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   mpTVariablesTreeView->setModel(mpTVariableTreeProxyModel);
   mpTVariablesTreeView->setColumnWidth(2, 40);  /* line number column */
   connect(mpTVariablesTreeView, SIGNAL(doubleClicked(QModelIndex)), SLOT(fetchVariableData(QModelIndex)));
-  connect(mpExpandAllButton, SIGNAL(clicked()), mpTVariablesTreeView, SLOT(expandAll()));
-  connect(mpCollapseAllButton, SIGNAL(clicked()), mpTVariablesTreeView, SLOT(collapseAll()));
+  connect(mpTreeSearchFilters->getExpandAllButton(), SIGNAL(clicked()), mpTVariablesTreeView, SLOT(expandAll()));
+  connect(mpTreeSearchFilters->getCollapseAllButton(), SIGNAL(clicked()), mpTVariablesTreeView, SLOT(collapseAll()));
   QGridLayout *pVariablesGridLayout = new QGridLayout;
   pVariablesGridLayout->setSpacing(1);
   pVariablesGridLayout->setContentsMargins(0, 0, 0, 0);
-  pVariablesGridLayout->addWidget(pVariablesBrowserLabel, 0, 0, 1, 2);
-  pVariablesGridLayout->addWidget(mpFindVariablesTextBox, 1, 0, 1, 2);
-  pVariablesGridLayout->addWidget(mpFindCaseSensitiveCheckBox, 2, 0);
-  pVariablesGridLayout->addWidget(mpFindSyntaxComboBox, 2, 1);
-  pVariablesGridLayout->addWidget(mpExpandAllButton, 3, 0);
-  pVariablesGridLayout->addWidget(mpCollapseAllButton, 3, 1);
-  pVariablesGridLayout->addWidget(mpTVariablesTreeView, 4, 0, 1, 2);
+  pVariablesGridLayout->addWidget(pVariablesBrowserLabel, 0, 0);
+  pVariablesGridLayout->addWidget(mpTreeSearchFilters, 1, 0);
+  pVariablesGridLayout->addWidget(mpTVariablesTreeView, 2, 0);
   QFrame *pVariablesFrame = new QFrame;
   pVariablesFrame->setLayout(pVariablesGridLayout);
   /* Defined in tree widget */
@@ -553,7 +548,6 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   pEquationsBrowserLabel->setObjectName("LabelWithBorder");
   /* Equations tree widget */
   mpEquationsTreeWidget = new EquationTreeWidget(this);
-  mpEquationsTreeWidget->setObjectName("TreeWithBranches");
   mpEquationsTreeWidget->setIndentation(Helper::treeIndentation);
   QGridLayout *pEquationsGridLayout = new QGridLayout;
   pEquationsGridLayout->setSpacing(1);
@@ -603,6 +597,15 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   /* operations tree widget */
   Label *pEquationOperationsLabel = new Label(tr("Equation Operations"));
   pEquationOperationsLabel->setObjectName("LabelWithBorder");
+  mpEquationDiffFilterComboBox = new QComboBox;
+  mpEquationDiffFilterComboBox->addItem(tr("Diff"), HtmlDiff::Both);
+  mpEquationDiffFilterComboBox->addItem(tr("After"), HtmlDiff::Insertion);
+  mpEquationDiffFilterComboBox->addItem(tr("Before"), HtmlDiff::Deletion);
+  connect(mpEquationDiffFilterComboBox, SIGNAL(currentIndexChanged(int)), SLOT(filterEquationOperations(int)));
+  QHBoxLayout *pEquationTransformationFilterLayout = new QHBoxLayout;
+  pEquationTransformationFilterLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  pEquationTransformationFilterLayout->addWidget(new Label(tr("Transformation:")));
+  pEquationTransformationFilterLayout->addWidget(mpEquationDiffFilterComboBox);
   mpEquationOperationsTreeWidget = new QTreeWidget;
   mpEquationOperationsTreeWidget->setItemDelegate(new ItemDelegate(mpEquationOperationsTreeWidget));
   mpEquationOperationsTreeWidget->setIndentation(0);
@@ -613,7 +616,8 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   pEquationOperationsGridLayout->setSpacing(1);
   pEquationOperationsGridLayout->setContentsMargins(0, 0, 0, 0);
   pEquationOperationsGridLayout->addWidget(pEquationOperationsLabel, 0, 0);
-  pEquationOperationsGridLayout->addWidget(mpEquationOperationsTreeWidget, 1, 0);
+  pEquationOperationsGridLayout->addLayout(pEquationTransformationFilterLayout, 1, 0, Qt::AlignLeft);
+  pEquationOperationsGridLayout->addWidget(mpEquationOperationsTreeWidget, 2, 0);
   QFrame *pEquationOperationsFrame = new QFrame;
   pEquationOperationsFrame->setLayout(pEquationOperationsGridLayout);
   /* TSourceEditor */
@@ -625,10 +629,10 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   mpTSourceEditorInfoBar = new InfoBar(this);
   mpTSourceEditorInfoBar->hide();
   mpTransformationsEditor = new TransformationsEditor(this);
-  ModelicaTextHighlighter *pModelicaTextHighlighter;
-  pModelicaTextHighlighter = new ModelicaTextHighlighter(mpMainWindow->getOptionsDialog()->getModelicaTextEditorPage(),
-                                                         mpTransformationsEditor->getPlainTextEdit());
-  connect(mpMainWindow->getOptionsDialog(), SIGNAL(modelicaTextSettingsChanged()), pModelicaTextHighlighter, SLOT(settingsChanged()));
+  ModelicaHighlighter *pModelicaTextHighlighter;
+  pModelicaTextHighlighter = new ModelicaHighlighter(OptionsDialog::instance()->getModelicaEditorPage(),
+                                                     mpTransformationsEditor->getPlainTextEdit());
+  connect(OptionsDialog::instance(), SIGNAL(modelicaEditorSettingsChanged()), pModelicaTextHighlighter, SLOT(settingsChanged()));
   QVBoxLayout *pTSourceEditorVerticalLayout = new QVBoxLayout;
   pTSourceEditorVerticalLayout->setSpacing(1);
   pTSourceEditorVerticalLayout->setContentsMargins(0, 0, 0, 0);
@@ -714,16 +718,9 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   mpTransformationsVerticalSplitter->setChildrenCollapsible(false);
   mpTransformationsVerticalSplitter->setHandleWidth(4);
   mpTransformationsVerticalSplitter->setContentsMargins(0, 0, 0, 0);
+  mpTransformationsVerticalSplitter->addWidget(pTSourceEditorFrame);
   mpTransformationsVerticalSplitter->addWidget(pVariablesMainFrame);
   mpTransformationsVerticalSplitter->addWidget(pEquationsMainFrame);
-  /* Transformations horizontal splitter */
-  mpTransformationsHorizontalSplitter = new QSplitter;
-  mpTransformationsHorizontalSplitter->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-  mpTransformationsHorizontalSplitter->setChildrenCollapsible(false);
-  mpTransformationsHorizontalSplitter->setHandleWidth(4);
-  mpTransformationsHorizontalSplitter->setContentsMargins(0, 0, 0, 0);
-  mpTransformationsHorizontalSplitter->addWidget(mpTransformationsVerticalSplitter);
-  mpTransformationsHorizontalSplitter->addWidget(pTSourceEditorFrame);
   /* Load the transformations before setting the layout */
   loadTransformations();
   /* set the layout */
@@ -731,11 +728,11 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
   pMainLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
   pMainLayout->setContentsMargins(0, 0, 0, 0);
   pMainLayout->addWidget(pStatusBar, 0, 0);
-  pMainLayout->addWidget(mpTransformationsHorizontalSplitter, 1, 0);
+  pMainLayout->addWidget(mpTransformationsVerticalSplitter, 1, 0);
   setLayout(pMainLayout);
   /* restore the TransformationsWidget geometry and splitters state. */
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
-  if (mpMainWindow->getOptionsDialog()->getGeneralSettingsPage()->getPreserveUserCustomizations())
+  QSettings *pSettings = Utilities::getApplicationSettings();
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getPreserveUserCustomizations())
   {
     pSettings->beginGroup("transformationalDebugger");
     restoreGeometry(pSettings->value("geometry").toByteArray());
@@ -746,7 +743,6 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
     mpEquationsNestedVerticalSplitter->restoreState(pSettings->value("equationsNestedVerticalSplitter").toByteArray());
     mpEquationsHorizontalSplitter->restoreState(pSettings->value("equationsHorizontalSplitter").toByteArray());
     mpTransformationsVerticalSplitter->restoreState(pSettings->value("transformationsVerticalSplitter").toByteArray());
-    mpTransformationsHorizontalSplitter->restoreState(pSettings->value("transformationsHorizontalSplitter").toByteArray());
     pSettings->endGroup();
   }
 }
@@ -754,8 +750,7 @@ TransformationsWidget::TransformationsWidget(QString infoXMLFullFileName, MainWi
 static QStringList variantListToStringList(const QVariantList lst)
 {
   QStringList strs;
-  foreach(QVariant v, lst){
-    QString s = v.toString();
+  foreach(QVariant v, lst) {
     strs << v.toString().trimmed();
   }
   return strs;
@@ -785,6 +780,7 @@ static OMOperation* variantToOperationPtr(QVariantMap var)
 
 static void variantToSource(QVariantMap var, OMInfo &info, QStringList &types, QList<OMOperation*> &ops)
 {
+  Q_UNUSED(types);
   QVariantMap vinfo = var["info"].toMap();
   info.file = vinfo["file"].toString();
   info.lineStart = vinfo["lineStart"].toInt();
@@ -813,17 +809,17 @@ static OMEquation* getOMEquation(QList<OMEquation*> equations, int index)
 
 void TransformationsWidget::loadTransformations()
 {
-  QFile file(mInfoXMLFullFileName);
+  QFile file(mInfoJSONFullFileName);
   mEquations.clear();
   mVariables.clear();
   hasOperationsEnabled = false;
-  if (mInfoXMLFullFileName.endsWith(".json")) {
+  if (mInfoJSONFullFileName.endsWith(".json")) {
     QJson::Parser parser;
     bool ok;
     QVariantMap result;
     result = parser.parse(&file, &ok).toMap();
     if (!ok) {
-      QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::parsingFailedJson), Helper::parsingFailedJson + ": " + mInfoXMLFullFileName, Helper::ok);
+      QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::parsingFailedJson), Helper::parsingFailedJson + ": " + mInfoJSONFullFileName, Helper::ok);
       return;
     }
     QVariantMap vars = result["variables"].toMap();
@@ -833,8 +829,9 @@ void TransformationsWidget::loadTransformations()
       OMVariable *var = new OMVariable();
       var->name = iter.key();
       var->comment = value["comment"].toString();
+      QVariantMap sourceMap = value["source"].toMap();
       variantToSource(value["source"].toMap(), var->info, var->types, var->ops);
-      if (!hasOperationsEnabled && var->ops.size() > 0) {
+      if (!hasOperationsEnabled && sourceMap.contains("operations")) {
         hasOperationsEnabled = true;
       }
       mVariables[iter.key()] = *var;
@@ -846,9 +843,6 @@ void TransformationsWidget::loadTransformations()
     for (int i=0; i<eqs.size(); i++) {
       QVariantMap veq = eqs[i].toMap();
       OMEquation *eq = mEquations[i];
-      if (!hasOperationsEnabled && eq->ops.size() > 0) {
-        hasOperationsEnabled = true;
-      }
       eq->section = veq["section"].toString();
       if (veq["eqIndex"].toInt() != i) {
         QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::parsingFailedJson), Helper::parsingFailedJson + QString(": got index ") + veq["eqIndex"].toString() + QString(" expected ") + QString::number(i), Helper::ok);
@@ -881,7 +875,12 @@ void TransformationsWidget::loadTransformations()
       } else {
         eq->display = eq->tag;
       }
+      eq->unknowns = veq["unknowns"].toInt();
+      QVariantMap sourceMap = veq["source"].toMap();
       variantToSource(veq["source"].toMap(), eq->info, eq->types, eq->ops);
+      if (!hasOperationsEnabled && sourceMap.contains("operations")) {
+        hasOperationsEnabled = true;
+      }
     }
     parseProfiling(mProfJSONFullFileName);
     fetchEquations();
@@ -893,6 +892,7 @@ void TransformationsWidget::loadTransformations()
     fetchEquations();
     hasOperationsEnabled = mpInfoXMLFileHandler->hasOperationsEnabled;
   }
+  fetchVariableData(mpTVariableTreeProxyModel->index(0, 0));
 }
 
 void TransformationsWidget::fetchDefinedInEquations(const OMVariable &variable)
@@ -900,16 +900,17 @@ void TransformationsWidget::fetchDefinedInEquations(const OMVariable &variable)
   /* Clear the defined in tree. */
   clearTreeWidgetItems(mpDefinedInEquationsTreeWidget);
   /* add defined in equations */
-  for (int i=0; i<variable.definedIn.size(); i++)
-  {
+  for (int i=0; i<variable.definedIn.size(); i++) {
     OMEquation *equation = getOMEquation(mEquations, variable.definedIn[i]);
-    QStringList values;
-    values << QString::number(variable.definedIn[i]) << equation->section << equation->toString();
-    QTreeWidgetItem *pDefinedInTreeItem = new IntegerTreeWidgetItem(values, mpDefinedInEquationsTreeWidget);
-    pDefinedInTreeItem->setToolTip(0, values[0]);
-    pDefinedInTreeItem->setToolTip(1, values[1]);
-    pDefinedInTreeItem->setToolTip(2, values[2]);
-    mpDefinedInEquationsTreeWidget->addTopLevelItem(pDefinedInTreeItem);
+    if (equation) {
+      QStringList values;
+      values << QString::number(variable.definedIn[i]) << equation->section << equation->toString();
+      QTreeWidgetItem *pDefinedInTreeItem = new IntegerTreeWidgetItem(values, mpDefinedInEquationsTreeWidget);
+      pDefinedInTreeItem->setToolTip(0, values[0]);
+      pDefinedInTreeItem->setToolTip(1, values[1]);
+      pDefinedInTreeItem->setToolTip(2, values[2]);
+      mpDefinedInEquationsTreeWidget->addTopLevelItem(pDefinedInTreeItem);
+    }
   }
 }
 
@@ -918,16 +919,17 @@ void TransformationsWidget::fetchUsedInEquations(const OMVariable &variable)
   /* Clear the used in tree. */
   clearTreeWidgetItems(mpUsedInEquationsTreeWidget);
   /* add used in equations */
-  foreach (int index, variable.usedIn)
-  {
+  foreach (int index, variable.usedIn) {
     OMEquation *equation = getOMEquation(mEquations, index);
-    QStringList values;
-    values << QString::number(index) << equation->section << equation->toString();
-    QTreeWidgetItem *pUsedInTreeItem = new IntegerTreeWidgetItem(values, mpUsedInEquationsTreeWidget);
-    pUsedInTreeItem->setToolTip(0, values[0]);
-    pUsedInTreeItem->setToolTip(1, values[1]);
-    pUsedInTreeItem->setToolTip(2, values[2]);
-    mpUsedInEquationsTreeWidget->addTopLevelItem(pUsedInTreeItem);
+    if (equation) {
+      QStringList values;
+      values << QString::number(index) << equation->section << equation->toString();
+      QTreeWidgetItem *pUsedInTreeItem = new IntegerTreeWidgetItem(values, mpUsedInEquationsTreeWidget);
+      pUsedInTreeItem->setToolTip(0, values[0]);
+      pUsedInTreeItem->setToolTip(1, values[1]);
+      pUsedInTreeItem->setToolTip(2, values[2]);
+      mpUsedInEquationsTreeWidget->addTopLevelItem(pUsedInTreeItem);
+    }
   }
 }
 
@@ -945,16 +947,7 @@ void TransformationsWidget::fetchOperations(const OMVariable &variable)
       mpVariableOperationsTreeWidget->setItemWidget(pOperationTreeItem, 0, opText);
     }
   } else {
-    QString message;
-#ifdef Q_OS_MAC
-    message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG)
-        .arg(GUIMessages::getMessage(GUIMessages::GENERATE_OPERATIONS_MSG_MAC))
-        .arg(GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG_MSG_MAC));
-#else
-    message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG)
-        .arg(GUIMessages::getMessage(GUIMessages::GENERATE_OPERATIONS_MSG))
-        .arg(GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG_MSG));
-#endif
+    QString message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG).arg(Helper::toolsOptionsPath).arg(Helper::toolsOptionsPath);
     QStringList values;
     values << message;
     QString toolTip = message;
@@ -985,7 +978,13 @@ QTreeWidgetItem* TransformationsWidget::makeEquationTreeWidgetItem(int equationI
   QTreeWidgetItem *pEquationTreeItem = new IntegerTreeWidgetItem(values, mpEquationsTreeWidget);
   pEquationTreeItem->setToolTip(0, values[0]);
   pEquationTreeItem->setToolTip(1, values[1]);
-  pEquationTreeItem->setToolTip(2, "<html><div style=\"margin:3px;\">" + Qt::escape(values[2]) + "</div></html>");
+  pEquationTreeItem->setToolTip(2, "<html><div style=\"margin:3px;\">" +
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+  QString(values[2]).toHtmlEscaped()
+#else /* Qt4 */
+  Qt::escape(values[2])
+#endif
+  + "</div></html>");
   pEquationTreeItem->setToolTip(4, "Maximum execution time in a single step");
   pEquationTreeItem->setToolTip(5, "Total time excluding the overhead of measuring.");
   pEquationTreeItem->setToolTip(6, "Fraction of time, 100% is the total time of all non-child equations.");
@@ -1035,12 +1034,16 @@ QTreeWidgetItem* TransformationsWidget::findEquationTreeItem(int equationIndex)
 void TransformationsWidget::fetchEquationData(int equationIndex)
 {
   OMEquation *equation = getOMEquation(mEquations, equationIndex);
+  if (!equation) {
+    return;
+  }
+  mCurrentEquationIndex = equationIndex;
   /* fetch defines */
   fetchDefines(equation);
   /* fetch depends */
   fetchDepends(equation);
   /* fetch operations */
-  fetchOperations(equation);
+  fetchOperations(equation, (HtmlDiff)mpEquationDiffFilterComboBox->itemData(mpEquationDiffFilterComboBox->currentIndex()).toInt());
 
   /* TODO: This data is correct. Add this to some widget thingy somewhere.
    * Maybe a small one that you can click to enlarge.
@@ -1075,21 +1078,30 @@ void TransformationsWidget::fetchEquationData(int equationIndex)
   }
 #endif
 
-  if (!equation->info.isValid)
+  if (!equation->info.isValid) {
     return;
+  }
   /* open the model with and go to the equation line */
-  QFile file(equation->info.file);
-  if (file.exists())
-  {
+  QString fileName = equation->info.file;
+  QFileInfo fileInfo(fileName);
+  if (fileInfo.isRelative()) {
+    // find the class
+    LibraryTreeItem *pLibraryTreeItem = MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->findLibraryTreeItem(fileName);
+    if (pLibraryTreeItem) {
+      fileName = pLibraryTreeItem->getFileName();
+    }
+  }
+  QFile file(fileName);
+  if (file.exists()) {
     mpTSourceEditorFileLabel->setText(file.fileName());
     mpTSourceEditorFileLabel->show();
     file.open(QIODevice::ReadOnly);
     mpTransformationsEditor->getPlainTextEdit()->setPlainText(QString(file.readAll()));
     mpTSourceEditorInfoBar->hide();
     file.close();
-    mpTransformationsEditor->goToLineNumber(equation->info.lineStart);
+    mpTransformationsEditor->getPlainTextEdit()->goToLineNumber(equation->info.lineStart);
+    mpTransformationsEditor->getPlainTextEdit()->foldAll();
   }
-
 }
 
 void TransformationsWidget::fetchDefines(OMEquation *equation)
@@ -1097,16 +1109,25 @@ void TransformationsWidget::fetchDefines(OMEquation *equation)
   /* Clear the defines tree. */
   clearTreeWidgetItems(mpDefinesVariableTreeWidget);
   /* add defines */
-  foreach (QString define, equation->defines)
-  {
-    QStringList values;
-    values << define;
-    QString toolTip = define;
-    QTreeWidgetItem *pDefineTreeItem = new QTreeWidgetItem(values);
-    pDefineTreeItem->setToolTip(0, toolTip);
-    mpDefinesVariableTreeWidget->addTopLevelItem(pDefineTreeItem);
+  if (equation) {
+    foreach (QString define, equation->defines) {
+      QStringList values;
+      values << define;
+      QString toolTip = define;
+      QTreeWidgetItem *pDefineTreeItem = new QTreeWidgetItem(values);
+      pDefineTreeItem->setToolTip(0, toolTip);
+      mpDefinesVariableTreeWidget->addTopLevelItem(pDefineTreeItem);
+    }
+    if ((equation->tag.compare("residual") == 0) && (equation->defines.isEmpty())) {
+      QStringList values;
+      values << QString("Part of an implicit system of equations");
+      QString toolTip = values.at(0);
+      QTreeWidgetItem *pDefineTreeItem = new QTreeWidgetItem(values);
+      pDefineTreeItem->setToolTip(0, toolTip);
+      mpDefinesVariableTreeWidget->addTopLevelItem(pDefineTreeItem);
+    }
+    mpDefinesVariableTreeWidget->resizeColumnToContents(0);
   }
-  mpDefinesVariableTreeWidget->resizeColumnToContents(0);
 }
 
 void TransformationsWidget::fetchDepends(OMEquation *equation)
@@ -1114,42 +1135,36 @@ void TransformationsWidget::fetchDepends(OMEquation *equation)
   /* Clear the depends tree. */
   clearTreeWidgetItems(mpDependsVariableTreeWidget);
   /* add depends */
-  foreach (QString depend, equation->depends)
-  {
-    QStringList values;
-    values << depend;
-    QString toolTip = depend;
-    QTreeWidgetItem *pDependTreeItem = new QTreeWidgetItem(values);
-    pDependTreeItem->setToolTip(0, toolTip);
-    mpDependsVariableTreeWidget->addTopLevelItem(pDependTreeItem);
+  if (equation) {
+    foreach (QString depend, equation->depends) {
+      QStringList values;
+      values << depend;
+      QString toolTip = depend;
+      QTreeWidgetItem *pDependTreeItem = new QTreeWidgetItem(values);
+      pDependTreeItem->setToolTip(0, toolTip);
+      mpDependsVariableTreeWidget->addTopLevelItem(pDependTreeItem);
+    }
+    mpDependsVariableTreeWidget->resizeColumnToContents(0);
   }
-  mpDependsVariableTreeWidget->resizeColumnToContents(0);
 }
 
-void TransformationsWidget::fetchOperations(OMEquation *equation)
+void TransformationsWidget::fetchOperations(OMEquation *equation, HtmlDiff htmlDiff)
 {
   /* Clear the operations tree. */
   clearTreeWidgetItems(mpEquationOperationsTreeWidget);
   /* add operations */
   if (hasOperationsEnabled) {
-    foreach (OMOperation *op, equation->ops) {
-      QTreeWidgetItem *pOperationTreeItem = new QTreeWidgetItem();
-      mpEquationOperationsTreeWidget->addTopLevelItem(pOperationTreeItem);
-      // set label item
-      Label *opText = new Label("<html><div style=\"margin:3px;\">" + op->toHtml() + "</div></html>");
-      mpEquationOperationsTreeWidget->setItemWidget(pOperationTreeItem, 0, opText);
+    if (equation) {
+      foreach (OMOperation *op, equation->ops) {
+        QTreeWidgetItem *pOperationTreeItem = new QTreeWidgetItem();
+        mpEquationOperationsTreeWidget->addTopLevelItem(pOperationTreeItem);
+        // set label item
+        Label *opText = new Label("<html><div style=\"margin:3px;\">" + op->toHtml(htmlDiff) + "</div></html>");
+        mpEquationOperationsTreeWidget->setItemWidget(pOperationTreeItem, 0, opText);
+      }
     }
   } else {
-    QString message;
-#ifdef Q_OS_MAC
-    message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG)
-        .arg(GUIMessages::getMessage(GUIMessages::GENERATE_OPERATIONS_MSG_MAC))
-        .arg(GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG_MSG_MAC));
-#else
-    message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG)
-        .arg(GUIMessages::getMessage(GUIMessages::GENERATE_OPERATIONS_MSG))
-        .arg(GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG_MSG));
-#endif
+    QString message = GUIMessages::getMessage(GUIMessages::SET_INFO_XML_FLAG).arg(Helper::toolsOptionsPath).arg(Helper::toolsOptionsPath);
     QStringList values;
     values << message;
     QString toolTip = message;
@@ -1173,6 +1188,7 @@ void TransformationsWidget::clearTreeWidgetItems(QTreeWidget *pTreeWidget)
 
 void TransformationsWidget::reloadTransformations()
 {
+  mCurrentEquationIndex = 0;
   /* clear trees */
   mpTVariablesTreeModel->clearTVariablesTreeItems();
   /* Clear the defined in tree. */
@@ -1182,9 +1198,15 @@ void TransformationsWidget::reloadTransformations()
   /* Clear the variable operations tree. */
   clearTreeWidgetItems(mpVariableOperationsTreeWidget);
   /* clear the variable tree filters. */
-  mpFindVariablesTextBox->setText(Helper::findVariables);
-  mpFindSyntaxComboBox->setCurrentIndex(0);
-  mpFindCaseSensitiveCheckBox->setChecked(false);
+  bool signalsState = mpTreeSearchFilters->getFilterTextBox()->blockSignals(true);
+  mpTreeSearchFilters->getFilterTextBox()->clear();
+  mpTreeSearchFilters->getFilterTextBox()->blockSignals(signalsState);
+  signalsState = mpTreeSearchFilters->getSyntaxComboBox()->blockSignals(true);
+  mpTreeSearchFilters->getSyntaxComboBox()->setCurrentIndex(0);
+  mpTreeSearchFilters->getSyntaxComboBox()->blockSignals(signalsState);
+  signalsState = mpTreeSearchFilters->getCaseSensitiveCheckBox()->blockSignals(true);
+  mpTreeSearchFilters->getCaseSensitiveCheckBox()->setChecked(false);
+  mpTreeSearchFilters->getCaseSensitiveCheckBox()->blockSignals(signalsState);
   mpTVariableTreeProxyModel->setFilterRegExp(QRegExp());
   /* clear equations tree */
   clearTreeWidgetItems(mpEquationsTreeWidget);
@@ -1205,20 +1227,21 @@ void TransformationsWidget::reloadTransformations()
   loadTransformations();
 }
 
+/*!
+ * \brief TransformationsWidget::findVariables
+ * Finds the variables in the TransformationsWidget Variables Browser.
+ */
 void TransformationsWidget::findVariables()
 {
-  QString findText = mpFindVariablesTextBox->text();
-  if (mpFindVariablesTextBox->text().isEmpty() || (mpFindVariablesTextBox->text().compare(Helper::findVariables) == 0))
-  {
-    findText = "";
-  }
-  QRegExp::PatternSyntax syntax = QRegExp::PatternSyntax(mpFindSyntaxComboBox->itemData(mpFindSyntaxComboBox->currentIndex()).toInt());
-  Qt::CaseSensitivity caseSensitivity = mpFindCaseSensitiveCheckBox->isChecked() ? Qt::CaseSensitive: Qt::CaseInsensitive;
+  QString findText = mpTreeSearchFilters->getFilterTextBox()->text();
+  QRegExp::PatternSyntax syntax = QRegExp::PatternSyntax(mpTreeSearchFilters->getSyntaxComboBox()->itemData(mpTreeSearchFilters->getSyntaxComboBox()->currentIndex()).toInt());
+  Qt::CaseSensitivity caseSensitivity = mpTreeSearchFilters->getCaseSensitiveCheckBox()->isChecked() ? Qt::CaseSensitive: Qt::CaseInsensitive;
   QRegExp regExp(findText, caseSensitivity, syntax);
   mpTVariableTreeProxyModel->setFilterRegExp(regExp);
   /* expand all so that the filtered items can be seen. */
-  if (!findText.isEmpty())
+  if (!findText.isEmpty()) {
     mpTVariablesTreeView->expandAll();
+  }
 }
 
 void TransformationsWidget::fetchVariableData(const QModelIndex &index)
@@ -1241,7 +1264,16 @@ void TransformationsWidget::fetchVariableData(const QModelIndex &index)
   if (!variable.info.isValid)
     return;
   /* open the model with and go to the variable line */
-  QFile file(variable.info.file);
+  QString fileName = variable.info.file;
+  QFileInfo fileInfo(fileName);
+  if (fileInfo.isRelative()) {
+    // find the class
+    LibraryTreeItem *pLibraryTreeItem = MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->findLibraryTreeItem(fileName);
+    if (pLibraryTreeItem) {
+      fileName = pLibraryTreeItem->getFileName();
+    }
+  }
+  QFile file(fileName);
   if (file.exists()) {
     mpTSourceEditorFileLabel->setText(file.fileName());
     mpTSourceEditorFileLabel->show();
@@ -1249,29 +1281,41 @@ void TransformationsWidget::fetchVariableData(const QModelIndex &index)
     mpTransformationsEditor->getPlainTextEdit()->setPlainText(QString(file.readAll()));
     mpTSourceEditorInfoBar->hide();
     file.close();
-    mpTransformationsEditor->goToLineNumber(variable.info.lineStart);
+    mpTransformationsEditor->getPlainTextEdit()->goToLineNumber(variable.info.lineStart);
+    mpTransformationsEditor->getPlainTextEdit()->foldAll();
   }
 }
 
 void TransformationsWidget::fetchEquationData(QTreeWidgetItem *pEquationTreeItem, int column)
 {
   Q_UNUSED(column);
-  if (!pEquationTreeItem)
+  if (!pEquationTreeItem) {
     return;
+  }
 
   int equationIndex = pEquationTreeItem->text(0).toInt();
   /* if the sender is mpEquationsTreeWidget then there is no need to select the item. */
   EquationTreeWidget *pSender = qobject_cast<EquationTreeWidget*>(sender());
-  if (pSender != mpEquationsTreeWidget)
-  {
+  if (pSender != mpEquationsTreeWidget) {
     QTreeWidgetItem *pTreeWidgetItem = findEquationTreeItem(equationIndex);
-    if (pTreeWidgetItem)
-    {
+    if (pTreeWidgetItem) {
       mpEquationsTreeWidget->clearSelection();
       mpEquationsTreeWidget->setCurrentItem(pTreeWidgetItem);
     }
   }
   fetchEquationData(equationIndex);
+}
+
+void TransformationsWidget::filterEquationOperations(int index)
+{
+  if (mCurrentEquationIndex < 1) {
+    return;
+  }
+  OMEquation *equation = getOMEquation(mEquations, mCurrentEquationIndex);
+  if (!equation) {
+    return;
+  }
+  fetchOperations(equation, (HtmlDiff)mpEquationDiffFilterComboBox->itemData(index).toInt());
 }
 
 void TransformationsWidget::parseProfiling(QString fileName)

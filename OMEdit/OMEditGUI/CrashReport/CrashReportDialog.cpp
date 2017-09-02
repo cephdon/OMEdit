@@ -28,15 +28,16 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "CrashReportDialog.h"
-#include "Helper.h"
+#include "Util/Helper.h"
+#include "omc_config.h"
+#include "GDBBacktrace.h"
+
+#include <QGridLayout>
+#include <QMessageBox>
 
 /*!
  * \class CrashReportDialog
@@ -45,27 +46,45 @@
 /*!
  * \brief CrashReportDialog::CrashReportDialog
  */
-CrashReportDialog::CrashReportDialog()
-  : QDialog(0, Qt::WindowTitleHint)
+CrashReportDialog::CrashReportDialog(QString stacktrace)
+  : QDialog(0)
 {
+  // flush all streams before making a crash report so we get full logs.
+  fflush(NULL);
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::crashReport));
   setAttribute(Qt::WA_DeleteOnClose);
+  // brief stack trace
+  mStackTrace = stacktrace;
+  // create the GDB stack trace
+  createGDBBacktrace();
   // set heading
-  mpCrashReportHeading = new Label(Helper::crashReport);
-  mpCrashReportHeading->setFont(QFont(Helper::systemFontInfo.family(), Helper::headingFontSize));
-  // set seperator line
-  mpHorizontalLine = new QFrame();
-  mpHorizontalLine->setFrameShape(QFrame::HLine);
-  mpHorizontalLine->setFrameShadow(QFrame::Sunken);
+  mpCrashReportHeading = Utilities::getHeadingLabel(Helper::crashReport);
+  // set separator line
+  mpHorizontalLine = Utilities::getHeadingLine();
   // Email label and textbox
   mpEmailLabel = new Label(tr("Your Email (in case you want us to contact you regarding this error):"));
   mpEmailTextBox = new QLineEdit;
   // bug description label and textbox
   mpBugDescriptionLabel = new Label(tr("Describe in a few words what you were doing when the error occurred:"));
-  mpBugDescriptionTextBox = new QPlainTextEdit;
+  mpBugDescriptionTextBox = new QPlainTextEdit(
+    QString("%1 connected to %2%5.\nThe running OS is %3 on %4.\n").arg(GIT_SHA,Helper::OpenModelicaVersion,
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 4, 0))
+  QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture(),
+#elif defined(__APPLE__)
+  "OSX", "unknown (probably amd64)",
+#else
+  "unknown", "unknown",
+#endif
+#if defined(LSB_RELEASE)
+  " built for " LSB_RELEASE
+#else
+  ""
+#endif
+  )
+  );
   // files label and checkboxes
-  mpFilesDescriptionLabel = new Label(tr("Following selected files will be sent alongwith the crash report,"));
-  QString& tmpPath = OpenModelica::tempDirectory();
+  mpFilesDescriptionLabel = new Label(tr("Following selected files will be sent along with the crash report,"));
+  QString& tmpPath = Utilities::tempDirectory();
   // omeditcommunication.log file checkbox
   QFileInfo OMEditCommunicationLogFileInfo(QString("%1omeditcommunication.log").arg(tmpPath));
   mpOMEditCommunicationLogFileCheckBox = new QCheckBox(OMEditCommunicationLogFileInfo.absoluteFilePath());
@@ -100,40 +119,113 @@ CrashReportDialog::CrashReportDialog()
   mpButtonBox = new QDialogButtonBox(Qt::Horizontal);
   mpButtonBox->addButton(mpSendReportButton, QDialogButtonBox::ActionRole);
   mpButtonBox->addButton(mpCancelButton, QDialogButtonBox::ActionRole);
+  // Progress label & bar
+  mpProgressLabel = new Label(tr("Sending crash report"));
+  mpProgressLabel->hide();
+  mpProgressBar = new QProgressBar;
+  mpProgressBar->setRange(0, 0);
+  mpProgressBar->hide();
   // set grid layout
   QGridLayout *pMainLayout = new QGridLayout;
   pMainLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-  pMainLayout->addWidget(mpCrashReportHeading, 0, 0);
-  pMainLayout->addWidget(mpHorizontalLine, 1, 0);
-  pMainLayout->addWidget(mpEmailLabel, 2, 0);
-  pMainLayout->addWidget(mpEmailTextBox, 3, 0);
-  pMainLayout->addWidget(mpBugDescriptionLabel, 4, 0);
-  pMainLayout->addWidget(mpBugDescriptionTextBox, 5, 0);
+  pMainLayout->addWidget(mpCrashReportHeading, 0, 0, 1, 3);
+  pMainLayout->addWidget(mpHorizontalLine, 1, 0, 1, 3);
+  pMainLayout->addWidget(mpEmailLabel, 2, 0, 1, 3);
+  pMainLayout->addWidget(mpEmailTextBox, 3, 0, 1, 3);
+  pMainLayout->addWidget(mpBugDescriptionLabel, 4, 0, 1, 3);
+  pMainLayout->addWidget(mpBugDescriptionTextBox, 5, 0, 1, 3);
   int index = 6;
   if (OMEditCommunicationLogFileInfo.exists() || OMEditCommandsMosFileInfo.exists() || OMStackTraceFileInfo.exists()) {
-    pMainLayout->addWidget(mpFilesDescriptionLabel, index, 0);
+    pMainLayout->addWidget(mpFilesDescriptionLabel, index, 0, 1, 3);
     index++;
   }
   if (OMEditCommunicationLogFileInfo.exists()) {
-    pMainLayout->addWidget(mpOMEditCommunicationLogFileCheckBox, index, 0);
+    pMainLayout->addWidget(mpOMEditCommunicationLogFileCheckBox, index, 0, 1, 3);
     index++;
   }
   if (OMEditCommandsMosFileInfo.exists()) {
-    pMainLayout->addWidget(mpOMEditCommandsMosFileCheckBox, index, 0);
+    pMainLayout->addWidget(mpOMEditCommandsMosFileCheckBox, index, 0, 1, 3);
     index++;
   }
   if (OMStackTraceFileInfo.exists()) {
-    pMainLayout->addWidget(mpOMStackTraceFileCheckBox, index, 0);
+    pMainLayout->addWidget(mpOMStackTraceFileCheckBox, index, 0, 1, 3);
     index++;
   }
-  pMainLayout->addWidget(mpButtonBox, index, 0, 1, 1, Qt::AlignRight);
+  pMainLayout->addWidget(mpProgressLabel, index, 0);
+  pMainLayout->addWidget(mpProgressBar, index, 1);
+  pMainLayout->addWidget(mpButtonBox, index, 2, Qt::AlignRight);
   setLayout(pMainLayout);
+}
+
+/*!
+ * \brief CrashReportDialog::createGDBBacktrace
+ * Creates the detailed gdb backtrace. If it fails to create one then uses the simple backtrace.
+ */
+void CrashReportDialog::createGDBBacktrace()
+{
+  QString errorString;
+  bool error = false;
+  QString OMStackTraceFilePath = QString("%1/openmodelica.stacktrace.%2").arg(Utilities::tempDirectory()).arg(Helper::OMCServerName);
+  // create the GDBBacktrace object
+  GDBBacktrace *pGDBBacktrace = new GDBBacktrace;
+  if (pGDBBacktrace->errorOccurred()) {
+    errorString = pGDBBacktrace->output();
+    error = true;
+  } else {
+    QFile file(OMStackTraceFilePath);
+    if (file.open(QIODevice::ReadOnly)) {
+      char buf[1024];
+      qint64 lineLength = file.readLine(buf, sizeof(buf));
+      if (lineLength != -1) {
+        QString lineText(buf);
+        // if we are unable to attach then set error occurred to true.
+        if (lineText.startsWith("Could not attach to process", Qt::CaseInsensitive)) {
+          errorString = lineText + QString(file.readAll());
+          error = true;
+        }
+      }
+      file.close();
+    } else {
+      errorString = GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(OMStackTraceFilePath);
+      error = true;
+    }
+  }
+  // if some error has occurred
+  if (error) {
+    QMessageBox *pMessageBox = new QMessageBox;
+    pMessageBox->setWindowTitle(QString("%1 - %2").arg(Helper::applicationName, Helper::error));
+    pMessageBox->setIcon(QMessageBox::Critical);
+    pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
+    pMessageBox->setText(tr("Following error has occurred while retrieving detailed gdb backtrace,\n\n%1").arg(errorString));
+    pMessageBox->addButton(tr("Try again"), QMessageBox::AcceptRole);
+    pMessageBox->addButton(tr("Send brief backtrace"), QMessageBox::RejectRole);
+    int answer = pMessageBox->exec();
+    switch (answer) {
+      case QMessageBox::AcceptRole:
+        createGDBBacktrace();
+        return;
+      case QMessageBox::RejectRole:
+      default:
+        break;
+    }
+    // create a brief backtrace file
+    QFile stackTraceFile;
+    stackTraceFile.setFileName(OMStackTraceFilePath);
+    if (stackTraceFile.open(QIODevice::WriteOnly)) {
+      QTextStream out(&stackTraceFile);
+      out.setCodec(Helper::utf8.toStdString().data());
+      out.setGenerateByteOrderMark(false);
+      out << mStackTrace;
+      out.flush();
+      stackTraceFile.close();
+    }
+  }
 }
 
 /*!
  * \brief CrashReportDialog::sendReport
  * Slot activated when mpSendReportButton clicked signal is raised.\n
- * Sends the crash report alongwith selected log files.
+ * Sends the crash report along with selected log files.
  */
 void CrashReportDialog::sendReport()
 {
@@ -156,6 +248,8 @@ void CrashReportDialog::sendReport()
         break;
     }
   }
+  mpProgressLabel->show();
+  mpProgressBar->show();
   // create the report.
   QHttpMultiPart *pHttpMultiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
   // email
@@ -220,6 +314,8 @@ void CrashReportDialog::sendReport()
  */
 void CrashReportDialog::reportSent(QNetworkReply *pNetworkReply)
 {
+  mpProgressLabel->hide();
+  mpProgressBar->hide();
   if (pNetworkReply->error() != QNetworkReply::NoError) {
     QMessageBox::critical(0, QString(Helper::applicationName).append(" - ").append(Helper::error),
                           QString("Following error has occurred while sending crash report \n\n%1").arg(pNetworkReply->errorString()),

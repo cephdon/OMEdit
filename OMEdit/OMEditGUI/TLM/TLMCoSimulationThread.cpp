@@ -28,19 +28,24 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "TLMCoSimulationThread.h"
+#include "Modeling/MessagesWidget.h"
+#include "Util/Utilities.h"
+#include "Util/Helper.h"
+
+#include <QFileInfo>
+#include <QObject>
+#include <QTimer>
+#include <QDir>
 
 TLMCoSimulationThread::TLMCoSimulationThread(TLMCoSimulationOutputWidget *pTLMCoSimulationOutputWidget)
   : QThread(pTLMCoSimulationOutputWidget), mpTLMCoSimulationOutputWidget(pTLMCoSimulationOutputWidget)
 {
   mpManagerProcess = 0;
+  mManagerProcessId = 0;
   setIsManagerProcessRunning(false);
   mpMonitorProcess = 0;
   setIsMonitorProcessRunning(false);
@@ -49,8 +54,35 @@ TLMCoSimulationThread::TLMCoSimulationThread(TLMCoSimulationOutputWidget *pTLMCo
 
 void TLMCoSimulationThread::run()
 {
+  removeGeneratedFiles();
   runManager();
   exec();
+}
+
+/*!
+ * \brief TLMCoSimulationThread::removeGeneratedFiles
+ * Removes the generated files before each new TLM co-simulation.
+ */
+void TLMCoSimulationThread::removeGeneratedFiles()
+{
+  TLMCoSimulationOptions tlmCoSimulationOptions = mpTLMCoSimulationOutputWidget->getTLMCoSimulationOptions();
+  QFileInfo fileInfo(tlmCoSimulationOptions.getFileName());
+  // remove result file
+  if (QFile::exists(QString("%1/%2.csv").arg(fileInfo.absoluteDir().absolutePath()).arg(fileInfo.completeBaseName()))) {
+    QFile::remove(QString("%1/%2.csv").arg(fileInfo.absoluteDir().absolutePath()).arg(fileInfo.completeBaseName()));
+  }
+  // remove run file
+  if (QFile::exists(QString("%1/%2.run").arg(fileInfo.absoluteDir().absolutePath()).arg(fileInfo.completeBaseName()))) {
+    QFile::remove(QString("%1/%2.run").arg(fileInfo.absoluteDir().absolutePath()).arg(fileInfo.completeBaseName()));
+  }
+  // remove TLM log file
+  if (QFile::exists(QString("%1/TLMlogfile.log").arg(fileInfo.absoluteDir().absolutePath()))) {
+    QFile::remove(QString("%1/TLMlogfile.log").arg(fileInfo.absoluteDir().absolutePath()));
+  }
+  // remove monitor log file
+  if (QFile::exists(QString("%1/monitor.log").arg(fileInfo.absoluteDir().absolutePath()))) {
+    QFile::remove(QString("%1/monitor.log").arg(fileInfo.absoluteDir().absolutePath()));
+  }
 }
 
 void TLMCoSimulationThread::runManager()
@@ -71,15 +103,17 @@ void TLMCoSimulationThread::runManager()
   QProcessEnvironment environment;
 #ifdef WIN32
   environment = StringHandler::simulationProcessEnvironment();
+  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ";" + environment.value("PATH"));
 #else
   environment = QProcessEnvironment::systemEnvironment();
+  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ":" + environment.value("PATH"));
 #endif
-  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ";" + environment.value("PATH"));
   environment.insert("TLMPluginPath", tlmCoSimulationOptions.getTLMPluginPath());
   mpManagerProcess->setProcessEnvironment(environment);
   // start the executable
   mpManagerProcess->start(fileName, args);
-  emit sendManagerOutput(QString("%1 %2").arg(fileName).arg(args.join(" ")), StringHandler::OMEditInfo);
+  mManagerProcessId = Utilities::getProcessId(mpManagerProcess);
+  emit sendManagerOutput(QString("%1 %2\n").arg(fileName).arg(args.join(" ")), StringHandler::OMEditInfo);
 }
 
 void TLMCoSimulationThread::runMonitor()
@@ -100,14 +134,15 @@ void TLMCoSimulationThread::runMonitor()
   QProcessEnvironment environment;
 #ifdef WIN32
   environment = StringHandler::simulationProcessEnvironment();
+  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ";" + environment.value("PATH"));
 #else
   environment = QProcessEnvironment::systemEnvironment();
+  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ":" + environment.value("PATH"));
 #endif
-  environment.insert("PATH", tlmCoSimulationOptions.getTLMPluginPath() + ";" + environment.value("PATH"));
   environment.insert("TLMPluginPath", tlmCoSimulationOptions.getTLMPluginPath());
   mpMonitorProcess->setProcessEnvironment(environment);
   mpMonitorProcess->start(fileName, args);
-  emit sendMonitorOutput(QString("%1 %2").arg(fileName).arg(args.join(" ")), StringHandler::OMEditInfo);
+  emit sendMonitorOutput(QString("%1 %2\n").arg(fileName).arg(args.join(" ")), StringHandler::OMEditInfo);
 }
 
 /*!
@@ -118,6 +153,7 @@ void TLMCoSimulationThread::managerProcessStarted()
 {
   setIsManagerProcessRunning(true);
   emit sendManagerStarted();
+  // start monitor
   runMonitor();
 }
 
@@ -146,15 +182,20 @@ void TLMCoSimulationThread::readManagerStandardError()
 void TLMCoSimulationThread::managerProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
   setIsManagerProcessRunning(false);
-  QString exitCodeStr = tr("TLMManager process failed. Exited with code %1.").arg(QString::number(exitCode));
+  QString exitCodeStr = tr("TLMManager process failed. Exited with code %1.\n").arg(QString::number(exitCode));
   if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-    emit sendManagerOutput(tr("TLMManager process finished successfully."), StringHandler::OMEditInfo);
+    emit sendManagerOutput(tr("TLMManager process finished successfully.\n"), StringHandler::OMEditInfo);
   } else if (mpManagerProcess->error() == QProcess::UnknownError) {
     emit sendManagerOutput(exitCodeStr, StringHandler::Error);
   } else {
     emit sendManagerOutput(mpManagerProcess->errorString() + "\n" + exitCodeStr, StringHandler::Error);
   }
   emit sendManagerFinished(exitCode, exitStatus);
+#ifdef WIN32
+  Utilities::killProcessTreeWindows(mManagerProcessId);
+#else
+  /*! @todo do similar stuff for Linux! */
+#endif /*  WIN32 */
 }
 
 /*!
@@ -165,16 +206,18 @@ void TLMCoSimulationThread::monitorProcessStarted()
 {
   setIsMonitorProcessRunning(true);
   emit sendMonitorStarted();
-  QFileInfo fileInfo(mpTLMCoSimulationOutputWidget->getTLMCoSimulationOptions().getFileName());
   // give 5 secs to tlmmonitor to create .run file
+  QFileInfo fileInfo(mpTLMCoSimulationOutputWidget->getTLMCoSimulationOptions().getFileName());
   mProgressFile.setFileName(fileInfo.absoluteDir().absolutePath() + "/" + fileInfo.completeBaseName() + ".run");
   int ticks = 0;
-  while (ticks < 5) {
-    if (mProgressFile.exists()) break;
+  while (ticks < 5 && !mProgressFile.exists()) {
     Sleep::sleep(1);
     ticks++;
   }
   mpProgressFileTimer = new QTimer(this);
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+  mpProgressFileTimer->setTimerType(Qt::PreciseTimer);
+#endif
   connect(mpProgressFileTimer, SIGNAL(timeout()), SLOT(progressFileChanged()));
   mpProgressFileTimer->start(2000);
 }
@@ -208,9 +251,9 @@ void TLMCoSimulationThread::monitorProcessFinished(int exitCode, QProcess::ExitS
   if (mpProgressFileTimer) {
     mpProgressFileTimer->stop();
   }
-  QString exitCodeStr = tr("TLMMonitor process failed. Exited with code %1.").arg(QString::number(exitCode));
+  QString exitCodeStr = tr("TLMMonitor process failed. Exited with code %1.\n").arg(QString::number(exitCode));
   if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-    emit sendMonitorOutput(tr("TLMMonitor process finished successfully."), StringHandler::OMEditInfo);
+    emit sendMonitorOutput(tr("TLMMonitor process finished successfully.\n"), StringHandler::OMEditInfo);
   } else if (mpMonitorProcess->error() == QProcess::UnknownError) {
     emit sendMonitorOutput(exitCodeStr, StringHandler::Error);
   } else {
@@ -233,9 +276,8 @@ void TLMCoSimulationThread::progressFileChanged()
     }
     mProgressFile.close();
   } else {
-    MessagesWidget *pMessagesWidget = mpTLMCoSimulationOutputWidget->getMainWindow()->getMessagesWidget();
-    pMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
-                                               GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(mProgressFile.fileName()),
-                                               Helper::scriptingKind, Helper::errorLevel));
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                          GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(mProgressFile.fileName()),
+                                                          Helper::scriptingKind, Helper::errorLevel));
   }
 }

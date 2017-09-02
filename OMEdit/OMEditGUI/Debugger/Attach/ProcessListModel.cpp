@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: ProcessListModel.cpp 24683 2015-02-21 14:33:33Z adeas31 $
- *
  */
 
 #include <QLibrary>
@@ -268,7 +264,7 @@ QString ProcessListModel::processIdAt(const QModelIndex &index) const
   if (index.isValid()) {
     return QString::number(mProcesses.at(index.row()).mProcessId);
   }
-  return QString();
+  return "";
 }
 
 /*!

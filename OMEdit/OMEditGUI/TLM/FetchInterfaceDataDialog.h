@@ -31,22 +31,30 @@
 #ifndef FETCHINTERFACEDATADIALOG_H
 #define FETCHINTERFACEDATADIALOG_H
 
-#include "MainWindow.h"
-#include "FetchInterfaceDataThread.h"
+#include "Util/StringHandler.h"
 
+#include <QDialog>
+#include <QProgressBar>
+#include <QPlainTextEdit>
+#include <QListWidget>
+#include <QDialogButtonBox>
+
+class LibraryTreeItem;
+class Label;
 class FetchInterfaceDataThread;
+class ModelWidget;
+class LineAnnotation;
 
 class FetchInterfaceDataDialog : public QDialog
 {
   Q_OBJECT
 public:
-  FetchInterfaceDataDialog(LibraryTreeNode *pLibraryTreeNode, MainWindow *pMainWindow);
-  void closeEvent(QCloseEvent *event);
-  MainWindow* getMainWindow() {return mpMainWindow;}
-  LibraryTreeNode* getLibraryTreeNode() {return mpLibraryTreeNode;}
+  FetchInterfaceDataDialog(LibraryTreeItem *pLibraryTreeItem, QString singleModel = QString(), QWidget *pParent = 0);
+  LibraryTreeItem* getLibraryTreeItem() {return mpLibraryTreeItem;}
+  QString getSingleModel() {return mSingleModel;}
 private:
-  MainWindow *mpMainWindow;
-  LibraryTreeNode *mpLibraryTreeNode;
+  LibraryTreeItem *mpLibraryTreeItem;
+  QString mSingleModel;
   Label *mpProgressLabel;
   QProgressBar *mpProgressBar;
   QPushButton *mpCancelButton;
@@ -60,8 +68,27 @@ public slots:
   void managerProcessStarted();
   void writeManagerOutput(QString output, StringHandler::SimulationMessageType type);
   void managerProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+  void reject();
 signals:
-  void readInterfaceData(LibraryTreeNode *pLibraryTreeNode);
+  void readInterfaceData(LibraryTreeItem *pLibraryTreeItem);
+};
+
+class AlignInterfacesDialog : public QDialog
+{
+  Q_OBJECT
+public:
+  AlignInterfacesDialog(ModelWidget *pModelWidget, LineAnnotation *pConnectionLineAnnotation = 0);
+private:
+  ModelWidget *mpModelWidget;
+  Label *mpAlignInterfacesHeading;
+  QFrame *mpHorizontalLine;
+  QListWidget *mpInterfaceListWidget;
+  QListWidget *mpToInterfaceListWidget;
+  QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
+  QDialogButtonBox *mpButtonBox;
+public slots:
+  void alignInterfaces();
 };
 
 #endif // FETCHINTERFACEDATADIALOG_H

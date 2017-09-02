@@ -29,11 +29,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef HELPER_H
@@ -44,7 +40,6 @@
 #include <QSize>
 #include <QObject>
 #include <QFontInfo>
-#include <QSettings>
 
 class Helper : public QObject
 {
@@ -73,9 +68,9 @@ public:
   static QString exeFileTypes;
   static QString txtFileTypes;
   static QString figaroFileTypes;
+  static QString visualizationFileTypes;
   static int treeIndentation;
   static QSize iconSize;
-  static QSize buttonIconSize;
   static int tabWidth;
   static QString modelicaComponentFormat;
   static QString modelicaFileFormat;
@@ -99,8 +94,7 @@ public:
   static QString utf8;
   static QFontInfo systemFontInfo;
   static QFontInfo monospacedFontInfo;
-  static QString defaultComponentAnnotationString;
-  static QString errorComponentAnnotationString;
+  static QString toolsOptionsPath;
   /* Meta Modelica Types */
   static QString MODELICA_METATYPE;
   static QString MODELICA_STRING;
@@ -122,16 +116,18 @@ public:
   /* Global translated variables */
   static QString newModelicaClass;
   static QString createNewModelicaClass;
-  static QString findClasses;
   static QString openModelicaFiles;
   static QString openConvertModelicaFiles;
   static QString libraries;
   static QString clearRecentFiles;
   static QString encoding;
+  static QString fileLabel;
   static QString file;
+  static QString folder;
   static QString browse;
   static QString ok;
   static QString cancel;
+  static QString reset;
   static QString close;
   static QString error;
   static QString chooseFile;
@@ -141,6 +137,11 @@ public:
   static QString add;
   static QString edit;
   static QString save;
+  static QString saveTip;
+  static QString saveAs;
+  static QString saveAsTip;
+  static QString saveTotal;
+  static QString saveTotalTip;
   static QString apply;
   static QString chooseDirectory;
   static QString general;
@@ -152,6 +153,7 @@ public:
   static QString type;
   static QString information;
   static QString rename;
+  static QString renameTip;
   static QString checkModel;
   static QString checkModelTip;
   static QString checkAllModels;
@@ -179,6 +181,9 @@ public:
   static QString deleteStr;
   static QString copy;
   static QString paste;
+  static QString resetZoom;
+  static QString zoomIn;
+  static QString zoomOut;
   static QString loading;
   static QString question;
   static QString search;
@@ -186,7 +191,7 @@ public:
   static QString duplicateTip;
   static QString unloadClass;
   static QString unloadClassTip;
-  static QString unloadXMLTip;
+  static QString unloadCompositeModelOrTextTip;
   static QString refresh;
   static QString simulate;
   static QString simulateTip;
@@ -194,10 +199,13 @@ public:
   static QString reSimulateTip;
   static QString reSimulateSetup;
   static QString reSimulateSetupTip;
+  static QString exportVariables;
   static QString simulateWithTransformationalDebugger;
   static QString simulateWithTransformationalDebuggerTip;
   static QString simulateWithAlgorithmicDebugger;
   static QString simulateWithAlgorithmicDebuggerTip;
+  static QString simulateWithAnimation;
+  static QString simulateWithAnimationTip;
   static QString simulationSetup;
   static QString simulationSetupTip;
   static QString simulation;
@@ -225,7 +233,7 @@ public:
   static QString size;
   static QString lineStyle;
   static QString color;
-  static QString fontAndColors;
+  static QString Colors;
   static QString fontFamily;
   static QString fontSize;
   static QString pickColor;
@@ -250,15 +258,19 @@ public:
   static QString diagramView;
   static QString textView;
   static QString documentationView;
-  static QString searchModelicaClass;
+  static QString filterClasses;
   static QString findReplaceModelicaText;
   static QString left;
   static QString center;
   static QString right;
-  static QString connectArray;
+  static QString createConnection;
+  static QString connectionAttributes;
+  static QString createTransition;
+  static QString editTransition;
   static QString findVariables;
-  static QString viewClass;
-  static QString viewClassTip;
+  static QString filterVariables;
+  static QString openClass;
+  static QString openClassTip;
   static QString viewDocumentation;
   static QString viewDocumentationTip;
   static QString dontShowThisMessageAgain;
@@ -279,6 +291,17 @@ public:
   static QString debuggingFileNotSaveInfo;
   static QString algorithmicDebugger;
   static QString debugConfigurations;
+  static QString debugConfigurationsTip;
+  static QString createGitReposiory;
+  static QString createGitReposioryTip;
+  static QString logCurrentFile;
+  static QString logCurrentFileTip;
+  static QString stageCurrentFileForCommit;
+  static QString stageCurrentFileForCommitTip;
+  static QString unstageCurrentFileFromCommit;
+  static QString unstageCurrentFileFromCommitTip;
+  static QString commitFiles;
+  static QString commitFilesTip;
   static QString resume;
   static QString interrupt;
   static QString exit;
@@ -286,6 +309,7 @@ public:
   static QString stepInto;
   static QString stepReturn;
   static QString attachToRunningProcess;
+  static QString attachToRunningProcessTip;
   static QString crashReport;
   static QString parsingFailedJson;
   static QString expandAll;
@@ -296,19 +320,49 @@ public:
   static QString cancelSimulation;
   static QString fetchInterfaceData;
   static QString fetchInterfaceDataTip;
+  static QString alignInterfaces;
+  static QString alignInterfacesTip;
   static QString tlmCoSimulationSetup;
   static QString tlmCoSimulationSetupTip;
   static QString tlmCoSimulation;
+  static QString animationChooseFile;
+  static QString animationChooseFileTip;
+  static QString animationInitialize;
+  static QString animationInitializeTip;
+  static QString animationPlay;
+  static QString animationPlayTip;
+  static QString animationPause;
+  static QString animationPauseTip;
+  static QString simulationParams;
+  static QString simulationParamsTip;
   static QString running;
   static QString finished;
+  static QString newVariable;
+  static QString library;
+  static QString moveUp;
+  static QString moveDown;
+  static QString fixErrorsManually;
+  static QString revertToLastCorrectVersion;
+  static QString OMCFlags;
+  static QString OMCFlagsTip;
+  static QString saveExperimentAnnotation;
+  static QString saveOpenModelicaSimulationFlagsAnnotation;
+  static QString item;
+  static QString bold;
+  static QString italic;
+  static QString underline;
+  static QString condition;
+  static QString immediate;
+  static QString synchronize;
+  static QString priority;
+  static QString secs;
 };
 
 class GUIMessages : public QObject
 {
   Q_OBJECT
 public:
-  enum MessagesTypes
-  {
+  enum MessagesTypes {
     CHECK_MESSAGES_BROWSER,
     SAME_COMPONENT_NAME,
     SAME_COMPONENT_CONNECT,
@@ -322,12 +376,13 @@ public:
     ITEM_ALREADY_EXISTS,
     OPENMODELICAHOME_NOT_FOUND,
     ERROR_OCCURRED,
-    ERROR_IN_MODELICA_TEXT,
+    ERROR_IN_TEXT,
     REVERT_PREVIOUS_OR_FIX_ERRORS_MANUALLY,
     NO_OPENMODELICA_KEYWORDS,
     UNABLE_TO_LOAD_FILE,
     UNABLE_TO_OPEN_FILE,
     UNABLE_TO_SAVE_FILE,
+    UNABLE_TO_DELETE_FILE,
     FILE_NOT_FOUND,
     ERROR_OPENING_FILE,
     UNABLE_TO_LOAD_MODEL,
@@ -337,8 +392,8 @@ public:
     DIAGRAM_VIEW_DROP_MSG,
     ICON_VIEW_DROP_MSG,
     PLOT_PARAMETRIC_DIFF_FILES,
-    FILE_FORMAT_NOT_SUPPORTED,
     ENTER_VALID_NUMBER,
+    ENTER_VALUE,
     ITEM_DROPPED_ON_ITSELF,
     MAKE_REPLACEABLE_IF_PARTIAL,
     INNER_MODEL_NAME_CHANGED,
@@ -347,13 +402,10 @@ public:
     FIGARO_GENERATED,
     UNLOAD_CLASS_MSG,
     DELETE_CLASS_MSG,
+    UNLOAD_TEXT_FILE_MSG,
     DELETE_TEXT_FILE_MSG,
     WRONG_MODIFIER,
     SET_INFO_XML_FLAG,
-    GENERATE_OPERATIONS_MSG,
-    GENERATE_OPERATIONS_MSG_MAC,
-    SET_INFO_XML_FLAG_MSG,
-    SET_INFO_XML_FLAG_MSG_MAC,
     DEBUG_CONFIGURATION_EXISTS_MSG,
     DEBUG_CONFIGURATION_SIZE_EXCEED,
     DELETE_DEBUG_CONFIGURATION_MSG,
@@ -362,19 +414,19 @@ public:
     BREAKPOINT_INSERT_NOT_SAVED,
     BREAKPOINT_INSERT_NOT_MODELICA_CLASS,
     TLMMANAGER_NOT_SET,
-    TLMMANAGER_NOT_SET_MSG,
-    TLMMANAGER_NOT_SET_MSG_MAC,
-    METAMODEL_UNSAVED,
-    TLMCOSIMULATION_ALREADY_RUNNING
+    COMPOSITEMODEL_UNSAVED,
+    TLMCOSIMULATION_ALREADY_RUNNING,
+    TERMINAL_COMMAND_NOT_SET,
+    UNABLE_FIND_COMPONENT_IN_CONNECTION,
+    UNABLE_FIND_COMPONENT_IN_TRANSITION,
+    UNABLE_FIND_COMPONENT_IN_INITIALSTATE,
+    SELECT_SIMULATION_OPTION,
+    INVALID_TRANSITION_CONDITION,
+    MULTIPLE_DECLARATIONS_COMPONENT,
+    GDB_ERROR
   };
 
   static QString getMessage(int type);
 };
-
-
-namespace OpenModelica {
-  QString& tempDirectory();
-  QSettings* getApplicationSettings();
-}
 
 #endif // HELPER_H

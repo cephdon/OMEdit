@@ -28,33 +28,36 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "TextEditor.h"
+#include "Options/OptionsDialog.h"
+#include "Modeling/ModelWidgetContainer.h"
 
-TextEditor::TextEditor(ModelWidget *pModelWidget)
-  : BaseEditor(pModelWidget)
-{
-  //! @todo for now set the font of TextEditor to default monospaced font. Later define settings for it and read from there.
-  mpPlainTextEdit->setFont(QFont(Helper::monospacedFontInfo.family()));
-  mpPlainTextEdit->setTabStopWidth(4 * QFontMetrics(mpPlainTextEdit->font()).width(QLatin1Char(' ')));
-}
+#include <QMenu>
 
-TextEditor::TextEditor(MainWindow *pMainWindow)
-  : BaseEditor(pMainWindow)
+TextEditor::TextEditor(QWidget *pParent)
+  : BaseEditor(pParent)
 {
-  //! @todo for now set the font of TextEditor to default monospaced font. Later define settings for it and read from there.
-  mpPlainTextEdit->setFont(QFont(Helper::monospacedFontInfo.family()));
-  mpPlainTextEdit->setTabStopWidth(4 * QFontMetrics(mpPlainTextEdit->font()).width(QLatin1Char(' ')));
+  QFont font;
+  font.setFamily(OptionsDialog::instance()->getTextEditorPage()->getFontFamilyComboBox()->currentFont().family());
+  font.setPointSizeF(OptionsDialog::instance()->getTextEditorPage()->getFontSizeSpinBox()->value());
+  mpPlainTextEdit->document()->setDefaultFont(font);
+  mpPlainTextEdit->setTabStopWidth(OptionsDialog::instance()->getTextEditorPage()->getTabSizeSpinBox()->value() * QFontMetrics(font).width(QLatin1Char(' ')));
 }
 
 /*!
- * \brief ModelicaTextEditor::setPlainText
+ * \brief TextEditor::popUpCompleter()
+ * \we do not have completer for this
+ */
+void TextEditor::popUpCompleter()
+{
+
+}
+
+/*!
+ * \brief TextEditor::setPlainText
  * Reimplementation of QPlainTextEdit::setPlainText method.
  * Makes sure we dont update if the passed text is same.
  * \param text the string to set.
@@ -97,7 +100,7 @@ void TextEditor::contentsHasChanged(int position, int charsRemoved, int charsAdd
     }
     /* if user is changing the text. */
     if (!mForceSetPlainText) {
-      mpModelWidget->setModelModified();
+      mpModelWidget->updateModelText();
     }
   }
 }

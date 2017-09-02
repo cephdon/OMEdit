@@ -29,36 +29,44 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TEXTANNOTATION_H
 #define TEXTANNOTATION_H
 
 #include "ShapeAnnotation.h"
-#include "Component.h"
+#include "LineAnnotation.h"
 
 class Component;
-
 class TextAnnotation : public ShapeAnnotation
 {
   Q_OBJECT
 public:
-  TextAnnotation(QString annotation, Component *pComponent);
-  TextAnnotation(QString annotation, bool inheritedShape, GraphicsView *pGraphicsView);
+  // Used for icon/diagram shape
+  TextAnnotation(QString annotation, GraphicsView *pGraphicsView);
+  // Used for shape inside a component
+  TextAnnotation(ShapeAnnotation *pShapeAnnotation, Component *pParent);
+  // Used for icon/diagram inherited shape
+  TextAnnotation(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
+  // Used for default component
+  TextAnnotation(Component *pParent);
+  // Used for transition text
+  TextAnnotation(QString annotation, LineAnnotation *pLineAnnotation);
   void parseShapeAnnotation(QString annotation);
   QRectF boundingRect() const;
   QPainterPath shape() const;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
   void drawTextAnnotaion(QPainter *painter);
+  QString getOMCShapeAnnotation();
   QString getShapeAnnotation();
+  void updateShape(ShapeAnnotation *pShapeAnnotation);
+
+  QRectF mExportBoundingRect;
 private:
   Component *mpComponent;
 
+  void initUpdateTextString();
   void updateTextStringHelper(QRegExp regExp);
 public slots:
   void updateTextString();

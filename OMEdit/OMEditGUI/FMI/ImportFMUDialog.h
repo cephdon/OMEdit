@@ -29,26 +29,24 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef IMPORTFMUDIALOG_H
 #define IMPORTFMUDIALOG_H
 
-#include "MainWindow.h"
+#include <QDialog>
+#include <QFrame>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QCheckBox>
 
-class MainWindow;
-
+class Label;
 class ImportFMUDialog : public QDialog
 {
   Q_OBJECT
 public:
-  ImportFMUDialog(MainWindow *pParent = 0);
-  MainWindow *mpMainWindow;
+  ImportFMUDialog(QWidget *pParent = 0);
 private:
   Label *mpImportFMUHeading;
   QFrame *mpHorizontalLine;

@@ -28,16 +28,16 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: ModelicaValue.cpp 22009 2014-08-26 23:13:38Z hudson $
- *
  */
 
-#include "ModelicaValue.h"
-#include "LocalsWidget.h"
-#include "CommandFactory.h"
+#include "Debugger/Locals/ModelicaValue.h"
+#include "MainWindow.h"
+#include "Debugger/GDB/GDBAdapter.h"
+#include "Debugger/StackFrames/StackFramesWidget.h"
+#include "Debugger/Locals/LocalsWidget.h"
+#include "Debugger/GDB/CommandFactory.h"
+#include "Util/Helper.h"
 
 ModelicaValue::ModelicaValue(LocalsTreeItem *pLocalsTreeItem)
   : QObject(pLocalsTreeItem)
@@ -55,15 +55,15 @@ ModelicaCoreValue::ModelicaCoreValue(LocalsTreeItem *pLocalsTreeItem)
 QString ModelicaCoreValue::getValueString()
 {
   /* if the variable type is modelica_boolean */
-  if (mpLocalsTreeItem->getType().compare(Helper::MODELICA_BOOLEAN) == 0)
-  {
+  if (mpLocalsTreeItem->getType().compare(Helper::MODELICA_BOOLEAN) == 0) {
     QString result = getValue().mid(0, getValue().indexOf(" "));
-    if (result.compare("1") == 0)
+    if (result.compare("1") == 0) {
       return "true";
-    else if (result.compare("0") == 0)
+    } else if (result.compare("0") == 0) {
       return "false";
-    else
+    } else {
       return getValue();
+    }
   }
   return getValue();
 }
@@ -76,8 +76,11 @@ ModelicaRecordValue::ModelicaRecordValue(LocalsTreeItem *pLocalsTreeItem)
 
 void ModelicaRecordValue::retrieveChildrenSize()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(CommandFactory::arrayLength(mpLocalsTreeItem->getName()), this, &GDBAdapter::arrayLengthCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+  pGDBAdapter->postCommand(CommandFactory::arrayLength(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                       mpLocalsTreeItem->getName()),
+                           GDBAdapter::BlockUntilResponse, this, &GDBAdapter::arrayLengthCB);
 }
 
 QString ModelicaRecordValue::getValueString()
@@ -88,17 +91,16 @@ QString ModelicaRecordValue::getValueString()
 void ModelicaRecordValue::setChildrenSize(QString size)
 {
   setRecordElements(size.toInt());
-  /* invalidate the view so that the items show the updated values. */
-  mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getLocalsTreeProxyModel()->invalidate();
 }
 
 void ModelicaRecordValue::retrieveChildren()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  for (int i = 2 ; i <= getRecordElements() ; i++)
-  {
-    QByteArray cmd = CommandFactory::getMetaTypeElement(mpLocalsTreeItem->getName(), i, CommandFactory::record_metaType);
-    pGDBAdapter->postCommand(cmd, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  for (int i = 2 ; i <= getRecordElements() ; i++) {
+    StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+    QByteArray cmd = CommandFactory::getMetaTypeElement(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName(), i, CommandFactory::record_metaType);
+    pGDBAdapter->postCommand(cmd, GDBAdapter::BlockUntilResponse, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
   }
 }
 
@@ -110,8 +112,11 @@ ModelicaListValue::ModelicaListValue(LocalsTreeItem *pLocalsTreeItem)
 
 void ModelicaListValue::retrieveChildrenSize()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(CommandFactory::listLength(mpLocalsTreeItem->getName()), this, &GDBAdapter::arrayLengthCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+  pGDBAdapter->postCommand(CommandFactory::listLength(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                      mpLocalsTreeItem->getName()),
+                           GDBAdapter::BlockUntilResponse, this, &GDBAdapter::arrayLengthCB);
 }
 
 QString ModelicaListValue::getValueString()
@@ -123,17 +128,16 @@ void ModelicaListValue::setChildrenSize(QString size)
 {
   setListLength(size.toInt());
   mpLocalsTreeItem->setDisplayValue(getValueString());
-  /* invalidate the view so that the items show the updated values. */
-  mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getLocalsTreeProxyModel()->invalidate();
 }
 
 void ModelicaListValue::retrieveChildren()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  for (int i = 1 ; i <= getListLength() ; i++)
-  {
-    QByteArray cmd = CommandFactory::getMetaTypeElement(mpLocalsTreeItem->getName(), i, CommandFactory::list_metaType);
-    pGDBAdapter->postCommand(cmd, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  for (int i = 1 ; i <= getListLength() ; i++) {
+    StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+    QByteArray cmd = CommandFactory::getMetaTypeElement(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName(), i, CommandFactory::list_metaType);
+    pGDBAdapter->postCommand(cmd, GDBAdapter::BlockUntilResponse, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
   }
 }
 
@@ -145,8 +149,11 @@ ModelicaOptionValue::ModelicaOptionValue(LocalsTreeItem *pLocalsTreeItem)
 
 void ModelicaOptionValue::retrieveChildrenSize()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(CommandFactory::isOptionNone(mpLocalsTreeItem->getName()), this, &GDBAdapter::arrayLengthCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+  pGDBAdapter->postCommand(CommandFactory::isOptionNone(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName()),
+                           GDBAdapter::BlockUntilResponse, this, &GDBAdapter::arrayLengthCB);
 }
 
 QString ModelicaOptionValue::getValueString()
@@ -156,22 +163,22 @@ QString ModelicaOptionValue::getValueString()
 
 void ModelicaOptionValue::setChildrenSize(QString size)
 {
-  if (size.compare("1") == 0)
+  if (size.compare("1") == 0) {
     setOptionNone(true);
-  else
+  } else {
     setOptionNone(false);
+  }
   mpLocalsTreeItem->setDisplayValue(getValueString());
-  /* invalidate the view so that the items show the updated values. */
-  mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getLocalsTreeProxyModel()->invalidate();
 }
 
 void ModelicaOptionValue::retrieveChildren()
 {
-  if (!isOptionNone())
-  {
-    GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-    QByteArray cmd = CommandFactory::getMetaTypeElement(mpLocalsTreeItem->getName(), 1, CommandFactory::option_metaType);
-    pGDBAdapter->postCommand(cmd, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
+  if (!isOptionNone()) {
+    GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+    StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+    QByteArray cmd = CommandFactory::getMetaTypeElement(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName(), 1, CommandFactory::option_metaType);
+    pGDBAdapter->postCommand(cmd, GDBAdapter::BlockUntilResponse, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
   }
 }
 
@@ -183,8 +190,11 @@ ModelicaTupleValue::ModelicaTupleValue(LocalsTreeItem *pLocalsTreeItem)
 
 void ModelicaTupleValue::retrieveChildrenSize()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(CommandFactory::arrayLength(mpLocalsTreeItem->getName()), this, &GDBAdapter::arrayLengthCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+  pGDBAdapter->postCommand(CommandFactory::arrayLength(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                       mpLocalsTreeItem->getName()),
+                           GDBAdapter::BlockUntilResponse, this, &GDBAdapter::arrayLengthCB);
 }
 
 QString ModelicaTupleValue::getValueString()
@@ -196,17 +206,16 @@ void ModelicaTupleValue::setChildrenSize(QString size)
 {
   setTupleElements(size.toInt());
   mpLocalsTreeItem->setDisplayValue(getValueString());
-  /* invalidate the view so that the items show the updated values. */
-  mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getLocalsTreeProxyModel()->invalidate();
 }
 
 void ModelicaTupleValue::retrieveChildren()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  for (int i = 1 ; i <= getTupleElements() ; i++)
-  {
-    QByteArray cmd = CommandFactory::getMetaTypeElement(mpLocalsTreeItem->getName(), i, CommandFactory::tuple_metaType);
-    pGDBAdapter->postCommand(cmd, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  for (int i = 1 ; i <= getTupleElements() ; i++) {
+    StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+    QByteArray cmd = CommandFactory::getMetaTypeElement(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName(), i, CommandFactory::tuple_metaType);
+    pGDBAdapter->postCommand(cmd, GDBAdapter::BlockUntilResponse, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
   }
 }
 
@@ -218,8 +227,11 @@ MetaModelicaArrayValue::MetaModelicaArrayValue(LocalsTreeItem *pLocalsTreeItem)
 
 void MetaModelicaArrayValue::retrieveChildrenSize()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  pGDBAdapter->postCommand(CommandFactory::arrayLength(mpLocalsTreeItem->getName()), this, &GDBAdapter::arrayLengthCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+  pGDBAdapter->postCommand(CommandFactory::arrayLength(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                       mpLocalsTreeItem->getName()),
+                           GDBAdapter::BlockUntilResponse, this, &GDBAdapter::arrayLengthCB);
 }
 
 QString MetaModelicaArrayValue::getValueString()
@@ -231,16 +243,15 @@ void MetaModelicaArrayValue::setChildrenSize(QString size)
 {
   setArrayLength(size.toInt());
   mpLocalsTreeItem->setDisplayValue(getValueString());
-  /* invalidate the view so that the items show the updated values. */
-  mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getLocalsTreeProxyModel()->invalidate();
 }
 
 void MetaModelicaArrayValue::retrieveChildren()
 {
-  GDBAdapter *pGDBAdapter = mpLocalsTreeItem->getLocalsTreeModel()->getLocalsWidget()->getDebuggerMainWindow()->getGDBAdapter();
-  for (int i = 1 ; i <= getArrayLength() ; i++)
-  {
-    QByteArray cmd = CommandFactory::getMetaTypeElement(mpLocalsTreeItem->getName(), i, CommandFactory::array_metaType);
-    pGDBAdapter->postCommand(cmd, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
+  GDBAdapter *pGDBAdapter = GDBAdapter::instance();
+  for (int i = 1 ; i <= getArrayLength() ; i++) {
+    StackFramesWidget *pStackFramesWidget = MainWindow::instance()->getStackFramesWidget();
+    QByteArray cmd = CommandFactory::getMetaTypeElement(pStackFramesWidget->getSelectedThread(), pStackFramesWidget->getSelectedFrame(),
+                                                        mpLocalsTreeItem->getName(), i, CommandFactory::array_metaType);
+    pGDBAdapter->postCommand(cmd, GDBAdapter::BlockUntilResponse, mpLocalsTreeItem, &GDBAdapter::getMetaTypeElementCB);
   }
 }

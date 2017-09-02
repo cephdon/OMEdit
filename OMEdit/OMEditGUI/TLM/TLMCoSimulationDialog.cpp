@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifdef WIN32
@@ -46,22 +42,27 @@
 #endif
 
 #include "TLMCoSimulationDialog.h"
-#include "VariablesWidget.h"
+#include "MainWindow.h"
+#include "Options/OptionsDialog.h"
+#include "Modeling/MessagesWidget.h"
+#include "Plotting/VariablesWidget.h"
+#include "Plotting/PlotWindowContainer.h"
+#include "Modeling/Commands.h"
+#include "TLMCoSimulationOutputWidget.h"
+#if !defined(WITHOUT_OSG)
+#include "Animation/AnimationWindow.h"
+#endif
 
-TLMCoSimulationDialog::TLMCoSimulationDialog(MainWindow *pMainWindow)
-  : QDialog(pMainWindow, Qt::WindowTitleHint)
+TLMCoSimulationDialog::TLMCoSimulationDialog(QWidget *pParent)
+  : QDialog(pParent)
 {
   resize(450, 350);
-  mpMainWindow = pMainWindow;
   setIsTLMCoSimulationRunning(false);
   // simulation widget heading
-  mpHeadingLabel = new Label;
+  mpHeadingLabel = Utilities::getHeadingLabel("");
   mpHeadingLabel->setElideMode(Qt::ElideMiddle);
-  mpHeadingLabel->setFont(QFont(Helper::systemFontInfo.family(), Helper::headingFontSize));
   // Horizontal separator
-  mpHorizontalLine = new QFrame();
-  mpHorizontalLine->setFrameShape(QFrame::HLine);
-  mpHorizontalLine->setFrameShadow(QFrame::Sunken);
+  mpHorizontalLine = Utilities::getHeadingLine();
   // TLM Plugin Path
   mpTLMPluginPathLabel = new Label(tr("TLM Plugin Path:"));
   mpTLMPluginPathTextBox = new QLineEdit;
@@ -164,7 +165,7 @@ TLMCoSimulationDialog::TLMCoSimulationDialog(MainWindow *pMainWindow)
   pMainLayout->addWidget(mpButtonBox, 6, 0, 1, 3, Qt::AlignRight);
   setLayout(pMainLayout);
   // create TLMCoSimulationOutputWidget
-  mpTLMCoSimulationOutputWidget = new TLMCoSimulationOutputWidget(mpMainWindow);
+  mpTLMCoSimulationOutputWidget = new TLMCoSimulationOutputWidget;
   int xPos = QApplication::desktop()->availableGeometry().width() - mpTLMCoSimulationOutputWidget->frameSize().width() - 20;
   int yPos = QApplication::desktop()->availableGeometry().height() - mpTLMCoSimulationOutputWidget->frameSize().height() - 20;
   mpTLMCoSimulationOutputWidget->setGeometry(xPos, yPos, mpTLMCoSimulationOutputWidget->width(), mpTLMCoSimulationOutputWidget->height());
@@ -177,24 +178,24 @@ TLMCoSimulationDialog::~TLMCoSimulationDialog()
 
 /*!
   Reimplementation of QDialog::show method.
-  \param pLibraryTreeNode - pointer to LibraryTreeNode
+  \param pLibraryTreeItem - pointer to LibraryTreeItem
   */
-void TLMCoSimulationDialog::show(LibraryTreeNode *pLibraryTreeNode)
+void TLMCoSimulationDialog::show(LibraryTreeItem *pLibraryTreeItem)
 {
-  mpLibraryTreeNode = pLibraryTreeNode;
-  setWindowTitle(QString("%1 - %2 - %3").arg(Helper::applicationName).arg(Helper::tlmCoSimulationSetup).arg(mpLibraryTreeNode->getNameStructure()));
-  mpHeadingLabel->setText(QString("%1 - %2").arg(Helper::tlmCoSimulationSetup).arg(mpLibraryTreeNode->getNameStructure()));
+  mpLibraryTreeItem = pLibraryTreeItem;
+  setWindowTitle(QString("%1 - %2 - %3").arg(Helper::applicationName).arg(Helper::tlmCoSimulationSetup).arg(mpLibraryTreeItem->getName()));
+  mpHeadingLabel->setText(QString("%1 - %2").arg(Helper::tlmCoSimulationSetup).arg(mpLibraryTreeItem->getName()));
   // if user has nothing in TLM plugin path then read from OptionsDialog
   if (mpTLMPluginPathTextBox->text().isEmpty()) {
-    mpTLMPluginPathTextBox->setText(mpMainWindow->getOptionsDialog()->getTLMPage()->getTLMPluginPathTextBox()->text());
+    mpTLMPluginPathTextBox->setText(OptionsDialog::instance()->getTLMPage()->getOMTLMSimulatorPath());
   }
   // if user has nothing in manager process box then read from OptionsDialog
   if (mpManagerProcessTextBox->text().isEmpty()) {
-    mpManagerProcessTextBox->setText(mpMainWindow->getOptionsDialog()->getTLMPage()->getTLMManagerProcessTextBox()->text());
+    mpManagerProcessTextBox->setText(OptionsDialog::instance()->getTLMPage()->getOMTLMSimulatorManagerPath());
   }
   // if user has nothing in monitor process box then read from OptionsDialog
   if (mpMonitorProcessTextBox->text().isEmpty()) {
-    mpMonitorProcessTextBox->setText(mpMainWindow->getOptionsDialog()->getTLMPage()->getTLMMonitorProcessTextBox()->text());
+    mpMonitorProcessTextBox->setText(OptionsDialog::instance()->getTLMPage()->getOMTLMSimulatorMonitorPath());
   }
   setVisible(true);
 }
@@ -206,18 +207,26 @@ void TLMCoSimulationDialog::simulationProcessFinished(TLMCoSimulationOptions tlm
   QFileInfo fileInfo(tlmCoSimulationOptions.getFileName());
   QFileInfo resultFileInfo(fileInfo.absoluteDir().absolutePath() + "/" + fileInfo.completeBaseName() + ".csv");
   if (resultFileInfo.exists() && resultFileLastModifiedDateTime <= resultFileInfo.lastModified()) {
-    VariablesWidget *pVariablesWidget = mpMainWindow->getVariablesWidget();
-    OMCProxy *pOMCProxy = mpMainWindow->getOMCProxy();
-    QString currentDirectory = pOMCProxy->changeDirectory();
-    pOMCProxy->changeDirectory(fileInfo.absoluteDir().absolutePath());
-    QStringList list = pOMCProxy->readSimulationResultVars(resultFileInfo.fileName());
+    VariablesWidget *pVariablesWidget = MainWindow::instance()->getVariablesWidget();
+    OMCProxy *pOMCProxy = MainWindow::instance()->getOMCProxy();
+    QStringList list = pOMCProxy->readSimulationResultVars(resultFileInfo.absoluteFilePath());
     // close the simulation result file.
     pOMCProxy->closeSimulationResultFile();
-    pOMCProxy->changeDirectory(currentDirectory);
     if (list.size() > 0) {
-      mpMainWindow->getPerspectiveTabBar()->setCurrentIndex(2);
+#if !defined(WITHOUT_OSG)
+      // only show the AnimationWindow if we have a visual xml file.
+      QFileInfo visualFileInfo(fileInfo.absoluteDir().absolutePath() + "/" + fileInfo.completeBaseName() + "_visual.xml");
+      if (visualFileInfo.exists()) {
+        MainWindow::instance()->getPlotWindowContainer()->addAnimationWindow(MainWindow::instance()->getPlotWindowContainer()->subWindowList().isEmpty());
+        AnimationWindow *pAnimationWindow = MainWindow::instance()->getPlotWindowContainer()->getCurrentAnimationWindow();
+        if (pAnimationWindow) {
+          pAnimationWindow->openAnimationFile(resultFileInfo.absoluteFilePath());
+        }
+      }
+#endif
+      MainWindow::instance()->getPerspectiveTabBar()->setCurrentIndex(2);
       pVariablesWidget->insertVariablesItemsToTree(resultFileInfo.fileName(), fileInfo.absoluteDir().absolutePath(), list, SimulationOptions());
-      mpMainWindow->getVariablesDockWidget()->show();
+      MainWindow::instance()->getVariablesDockWidget()->show();
     }
   }
 }
@@ -228,19 +237,19 @@ void TLMCoSimulationDialog::simulationProcessFinished(TLMCoSimulationOptions tlm
 bool TLMCoSimulationDialog::validate()
 {
   if (mpManagerProcessTextBox->text().isEmpty()) {
-    QMessageBox::critical(mpMainWindow, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
+    QMessageBox::critical(MainWindow::instance(), QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
                           tr("Enter manager process."), Helper::ok);
     mpManagerProcessTextBox->setFocus();
     return false;
   }
   if (mpMonitorProcessTextBox->text().isEmpty()) {
-    QMessageBox::critical(mpMainWindow, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
+    QMessageBox::critical(MainWindow::instance(), QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
                           tr("Enter monitor process."), Helper::ok);
     mpMonitorProcessTextBox->setFocus();
     return false;
   }
   if (mpMonitorPortTextBox->text().isEmpty()) {
-    QMessageBox::critical(mpMainWindow, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
+    QMessageBox::critical(MainWindow::instance(), QString("%1 - %2").arg(Helper::applicationName).arg(Helper::error),
                           tr("Enter a monitor port."), Helper::ok);
     mpMonitorPortTextBox->setFocus();
     return false;
@@ -255,8 +264,8 @@ bool TLMCoSimulationDialog::validate()
 TLMCoSimulationOptions TLMCoSimulationDialog::createTLMCoSimulationOptions()
 {
   TLMCoSimulationOptions tlmCoSimulationOptions;
-  tlmCoSimulationOptions.setClassName(mpLibraryTreeNode->getNameStructure());
-  tlmCoSimulationOptions.setFileName(mpLibraryTreeNode->getFileName());
+  tlmCoSimulationOptions.setClassName(mpLibraryTreeItem->getName());
+  tlmCoSimulationOptions.setFileName(mpLibraryTreeItem->getFileName());
   tlmCoSimulationOptions.setTLMPluginPath(mpTLMPluginPathTextBox->text());
   tlmCoSimulationOptions.setManagerProcess(mpManagerProcessTextBox->text());
   tlmCoSimulationOptions.setServerPort(mpServerPortTextBox->text());
@@ -266,11 +275,27 @@ TLMCoSimulationOptions TLMCoSimulationDialog::createTLMCoSimulationOptions()
   tlmCoSimulationOptions.setNumberOfSteps(mpNumberOfStepsTextBox->text().toInt());
   tlmCoSimulationOptions.setTimeStepSize(mpTimeStepSizeTextBox->text().toDouble());
   tlmCoSimulationOptions.setMonitorDebugMode(mpMonitorDebugModeCheckBox->isChecked());
-
+  // manager args
   QStringList managerArgs;
-  QStringList monitorArgs;
   if (mpManagerDebugModeCheckBox->isChecked()) {
     managerArgs.append("-d");
+  }
+  if (!mpServerPortTextBox->text().isEmpty()) {
+    managerArgs.append("-p");
+    managerArgs.append(mpServerPortTextBox->text());
+  }
+  // monitor args
+  QStringList monitorArgs;
+  if (mpMonitorDebugModeCheckBox->isChecked()) {
+    monitorArgs.append("-d");
+  }
+  if (!mpNumberOfStepsTextBox->text().isEmpty()) {
+    monitorArgs.append("-n");
+    monitorArgs.append(mpNumberOfStepsTextBox->text());
+  }
+  if (!mpTimeStepSizeTextBox->text().isEmpty()) {
+    monitorArgs.append("-t");
+    monitorArgs.append(mpTimeStepSizeTextBox->text());
   }
   if (!mpMonitorPortTextBox->text().isEmpty()) {
     // set monitor port for manager process
@@ -284,35 +309,21 @@ TLMCoSimulationOptions TLMCoSimulationDialog::createTLMCoSimulationOptions()
     WSADATA ws;
     int d;
     d = WSAStartup(0x0101,&ws);
+    Q_UNUSED(d);
 #endif
     gethostname(myname, MAXHOSTNAME);
     hp = gethostbyname((const char*) myname);
     if (hp == NULL) {
-      MessageItem messageItem(MessageItem::TLM, "", false, 0, 0, 0, 0,
+      MessageItem messageItem(MessageItem::CompositeModel, "", false, 0, 0, 0, 0,
                               tr("Failed to get my hostname, check that name resolves, e.g. /etc/hosts has %1")
                               .arg(QString(myname)), Helper::scriptingKind, Helper::errorLevel);
-      mpMainWindow->getMessagesWidget()->addGUIMessage(messageItem);
+      MessagesWidget::instance()->addGUIMessage(messageItem);
       tlmCoSimulationOptions.setIsValid(false);
       return tlmCoSimulationOptions;
     }
     char* localIP = inet_ntoa (*(struct in_addr *)*hp->h_addr_list);
     QString monitorPort = QString(localIP) + ":" + mpMonitorPortTextBox->text();
     monitorArgs.append(monitorPort);
-  }
-  if (!mpServerPortTextBox->text().isEmpty()) {
-    managerArgs.append("-p");
-    managerArgs.append(mpServerPortTextBox->text());
-  }
-  if (mpMonitorDebugModeCheckBox->isChecked()) {
-    monitorArgs.append("-d");
-  }
-  if (!mpNumberOfStepsTextBox->text().isEmpty()) {
-    monitorArgs.append("-n");
-    monitorArgs.append(mpNumberOfStepsTextBox->text());
-  }
-  if (!mpTimeStepSizeTextBox->text().isEmpty()) {
-    monitorArgs.append("-t");
-    monitorArgs.append(mpTimeStepSizeTextBox->text());
   }
   tlmCoSimulationOptions.setManagerArgs(managerArgs);
   tlmCoSimulationOptions.setMonitorArgs(monitorArgs);
@@ -389,9 +400,113 @@ void TLMCoSimulationDialog::runTLMCoSimulation()
     TLMCoSimulationOptions tlmCoSimulationOptions = createTLMCoSimulationOptions();
     if (tlmCoSimulationOptions.isValid()) {
       setIsTLMCoSimulationRunning(true);
+      if (!mpLibraryTreeItem->getModelWidget()) {
+        MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->showModelWidget(mpLibraryTreeItem, false);
+      }
+      mpLibraryTreeItem->getModelWidget()->createModelWidgetComponents();
+      // write the visual xml file
+      QFileInfo fileInfo(mpLibraryTreeItem->getFileName());
+      QString fileName = QString("%1/%2_visual.xml").arg(fileInfo.absolutePath()).arg(fileInfo.baseName());
+      mpLibraryTreeItem->getModelWidget()->writeVisualXMLFile(fileName);
       mpTLMCoSimulationOutputWidget->showTLMCoSimulationOutputWidget(tlmCoSimulationOptions);
       showTLMCoSimulationOutputWindow();
       accept();
     }
   }
+}
+
+/*!
+ * \brief CompositeModelSimulationParamsDialog::CompositeModelSimulationParamsDialog
+ * \param pGraphicsView
+ */
+CompositeModelSimulationParamsDialog::CompositeModelSimulationParamsDialog(GraphicsView *pGraphicsView)
+  : QDialog(pGraphicsView)
+{
+  setAttribute(Qt::WA_DeleteOnClose);
+  setWindowTitle(QString("%1 - %2 - %3").arg(Helper::applicationName).arg(Helper::simulationParams)
+                 .arg(pGraphicsView->getModelWidget()->getLibraryTreeItem()->getName()));
+  // set heading
+  mpSimulationParamsHeading = Utilities::getHeadingLabel(QString("%1 - %2").arg(Helper::simulationParams)
+                                                         .arg(pGraphicsView->getModelWidget()->getLibraryTreeItem()->getName()));
+  // set separator line
+  mpHorizontalLine = Utilities::getHeadingLine();
+  mpGraphicsView = pGraphicsView;
+  mpLibraryTreeItem = mpGraphicsView->getModelWidget()->getModelWidgetContainer()->getCurrentModelWidget()->getLibraryTreeItem();
+  // Initialize simulation parameters
+  mOldStartTime = "";
+  mOldStopTime = "";
+  CompositeModelEditor *pCompositeModelEditor = dynamic_cast<CompositeModelEditor*>(mpGraphicsView->getModelWidget()->getEditor());
+  if(pCompositeModelEditor->isSimulationParams()){
+    mOldStartTime = pCompositeModelEditor->getSimulationStartTime();
+    mOldStopTime = pCompositeModelEditor->getSimulationStopTime();
+  }
+  // CoSimulation Interval
+  mpStartTimeLabel = new Label(tr("Start Time:"));
+  mpStartTimeTextBox = new QLineEdit(mOldStartTime);
+  mpStopTimeLabel = new Label(tr("Stop Time:"));
+  mpStopTimeTextBox = new QLineEdit(mOldStopTime);
+  // Add the validators
+  QDoubleValidator *pDoubleValidator = new QDoubleValidator(this);
+  mpStartTimeTextBox->setValidator(pDoubleValidator);
+  mpStopTimeTextBox->setValidator(pDoubleValidator);
+  // buttons
+  mpSaveButton = new QPushButton(Helper::save);
+  mpSaveButton->setToolTip(tr("Saves the Co-Simulation experiment settings"));
+  connect(mpSaveButton, SIGNAL(clicked()), this, SLOT(saveSimulationParams()));
+  mpCancelButton = new QPushButton(Helper::cancel);
+  connect(mpCancelButton, SIGNAL(clicked()), SLOT(reject()));
+  // adds Co-Simulation Experiment Setting buttons to the button box
+  mpButtonBox = new QDialogButtonBox(Qt::Horizontal);
+  mpButtonBox->addButton(mpSaveButton, QDialogButtonBox::ActionRole);
+  mpButtonBox->addButton(mpCancelButton, QDialogButtonBox::ActionRole);
+  // set the layout
+  QGridLayout *pMainLayout = new QGridLayout;
+  pMainLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  pMainLayout->addWidget(mpSimulationParamsHeading, 0, 0, 1, 2);
+  pMainLayout->addWidget(mpHorizontalLine, 1, 0, 1, 2);
+  pMainLayout->addWidget(mpStartTimeLabel, 2, 0);
+  pMainLayout->addWidget(mpStartTimeTextBox, 2, 1);
+  pMainLayout->addWidget(mpStopTimeLabel, 3, 0);
+  pMainLayout->addWidget(mpStopTimeTextBox, 3, 1);
+  pMainLayout->addWidget(mpButtonBox, 4, 1, 1, 1, Qt::AlignRight);
+  setLayout(pMainLayout);
+}
+
+/*!
+ * \brief CompositeModelSimulationParamsDialog::saveSimulationParams
+ * Saves the Simulation Parameters.
+ * Slot activated when mpSave button clicked signal is raised.
+ */
+void CompositeModelSimulationParamsDialog::saveSimulationParams()
+{
+  if (validateSimulationParams()) {
+    // If user has changed the simulation parameters then push the change on the stack.
+    if (!mOldStartTime.compare(mpStartTimeTextBox->text())== 0 || !mOldStopTime.compare(mpStopTimeTextBox->text())== 0) {
+      UpdateSimulationParamsCommand *pUpdateSimulationParamsCommand;
+      pUpdateSimulationParamsCommand = new UpdateSimulationParamsCommand(mpLibraryTreeItem, mOldStartTime, mpStartTimeTextBox->text(),
+                                                                         mOldStopTime, mpStopTimeTextBox->text());
+      mpLibraryTreeItem->getModelWidget()->getUndoStack()->push(pUpdateSimulationParamsCommand);
+      mpLibraryTreeItem->getModelWidget()->updateModelText();
+    }
+    accept();
+  }
+}
+
+/*!
+  Validates the simulation params entered by the user.
+  */
+bool CompositeModelSimulationParamsDialog::validateSimulationParams()
+{
+  if (mpStartTimeTextBox->text().isEmpty()) {
+    mpStartTimeTextBox->setText("0");
+  }
+  if (mpStopTimeTextBox->text().isEmpty()) {
+    mpStopTimeTextBox->setText("1");
+  }
+  if (mpStartTimeTextBox->text().toDouble() > mpStopTimeTextBox->text().toDouble()) {
+    QMessageBox::critical(MainWindow::instance(), QString(Helper::applicationName).append(" - ").append(Helper::error),
+                          GUIMessages::getMessage(GUIMessages::SIMULATION_STARTTIME_LESSTHAN_STOPTIME), Helper::ok);
+    return false;
+  }
+  return true;
 }

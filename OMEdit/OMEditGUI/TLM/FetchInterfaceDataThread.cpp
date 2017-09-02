@@ -29,11 +29,16 @@
  */
 
 #include "FetchInterfaceDataThread.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Options/OptionsDialog.h"
+
+#include <QDir>
 
 FetchInterfaceDataThread::FetchInterfaceDataThread(FetchInterfaceDataDialog *pFetchInterfaceDataDialog)
   : QThread(pFetchInterfaceDataDialog), mpFetchInterfaceDataDialog(pFetchInterfaceDataDialog)
 {
   mpManagerProcess = 0;
+  mManagerProcessId = 0;
   setIsManagerProcessRunning(false);
 }
 
@@ -44,7 +49,7 @@ FetchInterfaceDataThread::FetchInterfaceDataThread(FetchInterfaceDataDialog *pFe
 void FetchInterfaceDataThread::run()
 {
   mpManagerProcess = new QProcess;
-  QFileInfo fileInfo(mpFetchInterfaceDataDialog->getLibraryTreeNode()->getFileName());
+  QFileInfo fileInfo(mpFetchInterfaceDataDialog->getLibraryTreeItem()->getFileName());
   mpManagerProcess->setWorkingDirectory(fileInfo.absoluteDir().absolutePath());
   qRegisterMetaType<QProcess::ExitStatus>("QProcess::ExitStatus");
   qRegisterMetaType<StringHandler::SimulationMessageType>("StringHandler::SimulationMessageType");
@@ -53,19 +58,26 @@ void FetchInterfaceDataThread::run()
   connect(mpManagerProcess, SIGNAL(readyReadStandardError()), SLOT(readManagerStandardError()));
   connect(mpManagerProcess, SIGNAL(finished(int,QProcess::ExitStatus)), SLOT(managerProcessFinished(int,QProcess::ExitStatus)));
   QStringList args;
-  args << "-r" << fileInfo.absoluteFilePath();
+  args << "-r";
+  QString singleModel = mpFetchInterfaceDataDialog->getSingleModel();
+  if(!singleModel.isEmpty()) {
+      args << "-s" << singleModel;
+  }
+  args << fileInfo.absoluteFilePath();
+  TLMPage *pTLMPage = OptionsDialog::instance()->getTLMPage();
   QProcessEnvironment environment;
 #ifdef WIN32
   environment = StringHandler::simulationProcessEnvironment();
+  environment.insert("PATH", pTLMPage->getOMTLMSimulatorPath() + ";" + environment.value("PATH"));
 #else
   environment = QProcessEnvironment::systemEnvironment();
+  environment.insert("PATH", pTLMPage->getTLMPluginPathTextBox()->text() + ":" + environment.value("PATH"));
 #endif
-  TLMPage *pTLMPage = mpFetchInterfaceDataDialog->getMainWindow()->getOptionsDialog()->getTLMPage();
-  environment.insert("PATH", pTLMPage->getTLMPluginPathTextBox()->text() + ";" + environment.value("PATH"));
-  environment.insert("TLMPluginPath", pTLMPage->getTLMPluginPathTextBox()->text());
+  environment.insert("TLMPluginPath", pTLMPage->getOMTLMSimulatorPath());
   mpManagerProcess->setProcessEnvironment(environment);
-  mpManagerProcess->start(pTLMPage->getTLMManagerProcessTextBox()->text(), args);
-  emit sendManagerOutput(QString("%1 %2").arg(pTLMPage->getTLMManagerProcessTextBox()->text()).arg(args.join(" ")), StringHandler::OMEditInfo);
+  mpManagerProcess->start(pTLMPage->getOMTLMSimulatorManagerPath(), args);
+  mManagerProcessId = Utilities::getProcessId(mpManagerProcess);
+  emit sendManagerOutput(QString("%1 %2").arg(pTLMPage->getOMTLMSimulatorManagerPath()).arg(args.join(" ")), StringHandler::OMEditInfo);
   exec();
 }
 
@@ -119,5 +131,11 @@ void FetchInterfaceDataThread::managerProcessFinished(int exitCode, QProcess::Ex
     emit sendManagerOutput(mpManagerProcess->errorString() + "\n" + exitCodeStr, StringHandler::Error);
   }
   emit sendManagerFinished(exitCode, exitStatus);
+#ifdef WIN32
+  Utilities::killProcessTreeWindows(mManagerProcessId);
+#else
+  /*! @todo do similar stuff for Linux! */
+#endif /*  WIN32 */
+  quit();
 }
 

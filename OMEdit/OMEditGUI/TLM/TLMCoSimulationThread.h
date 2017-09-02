@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TLMCOSIMULATIONTHREAD_H
@@ -40,8 +36,9 @@
 
 #include "TLMCoSimulationOutputWidget.h"
 
-class TLMCoSimulationOutputWidget;
+#include <QThread>
 
+class TLMCoSimulationOutputWidget;
 class TLMCoSimulationThread : public QThread
 {
   Q_OBJECT
@@ -59,12 +56,14 @@ private:
   QString mFileName;
   TLMCoSimulationOutputWidget *mpTLMCoSimulationOutputWidget;
   QProcess *mpManagerProcess;
+  qint64 mManagerProcessId;
   bool mIsManagerProcessRunning;
   QProcess *mpMonitorProcess;
   bool mIsMonitorProcessRunning;
   QFile mProgressFile;
   QTimer *mpProgressFileTimer;
 
+  void removeGeneratedFiles();
   void runManager();
   void runMonitor();
 private slots:

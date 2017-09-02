@@ -28,42 +28,45 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef CEDITOR_H
 #define CEDITOR_H
 
-#include "MainWindow.h"
+#include <QSyntaxHighlighter>
+#include <QPlainTextEdit>
 
-class MainWindow;
+#include "Editors/BaseEditor.h"
 
 class CEditor : public BaseEditor
 {
   Q_OBJECT
 public:
-  CEditor(MainWindow *pMainWindow);
+  CEditor(QWidget *pParent);
+  void setPlainText(const QString &text);
+  virtual void popUpCompleter();
 private slots:
   virtual void showContextMenu(QPoint point);
 public slots:
-  virtual void contentsHasChanged(int position, int charsRemoved, int charsAdded) {}
+  virtual void contentsHasChanged(int position, int charsRemoved, int charsAdded);
   virtual void toggleCommentSelection() {}
 };
 
+class CEditorPage;
 class CHighlighter : public QSyntaxHighlighter
 {
   Q_OBJECT
 public:
-  CHighlighter(QPlainTextEdit *pPlainTextEdit = 0);
+  CHighlighter(CEditorPage *pCEditorPage, QPlainTextEdit *pPlainTextEdit = 0);
   void initializeSettings();
   void highlightMultiLine(const QString &text);
+  static QStringList getKeywords();
+  static QStringList getTypes();
 protected:
   virtual void highlightBlock(const QString &text);
 private:
+  CEditorPage *mpCEditorPage;
   QPlainTextEdit *mpPlainTextEdit;
   struct HighlightingRule
   {
@@ -74,11 +77,12 @@ private:
   QTextCharFormat mTextFormat;
   QTextCharFormat mKeywordFormat;
   QTextCharFormat mTypeFormat;
-  QTextCharFormat mFunctionFormat;
   QTextCharFormat mQuotationFormat;
   QTextCharFormat mSingleLineCommentFormat;
   QTextCharFormat mMultiLineCommentFormat;
   QTextCharFormat mNumberFormat;
+public slots:
+  void settingsChanged();
 };
 
 #endif // CEDITOR_H

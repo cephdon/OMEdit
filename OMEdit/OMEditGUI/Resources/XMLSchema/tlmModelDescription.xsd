@@ -40,10 +40,17 @@
        *
       </xs:documentation>
   </xs:annotation>
+  <xs:simpleType name="causalitytype">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Bidirectional" />
+      <xs:enumeration value="Input" />
+      <xs:enumeration value="Output" />
+    </xs:restriction>
+  </xs:simpleType>
   <xs:element name="Model">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="SubModels" minOccurs="0" maxOccurs="1">
+        <xs:element name="SubModels" minOccurs="1" maxOccurs="1">
           <xs:annotation>
             <xs:documentation>List of connected sub-models</xs:documentation>
           </xs:annotation>
@@ -53,7 +60,7 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="Connections" minOccurs="0" maxOccurs="1">
+        <xs:element name="Connections" minOccurs="1" maxOccurs="1">
           <xs:annotation>
             <xs:documentation>List of TLM connections</xs:documentation>
           </xs:annotation>
@@ -96,17 +103,30 @@
           </xs:annotation>
           <xs:complexType>
             <xs:attribute name="Name" type="xs:string" use="required"/>
+            <xs:attribute name="Dimensions" type="xs:integer" use="optional"/>
+            <xs:attribute name="Domain" type="xs:string" use="optional"/>
+            <xs:attribute name="Causality" type="causalitytype" use="optional"/>
             <xs:attribute name="Position" type="xs:string" use="optional"/>
             <xs:attribute name="Angle321" type="xs:string" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Parameter" minOccurs="0" maxOccurs="unbounded">
+          <xs:annotation>
+            <xs:documentation>TLM parameter for SubModel</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:attribute name="Name" type="xs:string" use="required"/>
+            <xs:attribute name="Value" type="xs:string" use="required"/>
           </xs:complexType>
         </xs:element>
       </xs:sequence>
       <xs:attribute name="Name" type="xs:string" use="required"/>
       <xs:attribute name="StartCommand" type="xs:string" use="required"/>
-      <xs:attribute name="ExactStep" type="xs:boolean" use="required"/>
+      <xs:attribute name="ExactStep" type="xs:boolean" use="optional"/>
       <xs:attribute name="ModelFile" type="xs:string" use="required"/>
       <xs:attribute name="Position" type="xs:string" use="optional"/>
       <xs:attribute name="Angle321" type="xs:string" use="optional"/>
+      <xs:attribute name="GeometryFile" type="xs:string" use="optional"/>
     </xs:complexType>
     <xs:complexType name="Connection">
       <xs:sequence>
@@ -122,8 +142,8 @@
       <xs:attribute name="From" type="xs:string" use="required"/>
       <xs:attribute name="To" type="xs:string" use="required"/>
       <xs:attribute name="Delay" type="xs:string" use="required"/>
-      <xs:attribute name="Zf" type="xs:string" use="required"/>
-      <xs:attribute name="Zfr" type="xs:string" use="required"/>
+      <xs:attribute name="Zf" type="xs:string" use="optional"/>
+      <xs:attribute name="Zfr" type="xs:string" use="optional"/>
       <xs:attribute name="alpha" type="xs:string" use="optional"/>
   </xs:complexType>
 </xs:schema>

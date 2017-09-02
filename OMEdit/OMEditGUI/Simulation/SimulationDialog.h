@@ -29,20 +29,32 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef SIMULATIONDIALOG_H
 #define SIMULATIONDIALOG_H
 
-#include "MainWindow.h"
+#include "Util/Helper.h"
 #include "SimulationOptions.h"
 
+#include <QDialog>
+#include <QTreeWidget>
+#include <QScrollArea>
+#include <QGroupBox>
+#include <QRadioButton>
+#include <QSpinBox>
+#include <QComboBox>
+#include <QToolButton>
+#include <QCheckBox>
+#include <QPushButton>
+#include <QDialogButtonBox>
+#include <QGridLayout>
+#include <QDateTime>
+
+class Label;
 class SimulationOutputWidget;
+class LibraryTreeItem;
 
 class ArchivedSimulationItem : public QTreeWidgetItem
 {
@@ -69,37 +81,41 @@ private:
   SimulationOutputWidget *mpSimulationOutputWidget;
 };
 
-class MainWindow;
 class SimulationDialog : public QDialog
 {
   Q_OBJECT
 public:
-  SimulationDialog(MainWindow *pParent = 0);
+  SimulationDialog(QWidget *pParent = 0);
   ~SimulationDialog();
   QTreeWidget* getArchivedSimulationsTreeWidget() {return mpArchivedSimulationsTreeWidget;}
-  void show(LibraryTreeNode *pLibraryTreeNode, bool isReSimulate, SimulationOptions simulationOptions);
-  void directSimulate(LibraryTreeNode *pLibraryTreeNode, bool launchTransformationalDebugger, bool launchAlgorithmicDebugger);
+  void show(LibraryTreeItem *pLibraryTreeItem, bool isReSimulate, SimulationOptions simulationOptions);
+  void directSimulate(LibraryTreeItem *pLibraryTreeItem, bool launchTransformationalDebugger, bool launchAlgorithmicDebugger,
+                      bool launchAnimation);
 private:
-  MainWindow *mpMainWindow;
   Label *mpSimulationHeading;
   QFrame *mpHorizontalLine;
   QTabWidget *mpSimulationTabWidget;
   // General Tab
   QWidget *mpGeneralTab;
+  QScrollArea *mpGeneralTabScrollArea;
   QGroupBox *mpSimulationIntervalGroupBox;
   Label *mpStartTimeLabel;
   QLineEdit *mpStartTimeTextBox;
   Label *mpStopTimeLabel;
   QLineEdit *mpStopTimeTextBox;
+  QRadioButton *mpNumberofIntervalsRadioButton;
+  QSpinBox *mpNumberofIntervalsSpinBox;
+  QRadioButton *mpIntervalRadioButton;
+  QLineEdit *mpIntervalTextBox;
   QGroupBox *mpIntegrationGroupBox;
   Label *mpMethodLabel;
   QComboBox *mpMethodComboBox;
   QToolButton *mpMehtodHelpButton;
   Label *mpToleranceLabel;
   QLineEdit *mpToleranceTextBox;
+  Label *mpJacobianLabel;
+  QComboBox *mpJacobianComboBox;
   QGroupBox *mpDasslOptionsGroupBox;
-  Label *mpDasslJacobianLabel;
-  QComboBox *mpDasslJacobianComboBox;
   QCheckBox *mpDasslRootFindingCheckBox;
   QCheckBox *mpDasslRestartCheckBox;
   Label *mpDasslInitialStepSizeLabel;
@@ -108,7 +124,6 @@ private:
   QLineEdit *mpDasslMaxStepSizeTextBox;
   Label *mpDasslMaxIntegrationOrderLabel;
   QSpinBox *mpDasslMaxIntegrationOrderSpinBox;
-  QCheckBox *mpSaveSimulationCheckbox;
   Label *mpCflagsLabel;
   QLineEdit *mpCflagsTextBox;
   Label *mpNumberOfProcessorsLabel;
@@ -117,10 +132,11 @@ private:
   QCheckBox *mpBuildOnlyCheckBox;
   QCheckBox *mpLaunchTransformationalDebuggerCheckBox;
   QCheckBox *mpLaunchAlgorithmicDebuggerCheckBox;
+#if !defined(WITHOUT_OSG)
+  QCheckBox *mpLaunchAnimationCheckBox;
+#endif
   // Output Tab
   QWidget *mpOutputTab;
-  Label *mpNumberofIntervalLabel;
-  QSpinBox *mpNumberofIntervalsSpinBox;
   Label *mpOutputFormatLabel;
   QComboBox *mpOutputFormatComboBox;
   Label *mpFileNameLabel;
@@ -164,35 +180,23 @@ private:
   QCheckBox *mpCPUTimeCheckBox;
   QCheckBox *mpEnableAllWarningsCheckBox;
   QGroupBox *mpLoggingGroupBox;
-  QCheckBox *mpLogDasslSolverCheckBox;
-  QCheckBox *mpLogDebugCheckBox;
-  QCheckBox *mpLogDynamicStateSelectionCheckBox;
-  QCheckBox *mpLogJacobianDynamicStateSelectionCheckBox;
-  QCheckBox *mpLogEventsCheckBox;
-  QCheckBox *mpLogVerboseEventsCheckBox;
-  QCheckBox *mpLogInitializationCheckBox;
-  QCheckBox *mpLogJacobianCheckBox;
-  QCheckBox *mpLogNonLinearSystemsCheckBox;
-  QCheckBox *mpLogVerboseNonLinearSystemsCheckBox;
-  QCheckBox *mpLogJacobianNonLinearSystemsCheckBox;
-  QCheckBox *mpLogResidualsInitializationCheckBox;
-  QCheckBox *mpLogSimulationCheckBox;
-  QCheckBox *mpLogSolverCheckBox;
-  QCheckBox *mpLogFinalSolutionOfInitializationCheckBox;
-  QCheckBox *mpLogStatsCheckBox;
-  QCheckBox *mpLogUtilCheckBox;
-  QCheckBox *mpLogZeroCrossingsCheckBox;
+  QGridLayout *mpLoggingGroupLayout;
   Label *mpAdditionalSimulationFlagsLabel;
   QLineEdit *mpAdditionalSimulationFlagsTextBox;
+  QToolButton *mpSimulationFlagsHelpButton;
   // Archived Simulation Flags Tab
   QWidget *mpArchivedSimulationsTab;
   QTreeWidget *mpArchivedSimulationsTreeWidget;
+  // checkboxes
+  QCheckBox *mpSaveExperimentAnnotationCheckBox;
+  QCheckBox *mpSaveSimulationFlagsAnnotationCheckBox;
+  QCheckBox *mpSimulateCheckBox;
   // buttons
+  QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
-  QPushButton *mpSimulateButton;
   QDialogButtonBox *mpButtonBox;
   QList<SimulationOutputWidget*> mSimulationOutputWidgetsList;
-  LibraryTreeNode *mpLibraryTreeNode;
+  LibraryTreeItem *mpLibraryTreeItem;
   QString mClassName;
   QString mFileName;
   bool mIsReSimulate;
@@ -204,17 +208,25 @@ private:
   SimulationOptions createSimulationOptions();
   void createAndShowSimulationOutputWidget(SimulationOptions simulationOptions);
   void showSimulationOutputWidget(SimulationOutputWidget *pSimulationOutputWidget);
-  void saveSimulationOptions();
+  void saveExperimentAnnotation();
+  void saveSimulationFlagsAnnotation();
+  void performSimulation();
+  void saveDialogGeometry();
 public:
   void reSimulate(SimulationOptions simulationOptions);
   void showAlgorithmicDebugger(SimulationOptions simulationOptions);
   void simulationProcessFinished(SimulationOptions simulationOptions, QDateTime resultFileLastModifiedDateTime);
 public slots:
+  void numberOfIntervalsRadioToggled(bool toggle);
+  void intervalRadioToggled(bool toggle);
+  void updateMethodToolTip(int index);
   void enableDasslOptions(QString method);
   void showIntegrationHelp();
+  void updateJacobianToolTip(int index);
   void buildOnly(bool checked);
   void browseModelSetupFile();
   void browseEquationSystemInitializationFile();
+  void showSimulationFlagsHelp();
   void showArchivedSimulation(QTreeWidgetItem *pTreeWidgetItem);
   void simulate();
 private slots:

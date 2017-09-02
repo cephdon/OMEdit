@@ -28,17 +28,14 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TLMCOSIMULATIONOPTIONS_H
 #define TLMCOSIMULATIONOPTIONS_H
 
 #include <QString>
+#include <QStringList>
 
 class TLMCoSimulationOptions
 {

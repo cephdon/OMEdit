@@ -29,32 +29,33 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "MessagesWidget.h"
-#include "Helper.h"
+#include "MainWindow.h"
+#include "LibraryTreeWidget.h"
+#include "Util/Helper.h"
+#include "Options/OptionsDialog.h"
+
+#include <QMenu>
+#include <QMessageBox>
 
 /*!
-  \class MessageItem
-  \brief Holds the error message data.
-  */
-
+ * \class MessageItem
+ * \brief Holds the error message data.
+ */
 /*!
-  \param filename - the error filename.
-  \param readOnly - the error file readOnly state.
-  \param lineStart - the index where the error starts.
-  \param columnStart - the indexed column where the error starts.
-  \param lineEnd - the index where the error ends.
-  \param columnEnd - the indexed column where the error ends.
-  \param message - the error message.
-  \param kind - the error kind.
-  \param level - the error level.
-  */
+ * \param filename - the error filename.
+ * \param readOnly - the error file readOnly state.
+ * \param lineStart - the index where the error starts.
+ * \param columnStart - the indexed column where the error starts.
+ * \param lineEnd - the index where the error ends.
+ * \param columnEnd - the indexed column where the error ends.
+ * \param message - the error message.
+ * \param kind - the error kind.
+ * \param level - the error level.
+ */
 MessageItem::MessageItem(MessageItemType type, QString filename, bool readOnly, int lineStart, int columnStart, int lineEnd, int columnEnd, QString message,
                          QString errorKind, QString errorType)
   : mMessageItemType(type)
@@ -84,17 +85,37 @@ QString MessageItem::getLocation()
 }
 
 /*!
-  \class MessagesWidget
-  \brief Shows warnings, notifications and error messages.
-  */
+ * \class MessagesWidget
+ * \brief Shows warnings, notifications and error messages.
+ */
+
+MessagesWidget *MessagesWidget::mpInstance = 0;
 
 /*!
-  \param pMainWindow - defines a parent to the new instanced object. pMainWindow is the MainWindow object.
-  */
-MessagesWidget::MessagesWidget(MainWindow *pMainWindow)
-  : QWidget(pMainWindow, Qt::WindowTitleHint)
+ * \brief MessagesWidget::create
+ */
+void MessagesWidget::create()
 {
-  mpMainWindow = pMainWindow;
+  if (!mpInstance) {
+    mpInstance = new MessagesWidget;
+  }
+}
+
+/*!
+ * \brief MessagesWidget::destroy
+ */
+void MessagesWidget::destroy()
+{
+  mpInstance->deleteLater();
+}
+
+/*!
+ * \brief MessagesWidget::MessagesWidget
+ * \param pParent
+ */
+MessagesWidget::MessagesWidget(QWidget *pParent)
+  : QWidget(pParent)
+{
   mMessageNumber = 1;
   mpMessagesTextBrowser = new QTextBrowser;
   mpMessagesTextBrowser->setOpenLinks(false);
@@ -133,11 +154,12 @@ MessagesWidget::MessagesWidget(MainWindow *pMainWindow)
 }
 
 /*!
-  Applies the Messages settings e.g size, font, color.
-  */
+ * \brief MessagesWidget::applyMessagesSettings
+ * Applies the Messages settings e.g size, font, color.
+ */
 void MessagesWidget::applyMessagesSettings()
 {
-  MessagesPage *pMessagesPage = mpMainWindow->getOptionsDialog()->getMessagesPage();
+  MessagesPage *pMessagesPage = OptionsDialog::instance()->getMessagesPage();
   // set the output size
   mpMessagesTextBrowser->document()->setMaximumBlockCount(pMessagesPage->getOutputSizeSpinBox()->value());
   // set the font
@@ -150,9 +172,9 @@ void MessagesWidget::applyMessagesSettings()
   QString messagesCSS = QString(".notification {color: %1}"
                                 ".warning {color: %2}"
                                 ".error {color: %3}")
-      .arg(mpMainWindow->getOptionsDialog()->getMessagesPage()->getNotificationColor().name())
-      .arg(mpMainWindow->getOptionsDialog()->getMessagesPage()->getWarningColor().name())
-      .arg(mpMainWindow->getOptionsDialog()->getMessagesPage()->getErrorColor().name());
+      .arg(OptionsDialog::instance()->getMessagesPage()->getNotificationColor().name())
+      .arg(OptionsDialog::instance()->getMessagesPage()->getWarningColor().name())
+      .arg(OptionsDialog::instance()->getMessagesPage()->getErrorColor().name());
   mpMessagesTextBrowser->document()->setDefaultStyleSheet(messagesCSS);
   // move the cursor to end.
   QTextCursor textCursor = mpMessagesTextBrowser->textCursor();
@@ -161,9 +183,11 @@ void MessagesWidget::applyMessagesSettings()
 }
 
 /*!
-  Adds the error message.\n
-  Moves to the most recent error message in the view.
-  */
+ * \brief MessagesWidget::addGUIMessage
+ * Adds the error message.\n
+ * Moves to the most recent error message in the view.
+ * \param messageItem
+ */
 void MessagesWidget::addGUIMessage(MessageItem messageItem)
 {
   // move the cursor down before adding message.
@@ -194,12 +218,13 @@ void MessagesWidget::addGUIMessage(MessageItem messageItem)
     } else {
       message = Qt::convertFromPlainText(messageItem.getMessage()).remove("<p>").remove("</p>");
     }
-  } else if(messageItem.getMessageItemType()== MessageItem::TLM) {
-    message = messageItem.getMessage().remove("<p>");
+  } else if(messageItem.getMessageItemType()== MessageItem::CompositeModel) {
+    message = messageItem.getMessage().remove("<p>").remove("</p>");
   }
   if (messageItem.getFileName().isEmpty()) { // if custom error message
     errorMessage = message;
-  } else if (messageItem.getMessageItemType()== MessageItem::TLM || mpMainWindow->getOMCProxy()->existClass(messageItem.getFileName())) {
+  } else if (messageItem.getMessageItemType()== MessageItem::CompositeModel ||
+             MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->findLibraryTreeItem(messageItem.getFileName())) {
     // If the class is only loaded in AST via loadString then create link for the error message.
     errorMessage = linkFormat.arg(messageItem.getFileName())
         .arg(messageItem.getLocation())
@@ -208,12 +233,13 @@ void MessagesWidget::addGUIMessage(MessageItem messageItem)
         .arg(message);
   } else {
     // Find the class name using the file name and line number.
-    LibraryTreeNode *pLibraryTreeNode = mpMainWindow->getLibraryTreeWidget()->getLibraryTreeNodeFromFile(messageItem.getFileName(),
-                                                                                                         messageItem.getLineStart().toInt());
-    if (pLibraryTreeNode) {
-      errorMessage = linkFormat.arg(pLibraryTreeNode->getNameStructure())
+    LibraryTreeItem *pLibraryTreeItem;
+    pLibraryTreeItem = MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->getLibraryTreeItemFromFile(messageItem.getFileName(),
+                                                                                                                     messageItem.getLineStart().toInt());
+    if (pLibraryTreeItem) {
+      errorMessage = linkFormat.arg(pLibraryTreeItem->getNameStructure())
           .arg(messageItem.getLocation())
-          .arg(pLibraryTreeNode->getNameStructure())
+          .arg(pLibraryTreeItem->getNameStructure())
           .arg(messageItem.getLineStart())
           .arg(message);
     } else {
@@ -243,13 +269,11 @@ void MessagesWidget::addGUIMessage(MessageItem messageItem)
 }
 
 /*!
-  Slot activated when a link is clicked from MessagesWidget.\n
-  Parses the url and loads the Modelica class with the line selected.
-  \param url - the url that is clicked
-  */
-/*
-  <a href="omeditmessagesbrowser:///className?lineNumber=4></a>"
-  */
+ * \brief MessagesWidget::openErrorMessageClass
+ * Slot activated when a link e.g., "<a href="omeditmessagesbrowser:///className?lineNumber=4></a>" is clicked from MessagesWidget.\n
+ * Parses the url and loads the Modelica class with the line selected.
+ * \param url - the url that is clicked
+ */
 void MessagesWidget::openErrorMessageClass(QUrl url)
 {
   if (url.scheme() != "omeditmessagesbrowser") {
@@ -257,23 +281,44 @@ void MessagesWidget::openErrorMessageClass(QUrl url)
     return;
   }
   QString className = url.path();
-  if (className.startsWith("/")) className.remove(0, 1);
-  LibraryTreeNode *pLibraryTreeNode = mpMainWindow->getLibraryTreeWidget()->getLibraryTreeNode(className);
-  if (pLibraryTreeNode) {
-    mpMainWindow->getLibraryTreeWidget()->showModelWidget(pLibraryTreeNode);
-    ModelWidget *pModelWidget = pLibraryTreeNode->getModelWidget();
-    if (pModelWidget && pModelWidget->getEditor()) {
-      int lineNumber = url.queryItemValue("lineNumber").toInt();
-      pModelWidget->getTextViewToolButton()->setChecked(true);
-      pModelWidget->getEditor()->goToLineNumber(lineNumber);
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+  QUrlQuery query(url);
+  int lineNumber = query.queryItemValue("lineNumber").toInt();
+#else /* Qt4 */
+  int lineNumber = url.queryItemValue("lineNumber").toInt();
+#endif
+  if (className.startsWith("/")) {
+    className.remove(0, 1);
+  }
+  // find the class that has the error
+  LibraryTreeItem *pLibraryTreeItem = MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->findLibraryTreeItem(className);
+  if (pLibraryTreeItem) {
+    /* the error could be in P.M but we get P as error class in this case we see if current class has the same file as P
+     * and also contains the line number. If we have correct current class then no need to show root parent class i.e., P.
+     */
+    ModelWidget *pModelWidget = MainWindow::instance()->getModelWidgetContainer()->getCurrentModelWidget();
+    if (pModelWidget /* Might be NULL */ && (pModelWidget->getLibraryTreeItem()->getFileName().compare(pLibraryTreeItem->getFileName()) == 0) &&
+        pModelWidget->getLibraryTreeItem()->inRange(lineNumber)) {
+      pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
     }
+    MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->showModelWidget(pLibraryTreeItem);
+    if (pLibraryTreeItem->getModelWidget() && pLibraryTreeItem->getModelWidget()->getEditor()) {
+      pLibraryTreeItem->getModelWidget()->getTextViewToolButton()->setChecked(true);
+      pLibraryTreeItem->getModelWidget()->getEditor()->getPlainTextEdit()->goToLineNumber(lineNumber);
+    }
+  } else {
+    QMessageBox::information(MainWindow::instance(), QString("%1 - %2").arg(Helper::applicationName, Helper::information),
+                             GUIMessages::getMessage(GUIMessages::CLASS_NOT_FOUND)
+                             .arg(className), Helper::ok);
   }
 }
 
 /*!
-  Shows a context menu when user right click on the Messages tree.
-  Slot activated when Message::customContextMenuRequested() signal is raised.
-  */
+ * \brief MessagesWidget::showContextMenu
+ * Shows a context menu when user right click on the Messages tree.
+ * Slot activated when Message::customContextMenuRequested() signal is raised.
+ * \param point
+ */
 void MessagesWidget::showContextMenu(QPoint point)
 {
   QMenu menu(this);
@@ -284,9 +329,10 @@ void MessagesWidget::showContextMenu(QPoint point)
 }
 
 /*!
-  Clears the Messages Browser and resets the messages number.
-  Slot activated when mpClearAllAction triggered signal is raised.
-  */
+ * \brief MessagesWidget::clearMessages
+ * Clears the Messages Browser and resets the messages number.
+ * Slot activated when mpClearAllAction triggered signal is raised.
+ */
 void MessagesWidget::clearMessages()
 {
   resetMessagesNumber();

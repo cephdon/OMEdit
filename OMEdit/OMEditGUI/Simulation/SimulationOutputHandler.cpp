@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "SimulationOutputHandler.h"
@@ -303,7 +299,6 @@ SimulationOutputHandler::SimulationOutputHandler(SimulationOutputWidget *pSimula
   mXmlSimpleReader.setErrorHandler(this);
   mpXmlInputSource = new QXmlInputSource;
   mpXmlInputSource->setData(simulationOutput.prepend("<root>"));
-  mOutputBuffer = mpXmlInputSource->data();
   mXmlSimpleReader.parse(mpXmlInputSource, true);
 }
 
@@ -318,7 +313,6 @@ SimulationOutputHandler::~SimulationOutputHandler()
 void SimulationOutputHandler::parseSimulationOutput(QString output)
 {
   mpXmlInputSource->setData(output);
-  mOutputBuffer.append(mpXmlInputSource->data());
   mXmlSimpleReader.parseContinue();
 }
 
@@ -353,6 +347,9 @@ bool SimulationOutputHandler::startElement(const QString &namespaceURI, const QS
     if (mpSimulationMessage) {
       mpSimulationMessage->mIndex = atts.value("index");
     }
+  } else if (qName == "status") {
+    int progress = atts.value("progress").toInt();
+    mpSimulationOutputWidget->getProgressBar()->setValue(progress/100);
   }
   return true;
 }
@@ -384,11 +381,10 @@ bool SimulationOutputHandler::endElement(const QString &namespaceURI, const QStr
 bool SimulationOutputHandler::fatalError(const QXmlParseException &exception)
 {
   // read the error message
-  QString error = QString("Fatal error on line %1, column %2: %3\nXML ::\n%4")
+  QString error = QString("Fatal error on line %1, column %2: %3")
       .arg(exception.lineNumber())
       .arg(exception.columnNumber())
-      .arg(exception.message())
-      .arg(mOutputBuffer);
+      .arg(exception.message());
   // construct the SimulationMessage object with error
   SimulationMessage *pSimulationMessage;
   if (mpSimulationOutputWidget->isOutputStructured()) {

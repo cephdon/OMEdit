@@ -28,36 +28,36 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TLMCOSIMULATIONDIALOG_H
 #define TLMCOSIMULATIONDIALOG_H
 
-#include "MainWindow.h"
-#include "TLMCoSimulationOutputWidget.h"
 #include "TLMCoSimulationOptions.h"
 
-class MainWindow;
-class TLMCoSimulationOutputWidget;
+#include <QDialog>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QGroupBox>
+#include <QCheckBox>
+#include <QDialogButtonBox>
 
+class LibraryTreeItem;
+class Label;
+class TLMCoSimulationOutputWidget;
 class TLMCoSimulationDialog : public QDialog
 {
   Q_OBJECT
 public:
-  TLMCoSimulationDialog(MainWindow *pMainWindow);
+  TLMCoSimulationDialog(QWidget *pParent = 0);
   ~TLMCoSimulationDialog();
-  void show(LibraryTreeNode *pLibraryTreeNode);
+  void show(LibraryTreeItem *pLibraryTreeItem);
   void simulationProcessFinished(TLMCoSimulationOptions tlmCoSimulationOptions, QDateTime resultFileLastModifiedDateTime);
   bool isTLMCoSimulationRunning() {return mIsTLMCoSimulationRunning;}
   void setIsTLMCoSimulationRunning(bool isTLMCoSimulationRunning) {mIsTLMCoSimulationRunning = isTLMCoSimulationRunning;}
 private:
-  MainWindow *mpMainWindow;
-  LibraryTreeNode *mpLibraryTreeNode;
+  LibraryTreeItem *mpLibraryTreeItem;
   bool mIsTLMCoSimulationRunning;
   Label *mpHeadingLabel;
   QFrame *mpHorizontalLine;
@@ -96,6 +96,31 @@ private slots:
   void browseMonitorProcess();
   void showTLMCoSimulationOutputWindow();
   void runTLMCoSimulation();
+};
+
+class GraphicsView;
+class CompositeModelSimulationParamsDialog : public QDialog
+{
+  Q_OBJECT
+public:
+  CompositeModelSimulationParamsDialog(GraphicsView *pGraphicsView);
+private:
+  GraphicsView *mpGraphicsView;
+  LibraryTreeItem *mpLibraryTreeItem;
+  Label *mpSimulationParamsHeading;
+  QFrame *mpHorizontalLine;
+  Label *mpStartTimeLabel;
+  QLineEdit *mpStartTimeTextBox;
+  Label *mpStopTimeLabel;
+  QLineEdit *mpStopTimeTextBox;
+  QPushButton *mpSaveButton;
+  QPushButton *mpCancelButton;
+  QDialogButtonBox *mpButtonBox;
+  QString mOldStartTime;
+  QString mOldStopTime;
+  bool validateSimulationParams();
+private slots:
+  void saveSimulationParams();
 };
 
 #endif // TLMCOSIMULATIONDIALOG_H

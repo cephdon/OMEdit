@@ -28,23 +28,26 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef BASEEDITOR_H
 #define BASEEDITOR_H
 
-#include <QtGui>
-#include "BreakpointMarker.h"
-#include "Utilities.h"
+#include "Debugger/Breakpoints/BreakpointMarker.h"
+
+#include <QDialog>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QCheckBox>
+#include <QToolButton>
+#include <QStandardItemModel>
 
 class ModelWidget;
+class InfoBar;
 class LineNumberArea;
 class FindReplaceWidget;
+class Label;
 
 class TabSettings
 {
@@ -68,91 +71,279 @@ public:
 
   static int firstNonSpace(const QString &text);
   static int spacesLeftFromPosition(const QString &text, int position);
+  static bool cursorIsAtBeginningOfLine(const QTextCursor &cursor);
 private:
   TabPolicy mTabPolicy;
   int mTabSize;
   int mIndentSize;
 };
 
+struct Parenthesis
+{
+  enum Type {Opened, Closed};
+  inline Parenthesis() : type(Opened), pos(-1) {}
+  inline Parenthesis(Type t, QChar c, int position)
+      : type(t), chr(c), pos(position) {}
+  Type type;
+  QChar chr;
+  int pos;
+};
+typedef QVector<Parenthesis> Parentheses;
+
+/**
+ * @class TextBlockUserData
+ * Stores breakpoints for text block
+ * Works with QTextBlock::setUserData().
+ */
+class TextBlockUserData : public QTextBlockUserData
+{
+public:
+  inline TextBlockUserData()
+    : mFoldingIndent(0)
+    , mFolded(false)
+    , mFoldingEndIncluded(false)
+    , mFoldingState(false)
+    , mFoldingEndState(false)
+    , mFoldingEnd(false)
+    , mFoldingStartIndex(-1)
+    , mLeadingSpaces(-1)
+  {}
+  ~TextBlockUserData();
+
+  inline TextMarks marks() const { return _marks; }
+  inline void addMark(ITextMark *mark) { _marks += mark; }
+  inline bool removeMark(ITextMark *mark) { return _marks.removeAll(mark); }
+  inline bool hasMark(ITextMark* mark) const { return _marks.contains(mark); }
+  inline void clearMarks() { _marks.clear(); }
+  inline void documentClosing()
+  {
+    foreach (ITextMark *tm, _marks) {
+       tm->documentClosing();
+    }
+    _marks.clear();
+  }
+
+  void setParentheses(const Parentheses &parentheses) {mParentheses = parentheses;}
+  Parentheses parentheses() {return mParentheses;}
+  inline void clearParentheses() {mParentheses.clear();}
+  inline bool hasParentheses() const {return !mParentheses.isEmpty();}
+  enum MatchType {NoMatch, Match, Mismatch};
+  static MatchType checkOpenParenthesis(QTextCursor *cursor, QChar c);
+  static MatchType checkClosedParenthesis(QTextCursor *cursor, QChar c);
+  static MatchType matchCursorBackward(QTextCursor *cursor);
+  static MatchType matchCursorForward(QTextCursor *cursor);
+
+  /* Set the code folding level.
+   * A code folding marker will appear the line *before* the one where the indention
+   * level increases. The code folding region will end in the last line that has the same
+   * indention level (or higher).
+   */
+  inline int foldingIndent() const {return mFoldingIndent;}
+  inline void setFoldingIndent(int indent) {mFoldingIndent = indent;}
+  inline void setFolded(bool b) {mFolded = b;}
+  inline bool folded() const {return mFolded;}
+  // Set whether the last character of the folded region will show when the code is folded.
+  inline void setFoldingEndIncluded(bool foldingEndIncluded) {mFoldingEndIncluded = foldingEndIncluded;}
+  inline bool foldingEndIncluded() const {return mFoldingEndIncluded;}
+  inline void setFoldingState(bool foldingState) {mFoldingState = foldingState;}
+  inline bool foldingState() const {return mFoldingState;}
+  inline void setFoldingEndState(bool foldingEndState) {mFoldingEndState = foldingEndState;}
+  inline bool foldingEndState() const {return mFoldingEndState;}
+  inline void setFoldingEnd(bool foldingEnd) {mFoldingEnd = foldingEnd;}
+  inline bool foldingEnd() const {return mFoldingEnd;}
+  inline void setFoldingStartIndex(int foldingStartIndex) {mFoldingStartIndex = foldingStartIndex;}
+  inline int foldingStartIndex() const {return mFoldingStartIndex;}
+
+  inline void setLeadingSpaces(int leadingSpaces) {mLeadingSpaces = leadingSpaces;}
+  inline int getLeadingSpaces() {return mLeadingSpaces;}
+private:
+  TextMarks _marks;
+  Parentheses mParentheses;
+  int mFoldingIndent;
+  bool mFolded;
+  bool mFoldingEndIncluded;
+  bool mFoldingState;
+  bool mFoldingEndState;
+  bool mFoldingEnd;
+  int mFoldingStartIndex;
+  int mLeadingSpaces;
+};
+
+class CommentDefinition
+{
+public:
+  CommentDefinition();
+  CommentDefinition &setAfterWhiteSpaces(const bool);
+  CommentDefinition &setSingleLine(const QString &singleLine);
+  CommentDefinition &setMultiLineStart(const QString &multiLineStart);
+  CommentDefinition &setMultiLineEnd(const QString &multiLineEnd);
+  bool isAfterWhiteSpaces() const;
+  const QString &singleLine() const;
+  const QString &multiLineStart() const;
+  const QString &multiLineEnd() const;
+  bool hasSingleLineStyle() const;
+  bool hasMultiLineStyle() const;
+  void clearCommentStyles();
+private:
+  bool m_afterWhiteSpaces;
+  QString m_singleLine;
+  QString m_multiLineStart;
+  QString m_multiLineEnd;
+};
+
+class BaseEditorDocumentLayout : public QPlainTextDocumentLayout
+{
+  Q_OBJECT
+public:
+  BaseEditorDocumentLayout(QTextDocument *document);
+  static Parentheses parentheses(const QTextBlock &block);
+  static bool hasParentheses(const QTextBlock &block);
+  static void setFoldingIndent(const QTextBlock &block, int indent);
+  static int foldingIndent(const QTextBlock &block);
+  static bool canFold(const QTextBlock &block);
+  static void foldOrUnfold(const QTextBlock& block, bool unfold);
+  static bool isFolded(const QTextBlock &block);
+  static void setFolded(const QTextBlock &block, bool folded);
+  static TextBlockUserData *testUserData(const QTextBlock &block);
+  static TextBlockUserData *userData(const QTextBlock &block);
+  void emitDocumentSizeChanged() {emit documentSizeChanged(documentSize());}
+  bool mHasBreakpoint;
+};
+
+class CompleterItem
+{
+public:
+  CompleterItem() {}
+  CompleterItem(QString key , QString value , QString select);
+  QString mKey;
+  QString mValue;
+  QString mSelect;
+};
+
+Q_DECLARE_METATYPE(CompleterItem)
+
+class BaseEditor;
+class QCompleter;
+class PlainTextEdit : public QPlainTextEdit
+{
+  Q_OBJECT
+public:
+  PlainTextEdit(BaseEditor *pBaseEditor);
+  bool eventFilter(QObject *pObject, QEvent *pEvent);
+  LineNumberArea* getLineNumberArea() {return mpLineNumberArea;}
+  void insertCompleterKeywords(QStringList keywords);
+  void insertCompleterTypes(QStringList types);
+  void insertCompleterCodeSnippets(QList<CompleterItem> items);
+  void setCanHaveBreakpoints(bool canHaveBreakpoints);
+  bool canHaveBreakpoints() {return mCanHaveBreakpoints;}
+  int lineNumberAreaWidth();
+  void lineNumberAreaPaintEvent(QPaintEvent *event);
+  void lineNumberAreaMouseEvent(QMouseEvent *event);
+  void goToLineNumber(int lineNumber);
+  QCompleter *completer();
+private:
+  BaseEditor *mpBaseEditor;
+  LineNumberArea *mpLineNumberArea;
+  bool mCanHaveBreakpoints;
+  QTextCharFormat mParenthesesMatchFormat;
+  QTextCharFormat mParenthesesMisMatchFormat;
+  QWidget *mpCompleterToolTipWidget;
+  Label *mpCompleterToolTipLabel;
+  QStandardItemModel* mpStandardItemModel;
+  QCompleter *mpCompleter;
+
+  void highlightCurrentLine();
+  void highlightParentheses();
+  void setLineWrapping();
+  QString plainTextFromSelection(const QTextCursor &cursor) const;
+  static QString convertToPlainText(const QString &txt);
+  void moveCursorVisible(bool ensureVisible = true);
+  void ensureCursorVisible();
+  void toggleBreakpoint(const QString fileName, int lineNumber);
+  void indentOrUnindent(bool doIndent);
+  void foldOrUnfold(bool unFold);
+  void handleHomeKey(bool keepAnchor);
+  void toggleBlockVisible(const QTextBlock &block);
+  QString textUnderCursor() const;
+private slots:
+  void showCompletionItemToolTip(const QModelIndex & index);
+  void insertCompletionItem(const QModelIndex & index);
+public slots:
+  void updateLineNumberAreaWidth(int newBlockCount);
+  void updateLineNumberArea(const QRect &rect, int dy);
+  void updateHighlights();
+  void updateCursorPosition();
+  void textSettingsChanged();
+  void showTabsAndSpaces(bool On);
+  void toggleBreakpoint();
+  void foldAll();
+  void unFoldAll();
+  void resetZoom();
+  void zoomIn();
+  void zoomOut();
+protected:
+  virtual void resizeEvent(QResizeEvent *pEvent);
+  virtual void keyPressEvent(QKeyEvent *pEvent);
+  virtual QMimeData* createMimeDataFromSelection() const;
+  virtual void focusInEvent(QFocusEvent *event);
+  virtual void focusOutEvent(QFocusEvent *event);
+  void paintEvent(QPaintEvent *e);
+  void wheelEvent(QWheelEvent *event);
+};
+
 class BaseEditor : public QWidget
 {
   Q_OBJECT
-private:
-  class PlainTextEdit : public QPlainTextEdit
-  {
-  public:
-    PlainTextEdit(BaseEditor *pBaseEditor);
-    LineNumberArea* getLineNumberArea() {return mpLineNumberArea;}
-    int lineNumberAreaWidth();
-    void lineNumberAreaPaintEvent(QPaintEvent *event);
-    void lineNumberAreaMouseEvent(QMouseEvent *event);
-    void goToLineNumber(int lineNumber);
-    void updateLineNumberAreaWidth(int newBlockCount);
-    void updateLineNumberArea(const QRect &rect, int dy);
-    void highlightCurrentLine();
-    void updateCursorPosition();
-    void setLineWrapping();
-    void toggleBreakpoint(const QString fileName, int lineNumber);
-    void indentOrUnindent(bool doIndent);
-  private:
-    BaseEditor *mpBaseEditor;
-    LineNumberArea *mpLineNumberArea;
-  protected:
-    virtual void resizeEvent(QResizeEvent *pEvent);
-    virtual void keyPressEvent(QKeyEvent *pEvent);
-  };
 public:
-  BaseEditor(MainWindow *pMainWindow);
-  BaseEditor(ModelWidget *pModelWidget);
+  BaseEditor(QWidget *pParent);
   ModelWidget *getModelWidget() {return mpModelWidget;}
-  MainWindow* getMainWindow() {return mpMainWindow;}
+  InfoBar* getInfoBar() {return mpInfoBar;}
   PlainTextEdit *getPlainTextEdit() {return mpPlainTextEdit;}
   FindReplaceWidget* getFindReplaceWidget() {return mpFindReplaceWidget;}
-  bool canHaveBreakpoints() {return mCanHaveBreakpoints;}
-  void setCanHaveBreakpoints(bool canHaveBreakpoints);
-  QAction *getToggleBreakpointAction() {return mpToggleBreakpointAction;}
+  QAction* getToggleBreakpointAction() {return mpToggleBreakpointAction;}
+  QAction* getFoldAllAction() {return mpFoldAllAction;}
+  QAction* getUnFoldAllAction() {return mpUnFoldAllAction;}
   DocumentMarker* getDocumentMarker() {return mpDocumentMarker;}
-  void goToLineNumber(int lineNumber);
+  void setForceSetPlainText(bool forceSetPlainText) {mForceSetPlainText = forceSetPlainText;}
+  virtual void popUpCompleter () = 0;
 private:
   void initialize();
   void createActions();
 protected:
   ModelWidget *mpModelWidget;
-  MainWindow *mpMainWindow;
+  InfoBar *mpInfoBar;
   PlainTextEdit *mpPlainTextEdit;
   FindReplaceWidget *mpFindReplaceWidget;
-  bool mCanHaveBreakpoints;
   QAction *mpFindReplaceAction;
   QAction *mpClearFindReplaceTextsAction;
   QAction *mpGotoLineNumberAction;
   QAction *mpShowTabsAndSpacesAction;
   QAction *mpToggleBreakpointAction;
+  QAction *mpResetZoomAction;
+  QAction *mpZoomInAction;
+  QAction *mpZoomOutAction;
   QAction *mpToggleCommentSelectionAction;
+  QAction *mpFoldAllAction;
+  QAction *mpUnFoldAllAction;
   DocumentMarker *mpDocumentMarker;
+  bool mForceSetPlainText;
 
   QMenu* createStandardContextMenu();
 private slots:
   virtual void showContextMenu(QPoint point) = 0;
 public slots:
-  void updateLineNumberAreaWidth(int newBlockCount);
-  void updateLineNumberArea(const QRect &rect, int dy);
-  void highlightCurrentLine();
-  void updateCursorPosition();
   virtual void contentsHasChanged(int position, int charsRemoved, int charsAdded) = 0;
-  void setLineWrapping();
   void showFindReplaceWidget();
   void clearFindReplaceTexts();
   void showGotoLineNumberDialog();
-  void showTabsAndSpaces(bool On);
-  void toggleBreakpoint();
-  virtual void toggleCommentSelection() = 0;
+  virtual void toggleCommentSelection();
 };
 
 class LineNumberArea : public QWidget
 {
 public:
-  LineNumberArea(BaseEditor *pBaseEditor)
-    : QWidget(pBaseEditor)
+  LineNumberArea(BaseEditor *pBaseEditor, QWidget *pParent)
+    : QWidget(pParent)
   {
     mpBaseEditor = pBaseEditor;
   }
@@ -230,6 +421,16 @@ public slots:
   int exec();
 private slots:
   void goToLineNumber();
+};
+
+class InfoBar : public QFrame
+{
+public:
+  InfoBar(QWidget *pParent);
+  void showMessage(QString message);
+private:
+  Label *mpInfoLabel;
+  QToolButton *mpCloseButton;
 };
 
 #endif // BASEEDITOR_H

@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: CommandFactory.h 24541 2015-02-11 22:50:34Z adeas31 $
- *
  */
 
 #ifndef COMMANDFACTORY_H
@@ -52,17 +48,11 @@ public:
   };
   CommandFactory() {}
   /* Setup Commands */
-  static QByteArray setConfirm(bool On);
-  static QByteArray setPrintObject(bool On);
-  static QByteArray setBreakpointPending(bool On);
-  static QByteArray setWidth(int width);
-  static QByteArray setHeight(int height);
-  static QByteArray setPrintElements(int numberOfElements);
-  static QByteArray setArgs(QStringList arguments);
+  static QByteArray GDBSet(QString command);
   static QByteArray attach(QString processID);
   static QByteArray changeStdStreamBuffer();
   /* Breakpoint Commands */
-  static QByteArray breakInsert(QString fileName, int line, bool isDisabled = false, QString condition = QString(), int ignoreCount = 0,
+  static QByteArray breakInsert(QString fileName, int line, bool isDisabled = false, QString condition = "", int ignoreCount = 0,
                                 bool isPending = true);
   static QByteArray breakDelete(QStringList breakpointIDs);
   static QByteArray breakEnable(QStringList breakpointIDs);
@@ -77,20 +67,18 @@ public:
   static QByteArray execFinish();
   /* Thread Commands */
   static QByteArray threadInfo();
-  static QByteArray threadSelect(int num);
   /* Stack Manipulation Commands */
-  static QByteArray stackListFrames();
-  static QByteArray stackSelectFrame(int num);
-  static QByteArray stackListVariables(QString printValues);
+  static QByteArray stackListFrames(int thread);
+  static QByteArray stackListVariables(int thread, int frame, QString printValues);
   static QByteArray createFullBacktrace();
   /* Data Manipulation Commands */
-  static QByteArray dataEvaluateExpression(QString expression);
-  static QByteArray getTypeOfAny(QString expression);
-  static QByteArray anyString(QString expression);
-  static QByteArray getMetaTypeElement(QString expression, int index, metaType mt);
-  static QByteArray arrayLength(QString expression);
-  static QByteArray listLength(QString expression);
-  static QByteArray isOptionNone(QString expression);
+  static QByteArray dataEvaluateExpression(int thread, int frame, QString expression);
+  static QByteArray getTypeOfAny(int thread, int frame, QString expression, bool inRecord);
+  static QByteArray anyString(int thread, int frame, QString expression);
+  static QByteArray getMetaTypeElement(int thread, int frame, QString expression, int index, metaType mt);
+  static QByteArray arrayLength(int thread, int frame, QString expression);
+  static QByteArray listLength(int thread, int frame, QString expression);
+  static QByteArray isOptionNone(int thread, int frame, QString expression);
   static QByteArray GDBExit();
 };
 

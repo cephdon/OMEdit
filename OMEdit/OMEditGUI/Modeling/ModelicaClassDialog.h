@@ -29,38 +29,47 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef MODELICACLASSDIALOG_H
 #define MODELICACLASSDIALOG_H
 
-#include "MainWindow.h"
+#include <QDialog>
+#include <QLineEdit>
+#include <QTreeView>
+#include <QPushButton>
+#include <QDialogButtonBox>
+#include <QComboBox>
+#include <QCheckBox>
+#include <QGroupBox>
+#include <QTableWidget>
+#include <QPlainTextEdit>
+#include <QListWidget>
+#include <QToolButton>
 
-class MainWindow;
 class Label;
-class LibraryTreeWidget;
+class LibraryWidget;
+class LibraryTreeProxyModel;
+class TreeSearchFilters;
+class DoubleSpinBox;
 
 class LibraryBrowseDialog : public QDialog
 {
   Q_OBJECT
 public:
-  LibraryBrowseDialog(QString title, QLineEdit *pLineEdit, LibraryTreeWidget *pParent);
-  void unHideChildItems(QTreeWidgetItem *pItem);
+  LibraryBrowseDialog(QString title, QLineEdit *pLineEdit, LibraryWidget *pLibraryWidget);
 private:
   QLineEdit *mpLineEdit;
-  LibraryTreeWidget *mpLibraryTreeWidget;
-  QLineEdit *mpFindClassTextBox;
-  QTreeWidget *mpLibraryBrowseTreeWidget;
+  LibraryWidget *mpLibraryWidget;
+  TreeSearchFilters *mpTreeSearchFilters;
+  LibraryTreeProxyModel *mpLibraryTreeProxyModel;
+  QTreeView *mpLibraryTreeView;
   QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
 private slots:
-  void findModelicaClasses();
+  void searchClasses();
   void useModelicaClass();
 };
 
@@ -68,11 +77,9 @@ class ModelicaClassDialog : public QDialog
 {
   Q_OBJECT
 public:
-  ModelicaClassDialog(MainWindow *pParent);
-  MainWindow* getMainWindow();
-  QLineEdit* getParentClassTextBox();
+  ModelicaClassDialog(QWidget *pParent = 0);
+  QLineEdit* getParentClassTextBox() {return mpParentClassTextBox;}
 private:
-  MainWindow *mpMainWindow;
   Label *mpNameLabel;
   QLineEdit *mpNameTextBox;
   Label *mpSpecializationLabel;
@@ -85,6 +92,7 @@ private:
   QPushButton *mpParentClassBrowseButton;
   QCheckBox *mpPartialCheckBox;
   QCheckBox *mpEncapsulatedCheckBox;
+  QCheckBox *mpStateCheckBox;
   QCheckBox *mpSaveContentsInOneFileCheckBox;
   QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
@@ -100,9 +108,8 @@ class OpenModelicaFile : public QDialog
 {
   Q_OBJECT
 public:
-  OpenModelicaFile(MainWindow *pParent);
+  OpenModelicaFile(QWidget *pParent = 0);
 private:
-  MainWindow *mpMainWindow;
   QStringList mFileNames;
   Label *mpFileLabel;
   QLineEdit *mpFileTextBox;
@@ -127,11 +134,10 @@ class SaveAsClassDialog : public QDialog
 {
   Q_OBJECT
 public:
-  SaveAsClassDialog(ModelWidget *pModelWidget, MainWindow *pParent);
-  QComboBox* getParentClassComboBox();
+  SaveAsClassDialog(ModelWidget *pModelWidget, QWidget *pParent = 0);
+  QComboBox* getParentClassComboBox() {return mpParentClassComboBox;}
 private:
   ModelWidget *mpModelWidget;
-  MainWindow *mpMainWindow;
   Label *mpNameLabel;
   QLineEdit *mpNameTextBox;
   Label *mpParentPackageLabel;
@@ -145,15 +151,15 @@ private slots:
   void showHideSaveContentsInOneFileCheckBox(QString text);
 };
 
-class LibraryTreeNode;
+class LibraryTreeItem;
 class DuplicateClassDialog : public QDialog
 {
   Q_OBJECT
 public:
-  DuplicateClassDialog(LibraryTreeNode *pLibraryTreeNode, MainWindow *pMainWindow);
+  DuplicateClassDialog(bool saveAs, LibraryTreeItem *pLibraryTreeItem, QWidget *pParent = 0);
 private:
-  LibraryTreeNode *mpLibraryTreeNode;
-  MainWindow *mpMainWindow;
+  bool mSaveAs;
+  LibraryTreeItem *mpLibraryTreeItem;
   Label *mpNameLabel;
   QLineEdit *mpNameTextBox;
   Label *mpPathLabel;
@@ -171,9 +177,7 @@ class RenameClassDialog : public QDialog
 {
   Q_OBJECT
 public:
-  RenameClassDialog(QString name, QString nameStructure, MainWindow *parent);
-
-  MainWindow *mpMainWindow;
+  RenameClassDialog(QString name, QString nameStructure, QWidget *pParent = 0);
 private:
   QString mName;
   QString mNameStructure;
@@ -186,14 +190,13 @@ public slots:
   void renameClass();
 };
 
-class LibraryTreeNode;
 class InformationDialog : public QWidget
 {
-private:
-  MainWindow *mpMainWindow;
 public:
-  InformationDialog(QString windowTitle, QString informationText, bool modelicaTextHighlighter = false, MainWindow *pMainWindow = 0);
+  InformationDialog(QString windowTitle, QString informationText, bool modelicaTextHighlighter = false, QWidget *pParent = 0);
   void closeEvent(QCloseEvent *event);
+protected:
+  virtual void keyPressEvent(QKeyEvent *event);
 };
 
 class GraphicsView;
@@ -204,6 +207,7 @@ public:
   GraphicsViewProperties(GraphicsView *pGraphicsView);
 private:
   GraphicsView *mpGraphicsView;
+  QTabWidget *mpTabWidget;
   QGroupBox *mpExtentGroupBox;
   Label *mpLeftLabel;
   DoubleSpinBox *mpLeftSpinBox;
@@ -223,10 +227,27 @@ private:
   DoubleSpinBox *mpScaleFactorSpinBox;
   QCheckBox *mpPreserveAspectRatioCheckBox;
   QCheckBox *mpCopyProperties;
+  Label *mpVersionLabel;
+  QLineEdit *mpVersionTextBox;
+  QGroupBox *mpUsesGroupBox;
+  QList<QList<QString> > mUsesAnnotation;
+  QTableWidget *mpUsesTableWidget;
+  QToolButton *mpMoveUpButton;
+  QToolButton *mpMoveDownButton;
+  QToolButton *mpAddUsesAnnotationButton;
+  QToolButton *mpRemoveUsesAnnotationButton;
+  QDialogButtonBox *mpUsesButtonBox;
+  Label *mpOMCFlagsLabel;
+  QString mOMCFlags;
+  QPlainTextEdit *mpOMCFlagsTextBox;
   QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
 private slots:
+  void moveUp();
+  void moveDown();
+  void addUsesAnnotation();
+  void removeUsesAnnotation();
   void saveGraphicsViewProperties();
 };
 
@@ -234,16 +255,17 @@ class SaveChangesDialog : public QDialog
 {
   Q_OBJECT
 public:
-  SaveChangesDialog(MainWindow *pMainWindow);
-  bool getUnsavedClasses();
+  SaveChangesDialog(QWidget *pParent = 0);
+  void listUnSavedClasses();
 private:
-  MainWindow *mpMainWindow;
   Label *mpSaveChangesLabel;
   QListWidget *mpUnsavedClassesListWidget;
   QPushButton *mpYesButton;
   QPushButton *mpNoButton;
   QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
+
+  void listUnSavedClasses(LibraryTreeItem *pLibraryTreeItem);
 private slots:
   void saveChanges();
 public slots:
@@ -254,10 +276,9 @@ class ExportFigaroDialog : public QDialog
 {
   Q_OBJECT
 public:
-  ExportFigaroDialog(MainWindow *pMainWindow, LibraryTreeNode *pLibraryTreeNode);
+  ExportFigaroDialog(LibraryTreeItem *pLibraryTreeItem, QWidget *pParent = 0);
 private:
-  MainWindow *mpMainWindow;
-  LibraryTreeNode *mpLibraryTreeNode;
+  LibraryTreeItem *mpLibraryTreeItem;
   Label *mpFigaroModeLabel;
   QComboBox *mpFigaroModeComboBox;
   Label *mpWorkingDirectoryLabel;
@@ -269,6 +290,63 @@ private:
 public slots:
   void browseWorkingDirectory();
   void exportModelFigaro();
+};
+
+class CreateNewItemDialog : public QDialog
+{
+  Q_OBJECT
+public:
+  CreateNewItemDialog(QString path, bool isCreateFile, QWidget *pParent = 0);
+private:
+  QString mPath;
+  bool mIsCreateFile;
+  Label *mpNameLabel;
+  QLineEdit *mpNameTextBox;
+  Label *mpPathLabel;
+  QLineEdit *mpPathTextBox;
+  QPushButton *mpPathBrowseButton;
+  QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
+  QDialogButtonBox *mpButtonBox;
+private slots:
+  void browsePath();
+  void createNewFileOrFolder();
+};
+
+class RenameItemDialog : public QDialog
+{
+  Q_OBJECT
+public:
+  RenameItemDialog(LibraryTreeItem *pLibraryTreeItem, QWidget *pParent = 0);
+private:
+  LibraryTreeItem *mpLibraryTreeItem;
+  Label *mpNameLabel;
+  QLineEdit *mpNameTextBox;
+  QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
+  QDialogButtonBox *mpButtonBox;
+
+  void updateChildrenPath(LibraryTreeItem *pLibraryTreeItem);
+private slots:
+  void renameItem();
+};
+
+class ComponentNameDialog : public QDialog
+{
+  Q_OBJECT
+public:
+  ComponentNameDialog(QString name, GraphicsView *pGraphicsView, QWidget *pParent = 0);
+  QString getComponentName() {return mpNameTextBox->text();}
+private:
+  GraphicsView *mpGraphicsView;
+  Label *mpNameLabel;
+  QLineEdit *mpNameTextBox;
+  QCheckBox *mpDontShowThisMessageAgainCheckBox;
+  QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
+  QDialogButtonBox *mpButtonBox;
+private slots:
+  void updateComponentName();
 };
 
 #endif // MODELICACLASSDIALOG_H

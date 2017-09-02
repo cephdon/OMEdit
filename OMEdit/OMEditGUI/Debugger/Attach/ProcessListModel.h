@@ -28,11 +28,7 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: ProcessListModel.h 24682 2015-02-21 14:20:21Z adeas31 $
- *
  */
 
 #ifndef PROCESSLISTMODEL_H

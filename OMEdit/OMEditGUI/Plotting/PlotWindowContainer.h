@@ -29,33 +29,42 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef PLOTWINDOWCONTAINER_H
 #define PLOTWINDOWCONTAINER_H
 
-#include "MainWindow.h"
-#include "Plot.h"
+#if !defined(WITHOUT_OSG)
+#include "Animation/AnimationWindow.h"
+#endif
 
-class MainWindow;
+#include "Util/Utilities.h"
+#include "OMPlot.h"
 
-class PlotWindowContainer : public MdiArea
+class AnimationWindow;
+
+class PlotWindowContainer : public QMdiArea
 {
   Q_OBJECT
 public:
-  PlotWindowContainer(MainWindow *pParent);
+  PlotWindowContainer(QWidget *pParent = 0);
   QString getUniqueName(QString name = QString("Plot"), int number = 1);
   OMPlot::PlotWindow* getCurrentWindow();
+  OMPlot::PlotWindow* getTopPlotWindow();
+  void setTopPlotWindowActive();
+#if !defined(WITHOUT_OSG)
+  AnimationWindow* getCurrentAnimationWindow();
+#endif
   bool eventFilter(QObject *pObject, QEvent *pEvent);
 public slots:
   void addPlotWindow(bool maximized = false);
   void addParametricPlotWindow();
+  void addArrayPlotWindow(bool maximized = false);
+  void addArrayParametricPlotWindow();
+  void addAnimationWindow(bool maximized = false);
   void clearPlotWindow();
+  void exportVariables();
   void updatePlotWindows(QString variable);
 };
 

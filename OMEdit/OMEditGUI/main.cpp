@@ -29,174 +29,113 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 /*!
-  \mainpage OMEdit - OpenModelica Connection Editor Documentation
-  Source code documentation. Provides brief information about the classes used.
+ * \mainpage OMEdit - OpenModelica Connection Editor Documentation
+ * Source code documentation. Provides brief information about the classes used.
+ * \section contributors_section Contributors
+ * - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
+ * - Sonia Tariq
+ * - Martin Sjölund - <a href="mailto:martin.sjolund@liu.se">martin.sjolund@liu.se</a>
+ * - Alachew Shitahun - <a href="mailto:alachew.mengist@liu.se">alachew.mengist@liu.se</a>
+ * - Jan Kokert - <a href="mailto:jan.kokert@imtek.uni-freiburg.de">jan.kokert@imtek.uni-freiburg.de</a>
+ * - Dr. Henning Kiel - <a href="mailto:henning.kiel@w-hs.de">henning.kiel@w-hs.de</a>
+ * - Haris Kapidzic
+ * - Abhinn Kothari
+ * - Lennart Ochel - <a href="mailto:lennart.ochel@fh-bielefeld.de">lennart.ochel@fh-bielefeld.de</a>
+ * - Volker Waurich - <a href="mailto:volker.waurich@tu-dresden.de">volker.waurich@tu-dresden.de</a>
+ * - Rüdiger Franke
+ * - Martin Flehmig
+ * - Robert Braun - <a href=\"mailto:robert.braun@liu.se\">robert.braun@liu.se</a>
+ * - Per Östlund - <a href=\"mailto:per.ostlund@liu.se\">per.ostlund@liu.se</a>
+ * - Dietmar Winkler
+ * - Anatoly Severin
+ * - Adrian Pop - <a href="mailto:adrian.pop@liu.se">adrian.pop@liu.se</a>
+ */
 
-  \section contributors_section Contributors
-  \subsection year_2014_subsection 2014
-  - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
-  - Martin Sjölund - <a href="mailto:martin.sjolund@liu.se">martin.sjolund@liu.se</a>
-  - Alachew Shitahun - <a href="mailto:alachew.mengist@liu.se">alachew.mengist@liu.se</a>
-  - Jan Kokert - <a href="mailto:jan.kokert@imtek.uni-freiburg.de">jan.kokert@imtek.uni-freiburg.de</a>
-
-  \subsection year_2013_subsection 2013
-  - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
-  - Martin Sjölund - <a href="mailto:martin.sjolund@liu.se">martin.sjolund@liu.se</a>
-  - Dr. Henning Kiel
-  - Alachew Shitahun
-
-  \subsection year_2012_subsection 2012
-  - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
-  - Martin Sjölund - <a href="mailto:martin.sjolund@liu.se">martin.sjolund@liu.se</a>
-  - Dr. Henning Kiel
-
-  \subsection year_2011_subsection 2011
-  - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
-  - Martin Sjölund - <a href="mailto:martin.sjolund@liu.se">martin.sjolund@liu.se</a>
-  - Haris Kapidzic
-  - Abhinn Kothari
-
-  \subsection year_2010_subsection 2010
-  - Adeel Asghar - <a href="mailto:adeel.asghar@liu.se">adeel.asghar@liu.se</a>
-  - Sonia Tariq
-  */
-
-#include "MainWindow.h"
-#include "Helper.h"
-#include "CrashReportDialog.h"
+#include "OMEditApplication.h"
+#include "CrashReport/CrashReportDialog.h"
 #include "meta/meta_modelica.h"
 
-#ifndef WIN32
-#include "omc_config.h"
-#endif
-
-#ifdef QT_NO_DEBUG
-#ifndef WIN32
-#include <signal.h>
-#include <execinfo.h>
-static inline void printStackTrace(QFile *pFile, int signalNumber, const char* signalName, unsigned int max_frames = 50)
-{
-  QTextStream out(pFile);
-  out.setCodec(Helper::utf8.toStdString().data());
-  out.setGenerateByteOrderMark(false);
-  if (signalName)
-    out << QString("Caught signal %1 (%2)\n").arg(QString::number(signalNumber)).arg(signalName);
-  else
-    out << QString("Caught signal %1\n").arg(QString::number(signalNumber));
-  out.flush();
-  // storage array for stack trace address data
-  void* addrlist[max_frames+1];
-  // retrieve current stack addresses
-  int addrlen = backtrace(addrlist, sizeof(addrlist) / sizeof(void*));
-  if (addrlen == 0)
-  {
-    out << "Stack address length is empty.\n";
-    return;
-  }
-  // create readable strings to each frame.
-  backtrace_symbols_fd(addrlist, addrlen, pFile->handle());
-  /*
-     backtrace_symbols uses malloc. Its better to use backtrace_symbols_fd.
-     */
-  /*char** symbollist = backtrace_symbols(addrlist, addrlen);
-    // print the stack trace.
-    for (int i = 4; i < addrlen; i++)
-    {
-        out << QString("%1\n").arg(symbollist[i]);
-    }
-    free(symbollist);*/
-}
-
-void signalHandler(int signum)
-{
-  // associate each signal with a signal name string.
-  const char* name = NULL;
-  switch(signum)
-  {
-    case SIGABRT: name = "SIGABRT";  break;
-    case SIGSEGV: name = "SIGSEGV";  break;
-    case SIGILL:  name = "SIGILL";   break;
-    case SIGFPE:  name = "SIGFPE";   break;
-    default:  break;
-  }
-  // Dump a stack trace to a file.
-  QFile stackTraceFile;
-  QString& tmpPath = OpenModelica::tempDirectory();
-  stackTraceFile.setFileName(QString("%1openmodelica.stacktrace.%2").arg(tmpPath).arg(Helper::OMCServerName));
-  if (stackTraceFile.open(QIODevice::WriteOnly | QIODevice::Text))
-  {
-    printStackTrace(&stackTraceFile, signum, name);
-    stackTraceFile.close();
-  }
-  if (name)
-    fprintf(stderr, "Caught signal %d", signum);
-  else
-    fprintf(stderr, "Caught signal %d (%s)", signum, name);
-  CrashReportDialog *pCrashReportDialog = new CrashReportDialog;
-  pCrashReportDialog->exec();
-
-  // If you caught one of the above signals, it is likely you just
-  // want to quit your program right now.
-  exit(signum);
-}
-#endif // #ifndef WIN32
-#endif // #ifdef QT_NO_DEBUG
+#include <QMessageBox>
 
 #ifdef QT_NO_DEBUG
 #ifdef WIN32
-#include "backtrace.h"
+#include "CrashReport/backtrace.h"
+
 static char *g_output = NULL;
 LONG WINAPI exceptionFilter(LPEXCEPTION_POINTERS info)
 {
-  if (g_output == NULL)
-  {
+  if (g_output == NULL) {
     g_output = (char*) malloc(BUFFER_MAX);
   }
   struct output_buffer ob;
   output_init(&ob, g_output, BUFFER_MAX);
-  if (!SymInitialize(GetCurrentProcess(), 0, TRUE))
-  {
+  if (!SymInitialize(GetCurrentProcess(), 0, TRUE)) {
     output_print(&ob,"Failed to init symbol context\n");
-  }
-  else
-  {
+  } else {
     bfd_init();
     struct bfd_set *set = (bfd_set*)calloc(1,sizeof(*set));
     _backtrace(&ob , set , 128 , info->ContextRecord);
     release_set(set);
     SymCleanup(GetCurrentProcess());
   }
-  // Dump a stack trace to a file.
-  QFile stackTraceFile;
-  stackTraceFile.setFileName(QString("%1/openmodelica.stacktrace.%2").arg(OpenModelica::tempDirectory()).arg(Helper::OMCServerName));
-  if (stackTraceFile.open(QIODevice::WriteOnly | QIODevice::Text))
-  {
-    QTextStream out(&stackTraceFile);
-    out.setCodec(Helper::utf8.toStdString().data());
-    out.setGenerateByteOrderMark(false);
-    out << g_output;
-    out.flush();
-    stackTraceFile.close();
-  }
-  CrashReportDialog *pCrashReportDialog = new CrashReportDialog;
+  // show the CrashReportDialog
+  CrashReportDialog *pCrashReportDialog = new CrashReportDialog(QString(g_output));
   pCrashReportDialog->exec();
   exit(1);
+}
+#else // Unix
+#include <signal.h>
+#include <execinfo.h>
+
+void signalHandler(int signalNumber)
+{
+  // associate each signal with a signal name string.
+  const char* signalName = NULL;
+  switch (signalNumber) {
+    case SIGABRT: signalName = "SIGABRT";  break;
+    case SIGSEGV: signalName = "SIGSEGV";  break;
+    case SIGILL:  signalName = "SIGILL";   break;
+    case SIGFPE:  signalName = "SIGFPE";   break;
+    default:  break;
+  }
+  QString stackTrace;
+  if (signalName) {
+    stackTrace.append(QString("Caught signal %1 (%2)\n").arg(QString::number(signalNumber)).arg(signalName));
+  } else {
+    stackTrace.append(QString("Caught signal %1\n").arg(QString::number(signalNumber)));
+  }
+  // storage array for stack trace address data
+  unsigned int max_frames = 50;
+  void* addrlist[max_frames+1];
+  // retrieve current stack addresses
+  int addrlen = backtrace(addrlist, sizeof(addrlist) / sizeof(void*));
+  if (addrlen == 0) {
+    stackTrace.append("Stack address length is empty.\n");
+  } else {
+    // create readable strings to each frame.
+    char** symbollist = backtrace_symbols(addrlist, addrlen);
+    // print the stack trace.
+    for (int i = 4; i < addrlen; i++) {
+      stackTrace.append(QString("%1\n").arg(symbollist[i]));
+    }
+    free(symbollist);
+  }
+  // show the CrashReportDialog
+  CrashReportDialog *pCrashReportDialog = new CrashReportDialog(stackTrace);
+  pCrashReportDialog->exec();
+  exit(signalNumber);
 }
 #endif // #ifdef WIN32
 #endif // #ifdef QT_NO_DEBUG
 
 void printOMEditUsage()
 {
-  printf("Usage: OMEdit [--OMCLogger=true|false] [files]\n");
-  printf("    --OMCLogger=[true|false]    Allows sending OMC commands from OMCLogger. Default is false.\n");
+  printf("Usage: OMEdit --Debug=true|false] [files]\n");
+  printf("    --Debug=[true|false]        Enables the debugging features like QUndoView, diffModelicaFileListings view. Default is false.\n");
   printf("    files                       List of Modelica files(*.mo) to open.\n");
 }
 
@@ -227,102 +166,6 @@ int main(int argc, char *argv[])
     }
   }
   Q_INIT_RESOURCE(resource_omedit);
-  // read the second argument if specified by user.
-  QString fileName = QString();
-  // adding style sheet
-  argc++;
-  argv[(argc - 1)] = (char*)"-stylesheet=:/Resources/css/stylesheet.qss";
-
-  QApplication a(argc, argv);
-  QTextCodec::setCodecForTr(QTextCodec::codecForName(Helper::utf8.toLatin1().data()));
-  QTextCodec::setCodecForCStrings(QTextCodec::codecForName(Helper::utf8.toLatin1().data()));
-#ifndef WIN32
-  QTextCodec::setCodecForLocale(QTextCodec::codecForName(Helper::utf8.toLatin1().data()));
-#endif
-  a.setAttribute(Qt::AA_DontShowIconsInMenus, false);
-  // Localization
-  //*a.severin/ add localization
-  const char *omhome = getenv("OPENMODELICAHOME");
-#ifdef WIN32
-  if (!omhome) {
-    QMessageBox::critical(0, QString(Helper::applicationName).append(" - ").append(Helper::error),
-                          GUIMessages::getMessage(GUIMessages::OPENMODELICAHOME_NOT_FOUND), Helper::ok);
-    a.quit();
-    exit(1);
-  }
-#else /* unix */
-  omhome = omhome ? omhome : CONFIG_DEFAULT_OPENMODELICAHOME;
-#endif
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
-  QLocale settingsLocale = QLocale(pSettings->value("language").toString());
-  settingsLocale = settingsLocale.name() == "C" ? pSettings->value("language").toLocale() : settingsLocale;
-  QString locale = settingsLocale.name().isEmpty() ? QLocale::system().name() : settingsLocale.name();
-  /* set the default locale of the application so that QSpinBox etc show values according to the locale. */
-  QLocale::setDefault(settingsLocale);
-
-  QString translationDirectory = omhome + QString("/share/omedit/nls");
-  // install Qt's default translations
-  QTranslator qtTranslator;
-#ifdef Q_OS_WIN
-  qtTranslator.load("qt_" + locale, translationDirectory);
-#else
-  qtTranslator.load("qt_" + locale, QLibraryInfo::location(QLibraryInfo::TranslationsPath));
-#endif
-  a.installTranslator(&qtTranslator);
-  // install application translations
-  QTranslator translator;
-  translator.load("OMEdit_" + locale, translationDirectory);
-  a.installTranslator(&translator);
-  // Splash Screen
-  QPixmap pixmap(":/Resources/icons/omedit_splashscreen.png");
-  QSplashScreen splashScreen(pixmap);
-  //splashScreen.setMessage();
-  splashScreen.show();
-  Helper::initHelperVariables();
-  /* Force C-style doubles */
-  setlocale(LC_NUMERIC, "C");
-  // if user has requested to open the file by passing it in argument then,
-  bool OMCLogger = false;
-  QStringList fileNames;
-  if (a.arguments().size() > 1) {
-    for (int i = 1; i < a.arguments().size(); i++) {
-      if (strncmp(a.arguments().at(i).toStdString().c_str(), "--OMCLogger=",12) == 0) {
-        QString omcLoggerArg = a.arguments().at(i);
-        omcLoggerArg.remove("--OMCLogger=");
-        if (0 == strcmp("true", omcLoggerArg.toStdString().c_str())) {
-          OMCLogger = true;
-        } else {
-          OMCLogger = false;
-        }
-      } else {
-        fileName = a.arguments().at(i);
-        if (!fileName.isEmpty()) {
-          // if path is relative make it absolute
-          QFileInfo file (fileName);
-          if (file.isRelative()) {
-            fileName.prepend(QString(QDir::currentPath()).append("/"));
-          }
-          fileName = fileName.replace("\\", "/");
-          fileNames << fileName;
-        }
-      }
-    }
-  }
-  // MainWindow Initialization
-  MainWindow mainwindow(&splashScreen);
-  if (mainwindow.getExitApplicationStatus()) {        // if there is some issue in running the application.
-    a.quit();
-    exit(1);
-  }
-  // open the files passed as command line arguments
-  foreach (QString fileName, fileNames) {
-    mainwindow.getLibraryTreeWidget()->openFile(fileName);
-  }
-  // hide OMCLogger send custom expression feature if OMCLogger is false
-  mainwindow.getOMCProxy()->enableCustomExpression(OMCLogger);
-  // finally show the main window
-  mainwindow.show();
-  // hide the splash screen
-  splashScreen.finish(&mainwindow);
+  OMEditApplication a(argc, argv);
   return a.exec();
 }

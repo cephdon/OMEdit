@@ -29,21 +29,17 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef CORNERITEM_H
 #define CORNERITEM_H
 
+#include "Annotations/ShapeAnnotation.h"
 #include <QObject>
 #include <QGraphicsItem>
 #include <QPen>
 #include <QGraphicsSceneMouseEvent>
-#include "ShapeAnnotation.h"
 
 class CornerItem : public QObject, public QGraphicsItem
 {
@@ -52,6 +48,7 @@ class CornerItem : public QObject, public QGraphicsItem
 private:
   ShapeAnnotation *mpShapeAnnotation;
   QRectF mRectangle;
+  QString mOldAnnotation;
   QPointF mClickPos;
   int mConnectedPointIndex;
 public:
@@ -90,6 +87,7 @@ private:
   QRectF mRectangle;
   QPen mPen;
   QPen mActivePen;
+  QPen mInheritedActivePen;
   QPen mPassivePen;
   bool mIsPressed;
   QPointF mResizerItemOldPosition;
@@ -108,15 +106,17 @@ protected:
 class OriginItem : public QGraphicsItem
 {
 public:
-  OriginItem();
-  void setActive() {mPen = mActivePen;}
-  void setPassive() {mPen = mPassivePen;}
+  OriginItem(Component *pComponent);
+  void setActive();
+  void setPassive();
   QRectF boundingRect() const {return mRectangle;}
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
 private:
+  Component *mpComponent;
   QRectF mRectangle;
   QPen mPen;
   QPen mActivePen;
+  QPen mInheritedActivePen;
   QPen mPassivePen;
 };
 

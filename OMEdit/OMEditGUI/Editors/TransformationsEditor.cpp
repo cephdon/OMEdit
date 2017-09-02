@@ -28,14 +28,13 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #include "TransformationsEditor.h"
+#include "Util/Helper.h"
+
+#include <QMenu>
 
 /*!
   \class TransformationsEditor
@@ -46,9 +45,18 @@
   \param pTransformationsWidget - pointer to TransformationsWidget
   */
 TransformationsEditor::TransformationsEditor(TransformationsWidget *pTransformationsWidget)
-  : BaseEditor(pTransformationsWidget->getMainWindow())
+  : BaseEditor(pTransformationsWidget)
 {
   mpTransformationsWidget = pTransformationsWidget;
+}
+
+/*!
+ * \brief TransformationsEditor::popUpCompleter()
+ * \we do not have completer for this
+ */
+void TransformationsEditor::popUpCompleter()
+{
+
 }
 
 /*!
@@ -59,6 +67,11 @@ TransformationsEditor::TransformationsEditor(TransformationsWidget *pTransformat
 void TransformationsEditor::showContextMenu(QPoint point)
 {
   QMenu *pMenu = BaseEditor::createStandardContextMenu();
+  pMenu->addSeparator();
+  pMenu->addAction(mpToggleCommentSelectionAction);
+  pMenu->addSeparator();
+  pMenu->addAction(mpFoldAllAction);
+  pMenu->addAction(mpUnFoldAllAction);
   pMenu->exec(mapToGlobal(point));
   delete pMenu;
 }

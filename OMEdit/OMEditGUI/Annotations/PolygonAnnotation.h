@@ -29,38 +29,38 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef POLYGONANNOTATION_H
 #define POLYGONANNOTATION_H
 
 #include "ShapeAnnotation.h"
-#include "Component.h"
 
 class Component;
-
 class PolygonAnnotation : public ShapeAnnotation
 {
   Q_OBJECT
 public:
-  PolygonAnnotation(QString annotation, Component *pParent);
-  PolygonAnnotation(QString annotation, bool inheritedShape, GraphicsView *pGraphicsView);
+  // Used for icon/diagram shape
+  PolygonAnnotation(QString annotation, GraphicsView *pGraphicsView);
+  // Used for shape inside a component
+  PolygonAnnotation(ShapeAnnotation *pShapeAnnotation, Component *pParent);
+  // Used for icon/diagram inherited shape
+  PolygonAnnotation(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
   void parseShapeAnnotation(QString annotation);
   QPainterPath getShape() const;
   QRectF boundingRect() const;
   QPainterPath shape() const;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
   void drawPolygonAnnotaion(QPainter *painter);
+  QString getOMCShapeAnnotation();
   QString getShapeAnnotation();
   void addPoint(QPointF point);
   void removePoint(int index);
   void clearPoints();
   void updateEndPoint(QPointF point);
+  void updateShape(ShapeAnnotation *pShapeAnnotation);
 public slots:
   void duplicate();
 };

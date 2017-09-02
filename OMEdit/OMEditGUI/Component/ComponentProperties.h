@@ -29,17 +29,15 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef COMPONENTPROPERTIES_H
 #define COMPONENTPROPERTIES_H
 
 #include "Component.h"
+
+#include <QRadioButton>
 
 class Parameter : public QObject
 {
@@ -48,38 +46,77 @@ public:
   enum ValueType {
     Normal,  /* Integer, Real etc. */
     Boolean,
+    CheckBox,
     Enumeration
   };
-  Parameter(ComponentInfo *pComponentInfo, OMCProxy *pOMCProxy, QString className, QString componentBaseClassName,
-            QString componentClassName, QString componentName, bool inheritedComponent, QString inheritedClassName, bool showStartAttribute);
+  Parameter(Component *pComponent, bool showStartAttribute, QString tab, QString groupBox);
+  Component* getComponent() {return mpComponent;}
+  void setTab(QString tab) {mTab = tab;}
+  QString getTab() {return mTab;}
+  void setGroupBox(QString groupBox) {mGroupBox = groupBox;}
+  QString getGroupBox() {return mGroupBox;}
+  void setShowStartAttribute(bool showStartAttribute) {mShowStartAttribute = showStartAttribute;}
+  bool isShowStartAttribute() {return mShowStartAttribute;}
+  void updateNameLabel();
   Label* getNameLabel() {return mpNameLabel;}
   FixedCheckBox* getFixedCheckBox() {return mpFixedCheckBox;}
-  bool isShowStartAttribute() {return mshowStartAttribute;}
+  QString getOriginalFixedValue() {return mOriginalFixedValue;}
   void setValueType(ValueType valueType) {mValueType = valueType;}
+  void setValueWidget(QString value, bool defaultValue, QString fromUnit, bool valueModified = false, bool adjustSize = true);
   ValueType getValueType() {return mValueType;}
   QWidget* getValueWidget();
   bool isValueModified();
   QString getValue();
-  Label* getUnitLabel() {return mpUnitLabel;}
+  QString getDefaultValue();
+  QToolButton* getFileSelectorButton() {return mpFileSelectorButton;}
+  void setLoadSelectorFilter(QString loadSelectorFilter) {mLoadSelectorFilter = loadSelectorFilter;}
+  QString getLoadSelectorFilter() {return mLoadSelectorFilter;}
+  void setLoadSelectorCaption(QString loadSelectorCaption) {mLoadSelectorCaption = loadSelectorCaption;}
+  QString getLoadSelectorCaption() {return mLoadSelectorCaption;}
+  void setSaveSelectorFilter(QString saveSelectorFilter) {mSaveSelectorFilter = saveSelectorFilter;}
+  QString getSaveSelectorFilter() {return mSaveSelectorFilter;}
+  void setSaveSelectorCaption(QString saveSelectorCaption) {mSaveSelectorCaption = saveSelectorCaption;}
+  QString getSaveSelectorCaption() {return mSaveSelectorCaption;}
+  QString getUnit() {return mUnit;}
+  void setDisplayUnit(QString displayUnit) {mDisplayUnit = displayUnit;}
+  QString getDisplayUnit() {return mDisplayUnit;}
+  QComboBox* getUnitComboBox() {return mpUnitComboBox;}
   Label* getCommentLabel() {return mpCommentLabel;}
-  void setFixedState(bool defaultFixedValue, QString defaultFixed, QString fixed);
+  void setFixedState(QString fixed, bool defaultValue);
   QString getFixedState();
-  QString getUnitFromDerivedClass(OMCProxy *pOMCProxy, QString className);
+  QString getModifierValueFromDerivedClass(Component *pComponent, QString modifierName);
   void setEnabled(bool enable);
 private:
+  Component *mpComponent;
+  QString mTab;
+  QString mGroupBox;
+  bool mShowStartAttribute;
   Label *mpNameLabel;
   FixedCheckBox *mpFixedCheckBox;
-  bool mshowStartAttribute;
+  QString mOriginalFixedValue;
   ValueType mValueType;
+  bool mValueCheckBoxModified;
+  QString mDefaultValue;
   QComboBox *mpValueComboBox;
   QLineEdit *mpValueTextBox;
-  Label *mpUnitLabel;
+  QCheckBox *mpValueCheckBox;
+  QToolButton *mpFileSelectorButton;
+  QString mLoadSelectorFilter;
+  QString mLoadSelectorCaption;
+  QString mSaveSelectorFilter;
+  QString mSaveSelectorCaption;
+  QString mUnit;
+  QString mDisplayUnit;
+  QString mPreviousUnit;
+  QComboBox *mpUnitComboBox;
   Label *mpCommentLabel;
 
-  void createValueWidget(OMCProxy *pOMCProxy, QString className);
-  void setValueWidget(QString value, bool defaultValue);
+  void createValueWidget();
 public slots:
+  void fileSelectorButtonClicked();
+  void unitComboBoxChanged(QString text);
   void valueComboBoxChanged(int index);
+  void valueCheckBoxChanged(bool toggle);
   void showFixedMenu();
   void trueFixedClicked();
   void falseFixedClicked();
@@ -118,33 +155,40 @@ class ComponentParameters : public QDialog
 {
   Q_OBJECT
 public:
-  ComponentParameters(Component *pComponent, MainWindow *pMainWindow);
+  ComponentParameters(Component *pComponent, QWidget *pParent = 0);
   ~ComponentParameters();
-  void setUpDialog();
-  void createTabsAndGroupBoxes(OMCProxy *pOMCProxy, QString className, QString componentBaseClassName, QString componentClassName,
-                               QString componentName);
-  void createParameters(OMCProxy *pOMCProxy, QString className, QString componentBaseClassName, QString componentClassName,
-                        QString componentName, bool inheritedComponent, QString inheritedClassName, bool isInheritedCycle = false);
-  QList<Parameter*> getParametersList();
 private:
   Component *mpComponent;
-  MainWindow *mpMainWindow;
   Label *mpParametersHeading;
   QFrame *mHorizontalLine;
   QTabWidget *mpParametersTabWidget;
   QGroupBox *mpComponentGroupBox;
   Label *mpComponentNameLabel;
   Label *mpComponentNameTextBox;
+  QGroupBox *mpComponentClassGroupBox;
   Label *mpComponentClassNameLabel;
   Label *mpComponentClassNameTextBox;
+  Label *mpComponentClassCommentLabel;
+  Label *mpComponentClassCommentTextBox;
   Label *mpModifiersLabel;
   QLineEdit *mpModifiersTextBox;
   QMap<QString, int> mTabsMap;
   QList<Parameter*> mParametersList;
+  QList<Parameter*> mOrderedParametersList;
   QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
+
+  void setUpDialog();
+  void createTabsGroupBoxesAndParameters(LibraryTreeItem *pLibraryTreeItem);
+  void createTabsGroupBoxesAndParametersHelper(LibraryTreeItem *pLibraryTreeItem, bool useInsert = false);
+  void fetchComponentModifiers();
+  void fetchExtendsModifiers();
+  Parameter* findParameter(LibraryTreeItem *pLibraryTreeItem, const QString &parameter,
+                           Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive) const;
+  Parameter* findParameter(const QString &parameter, Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive) const;
 public slots:
+  void commentLinkClicked(QString link);
   void updateComponentParameters();
 };
 
@@ -152,13 +196,11 @@ class ComponentAttributes : public QDialog
 {
   Q_OBJECT
 public:
-  ComponentAttributes(Component *pComponent, MainWindow *pMainWindow);
+  ComponentAttributes(Component *pComponent, QWidget *pParent = 0);
   void setUpDialog();
   void initializeDialog();
 private:
   Component *mpComponent;
-  MainWindow *mpMainWindow;
-  ComponentInfo *mpComponentInfo;
   Label *mpAttributesHeading;
   QFrame *mHorizontalLine;
   QGroupBox *mpTypeGroupBox;
@@ -196,59 +238,60 @@ public slots:
   void updateComponentAttributes();
 };
 
-class SubModelAttributes : public QDialog
+class CompositeModelSubModelAttributes : public QDialog
 {
   Q_OBJECT
 public:
-  SubModelAttributes(Component *pComponent, MainWindow *pMainWindow);
+  CompositeModelSubModelAttributes(Component *pComponent, QWidget *pParent = 0);
   void setUpDialog();
   void initializeDialog();
 private:
   Component *mpComponent;
-  MainWindow *mpMainWindow;
   Label *mpNameLabel;
   QLineEdit *mpNameTextBox;
+  Label *mpSimulationToolLabel;
+  QComboBox *mpSimulationToolComboBox;
   Label *mpStartCommandLabel;
   QLineEdit *mpStartCommandTextBox;
   Label *mpModelFileLabel;
   QLineEdit *mpModelFileTextBox;
+  Label *mpExactStepFlagLabel;
+  QCheckBox *mpExactStepCheckBox;
+  Label *mpGeometryFileLabel;
+  QLineEdit *mpGeometryFileTextBox;
+  QPushButton *mpGeometryFileBrowseButton;
+  QScrollArea *mpParametersScrollArea;
+  QWidget *mpParametersScrollWidget;
+  QGridLayout *mpParametersLayout;
+  QLabel *mpParametersLabel;
+  QList<QLabel*> mParameterLabels;
+  QList<QLineEdit*> mParameterLineEdits;
   QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
-};
-
-class Component;
-class TLMInterfacePointInfo
-{
-public:
-  TLMInterfacePointInfo(QString name, QString className, QString interfaceName);
-  QString getName();
-  QString getClassName();
-  QString getInterfaceName();
-  void setInterfaceName(QString interfaceName);
-private:
-  QString mName;
-  QString mClassName;
-  QString mInterfaceName;
+private slots:
+  void changeSimulationToolStartCommand(QString tool);
+  void changeSimulationTool(QString simulationToolStartCommand);
+  void browseGeometryFile();
+  void updateSubModelParameters();
 };
 
 class LineAnnotation;
-class TLMConnectionAttributes : public QDialog
+class CompositeModelConnectionAttributes : public QDialog
 {
   Q_OBJECT
 public:
-  TLMConnectionAttributes(LineAnnotation *pConnectionLineAnnotation, MainWindow *pMainWindow);
-  void setUpDialog();
-  void initializeDialog();
+  CompositeModelConnectionAttributes(GraphicsView *pGraphicsView, LineAnnotation *pConnectionLineAnnotation, bool edit, QWidget *pParent = 0);
 private:
+  GraphicsView *mpGraphicsView;
   LineAnnotation *mpConnectionLineAnnotation;
-  MainWindow *mpMainWindow;
-  QList<TLMInterfacePointInfo*> mInterfacepointsList;
-  Label *mpStartSubModelNameLabel;
-  QLineEdit *mpStartSubModelNameTextBox;
-  QComboBox *mpStartSubModelInterfacePointComboBox;
-  QComboBox *mpEndSubModelInterfacePointComboBox;
-  Label *mpEndSubModelNameLabel;
-  QLineEdit *mpEndSubModelNameTextBox;
+  bool mEdit;
+  Label *mpHeading;
+  QFrame *mpHorizontalLine;
+  Label *mpFromLabel;
+  Label *mpConnectionStartLabel;
+  Label *mpToLabel;
+  Label *mpConnectionEndLabel;
   Label *mpDelayLabel;
   QLineEdit *mpDelayTextBox;
   Label *mpZfLabel;
@@ -258,9 +301,10 @@ private:
   Label *mpAlphapLabel;
   QLineEdit *mpAlphaTextBox;
   QPushButton *mpOkButton;
+  QPushButton *mpCancelButton;
   QDialogButtonBox *mpButtonBox;
 public slots:
-  void createTLMConnection();
+  void createCompositeModelConnection();
 };
 
 #endif // COMPONENTPROPERTIES_H

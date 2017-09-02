@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
         <file>Resources/icons/console.svg</file>
+        <file>Resources/icons/undo.svg</file>
+        <file>Resources/icons/redo.svg</file>
         <file>Resources/icons/copy.svg</file>
         <file>Resources/icons/cut.svg</file>
         <file>Resources/icons/delete.svg</file>
@@ -23,6 +25,8 @@
         <file>Resources/icons/simulate.svg</file>
         <file>Resources/icons/simulate-equation.svg</file>
         <file>Resources/icons/simulate-debug.svg</file>
+        <file>Resources/icons/simulate-animation.svg</file>
+        <file>Resources/icons/control-panel.svg</file>
         <file>Resources/icons/simulation-center.svg</file>
         <file>Resources/css/stylesheet.qss</file>
         <file>Resources/icons/check.svg</file>
@@ -30,11 +34,6 @@
         <file>Resources/icons/zoomReset.svg</file>
         <file>Resources/icons/zoomIn.svg</file>
         <file>Resources/icons/zoomOut.svg</file>
-        <file>Resources/icons/vline.png</file>
-        <file>Resources/icons/branch-closed.png</file>
-        <file>Resources/icons/branch-open.png</file>
-        <file>Resources/icons/branch-end.png</file>
-        <file>Resources/icons/branch-more.png</file>
         <file>Resources/icons/txt.svg</file>
         <file>Resources/icons/model-icon.svg</file>
         <file>Resources/icons/package-icon.svg</file>
@@ -42,6 +41,7 @@
         <file>Resources/icons/function-icon.svg</file>
         <file>Resources/icons/record-icon.svg</file>
         <file>Resources/icons/class-icon.svg</file>
+        <file>Resources/icons/connector-icon.svg</file>
         <file>Resources/icons/info-icon.svg</file>
         <file>Resources/icons/ellipse-shape.svg</file>
         <file>Resources/icons/text-shape.svg</file>
@@ -82,9 +82,11 @@
         <file>Resources/icons/fill-vertical-cylinder.svg</file>
         <file>Resources/icons/omplot.png</file>
         <file>Resources/icons/parametric-plot-window.svg</file>
+        <file>Resources/icons/array-plot-window.svg</file>
         <file>Resources/icons/plot-window.svg</file>
         <file>Resources/icons/re-simulate.svg</file>
         <file>Resources/icons/re-simulation-center.svg</file>
+        <file>Resources/icons/export-variables.svg</file>
         <file>Resources/icons/fmi.svg</file>
         <file>Resources/icons/export-fmu.svg</file>
         <file>Resources/icons/import-fmu.svg</file>
@@ -102,23 +104,30 @@
         <file>Resources/icons/modeling.png</file>
         <file>Resources/icons/options.svg</file>
         <file>Resources/icons/general.svg</file>
-        <file>Resources/icons/about-us.png</file>
         <file>Resources/icons/flip-horizontal.svg</file>
         <file>Resources/icons/flip-vertical.svg</file>
         <file>Resources/icons/connect-mode.svg</file>
+        <file>Resources/icons/transition-mode.svg</file>
         <file>Resources/icons/export-xml.svg</file>
         <file>Resources/icons/optimization-icon.svg</file>
         <file>Resources/icons/refresh.svg</file>
         <file>Resources/icons/add-icon.svg</file>
         <file>Resources/icons/edit-icon.svg</file>
-        <file>Resources/icons/down.svg</file>
+        <file>Resources/icons/edit-info.svg</file>
+        <file>Resources/icons/edit-revisions.svg</file>
+        <file>Resources/icons/edit-info-header.svg</file>
         <file>Resources/icons/up.svg</file>
+        <file>Resources/icons/down.svg</file>
+        <file>Resources/icons/top.svg</file>
+        <file>Resources/icons/bottom.svg</file>
+        <file>Resources/icons/order.svg</file>
         <file>Resources/icons/print.svg</file>
         <file>Resources/icons/duplicate.svg</file>
         <file>Resources/icons/mat.svg</file>
         <file>Resources/icons/plt.svg</file>
         <file>Resources/icons/csv.svg</file>
         <file>Resources/icons/debugger.svg</file>
+        <file>Resources/icons/equational-debugger.svg</file>
         <file>Resources/icons/resume.svg</file>
         <file>Resources/icons/interrupt.svg</file>
         <file>Resources/icons/exit.svg</file>
@@ -129,8 +138,50 @@
         <file>Resources/icons/breakpoint_disabled.svg</file>
         <file>Resources/icons/tlm-icon.svg</file>
         <file>Resources/icons/link-external.svg</file>
+        <file>Resources/icons/simulation-parameters.svg</file>
         <file>Resources/icons/interface-data.svg</file>
+        <file>Resources/icons/align-interfaces.svg</file>
         <file>Resources/icons/tlm-simulate.svg</file>
         <file>Resources/XMLSchema/tlmModelDescription.xsd</file>
+        <file>Resources/icons/initialize.svg</file>
+        <file>Resources/icons/play_animation.svg</file>
+        <file>Resources/icons/pause.svg</file>
+        <file>Resources/icons/animation.svg</file>
+        <file>Resources/icons/perspective0.svg</file>
+        <file>Resources/icons/perspective1.svg</file>
+        <file>Resources/icons/perspective2.svg</file>
+        <file>Resources/icons/perspective3.svg</file>
+        <file>Resources/icons/rotateCameraLeft.svg</file>
+        <file>Resources/icons/rotateCameraRight.svg</file>
+        <file>Resources/icons/bold-icon.svg</file>
+        <file>Resources/icons/italic-icon.svg</file>
+        <file>Resources/icons/underline-icon.svg</file>
+        <file>Resources/icons/strikethrough-icon.svg</file>
+        <file>Resources/icons/subscript-icon.svg</file>
+        <file>Resources/icons/superscript-icon.svg</file>
+        <file>Resources/icons/text-color-icon.svg</file>
+        <file>Resources/icons/background-color-icon.svg</file>
+        <file>Resources/icons/align-left.svg</file>
+        <file>Resources/icons/align-center.svg</file>
+        <file>Resources/icons/align-right.svg</file>
+        <file>Resources/icons/justify.svg</file>
+        <file>Resources/icons/decrease-indent.svg</file>
+        <file>Resources/icons/increase-indent.svg</file>
+        <file>Resources/icons/bullet-list.svg</file>
+        <file>Resources/icons/numbered-list.svg</file>
+        <file>Resources/icons/link.svg</file>
+        <file>Resources/icons/unlink.svg</file>
+        <file>Resources/icons/invisible.svg</file>
+        <file>Resources/icons/transparency.svg</file>
+        <file>Resources/icons/checkered.svg</file>
+        <file>Resources/icons/texture.svg</file>
+        <file>Resources/icons/changeColor.svg</file>
+        <file>Resources/bitmaps/check.png</file>
+        <file>Resources/icons/traceability.svg</file>
+        <file>Resources/icons/completerkeyword.svg</file>
+        <file>Resources/icons/completerType.svg</file>
+        <file>Resources/icons/completerCodeSnippets.svg</file>
+        <file>Resources/icons/array-parametric-plot-window.svg</file>
+        <file>Resources/icons/update.svg</file>
     </qresource>
 </RCC>

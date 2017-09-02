@@ -28,29 +28,30 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: AttachToProcessDialog.cpp 24682 2015-02-21 14:20:21Z adeas31 $
- *
  */
 
 #include "AttachToProcessDialog.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Options/OptionsDialog.h"
+#include "Debugger/GDB/GDBAdapter.h"
+
+#include <QHeaderView>
+#include <QMessageBox>
 
 /*!
-  \class AttachToProcessDialog
-  \brief Provides interface for attaching a debugger to a running process.
-  */
+ * \class AttachToProcessDialog
+ * \brief Provides interface for attaching a debugger to a running process.
+ */
 /*!
-  \param pDebuggerMainWindow - pointer to DebuggerMainWindow
-  */
-AttachToProcessDialog::AttachToProcessDialog(DebuggerMainWindow *pDebuggerMainWindow)
-  : QDialog(pDebuggerMainWindow, Qt::WindowTitleHint)
+ * \param pParent
+ */
+AttachToProcessDialog::AttachToProcessDialog(QWidget *pParent)
+  : QDialog(pParent)
 {
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::attachToRunningProcess));
   setAttribute(Qt::WA_DeleteOnClose);
   resize(500, 400);
-  mpDebuggerMainWindow = pDebuggerMainWindow;
   // attach to process id
   mpAttachToProcessIDLabel = new Label(tr("Attach to Process ID:"));
   mpAttachToProcessIDTextBox = new QLineEdit;
@@ -112,13 +113,12 @@ AttachToProcessDialog::AttachToProcessDialog(DebuggerMainWindow *pDebuggerMainWi
   */
 void AttachToProcessDialog::attachProcess()
 {
-  GDBAdapter *pGDBAdapter = mpDebuggerMainWindow->getGDBAdapter();
-  if (pGDBAdapter->isGDBRunning()) {
+  if (GDBAdapter::instance()->isGDBRunning()) {
     QMessageBox::information(this, QString(Helper::applicationName).append(" - ").append(Helper::information),
                              GUIMessages::getMessage(GUIMessages::DEBUGGER_ALREADY_RUNNING), Helper::ok);
   } else {
-    QString GDBPath = mpDebuggerMainWindow->getMainWindow()->getOptionsDialog()->getDebuggerPage()->getGDBPath();
-    pGDBAdapter->launch(mpAttachToProcessIDTextBox->text(), GDBPath);
+    QString GDBPath = OptionsDialog::instance()->getDebuggerPage()->getGDBPath();
+    GDBAdapter::instance()->launch(mpAttachToProcessIDTextBox->text(), GDBPath);
   }
   accept();
 }

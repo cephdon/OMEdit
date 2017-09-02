@@ -28,30 +28,32 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id: GDBAdapter.h 23599 2014-11-29 03:16:04Z adeas31 $
- *
  */
 
 #ifndef GDBADAPTER_H
 #define GDBADAPTER_H
 
-#include "DebuggerMainWindow.h"
-#include "GDBMIParser.h"
-#include "BreakpointsWidget.h"
-#include "SimulationOptions.h"
+#include <QPlainTextEdit>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QTextStream>
+#include <QProcess>
+#include <QDateTime>
+#include <QTimer>
+
+#include "Debugger/Parser/GDBMIParser.h"
+#include "Debugger/Breakpoints/BreakpointsWidget.h"
+#include "Simulation/SimulationOptions.h"
 
 using namespace GDBMIParser;
-class DebuggerMainWindow;
 class BreakpointTreeItem;
 
 class GDBLoggerWidget : public QWidget
 {
   Q_OBJECT
 public:
-  GDBLoggerWidget(DebuggerMainWindow *pDebuggerMainWindow);
+  GDBLoggerWidget(QWidget *pParent = 0);
   QPlainTextEdit* getCommandsTextBox() {return mpCommandsTextBox;}
   QPlainTextEdit* getResponseTextBox() {return mpResponseTextBox;}
   QLineEdit* getCommandTextBox() {return mpCommandTextBox;}
@@ -60,7 +62,6 @@ public:
   void logDebuggerStandardResponse(QString response);
   void logDebuggerErrorResponse(QString response);
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   QPlainTextEdit *mpCommandsTextBox;
   QPlainTextEdit *mpResponseTextBox;
   QLineEdit *mpCommandTextBox;
@@ -77,11 +78,10 @@ class TargetOutputWidget : public QPlainTextEdit
 {
   Q_OBJECT
 public:
-  TargetOutputWidget(DebuggerMainWindow *pDebuggerMainWindow);
+  TargetOutputWidget(QWidget *pParent = 0);
   void logDebuggerStandardOutput(QString output);
   void logDebuggerErrorOutput(QString output);
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   void logDebuggerOutput(QString output, QColor color);
 public slots:
   void handleGDBProcessStarted();
@@ -90,13 +90,23 @@ public slots:
 class GDBAdapter : public QObject
 {
   Q_OBJECT
+private:
+  // the only class that is allowed to create and destroy
+  friend class MainWindow;
+
+  static void create();
+  static void destroy();
+  GDBAdapter(QWidget *pParent = 0);
+
+  static GDBAdapter *mpInstance;
 public:
   typedef void (GDBAdapter::*GDBCommandCallback)(GDBMIResultRecord*);
   enum GDBCommandFlag {
     NoFlags = 0,
     ConsoleCommand = 1, // This is a command that needs to be wrapped into -interpreter-exec console
     NonCriticalResponse = 2,
-    SilentCommand = 4 // Ignore the error of this command
+    SilentCommand = 4, // Ignore the error of this command
+    BlockUntilResponse = 8 // Blocks until the command has recieved the answer
   };
   Q_DECLARE_FLAGS(GDBCommandFlags, GDBCommandFlag)
   enum ExecuteCommand {
@@ -104,7 +114,7 @@ public:
     ExecStep
   };
 
-  GDBAdapter(DebuggerMainWindow *pMainWindow);
+  static GDBAdapter* instance() {return mpInstance;}
   void setExecuteCommand(ExecuteCommand command) {mExecuteCommand = command;}
   ExecuteCommand getExecuteCommand() {return mExecuteCommand;}
   QProcess* getGDBProcess() {return mpGDBProcess;}
@@ -115,27 +125,29 @@ public:
   void postCommand(QByteArray command, QObject *pCallbackObject, GDBCommandCallback callback);
   void postCommand(QByteArray command, GDBCommandFlags flags, GDBCommandCallback callback);
   void postCommand(QByteArray command, GDBCommandFlags flags, QObject *pCallbackObject = 0, GDBCommandCallback callback = 0);
-  void setGDBRunning(bool running);
-  bool isGDBRunning();
+  void setGDBRunning(bool running) {mIsRunning = running;}
+  bool isGDBRunning() {return mIsRunning;}
   void setGDBKilled(bool killed) {mIsKilled = killed;}
   bool isGDBKilled() {return mIsKilled;}
-  void setParsingStandardOutput(bool parsing);
-  bool isParsingStandardOutput();
-  void setInferiorSuspended(bool suspended);
-  bool isInferiorSuspended();
-  void setInferiorTerminated(bool terminated);
-  bool isInferiorTerminated();
-  void setInferiorRunning(bool running);
-  bool isInferiorRunning();
-  void setCurrentToken(int token);
-  int currentToken();
+  void setParsingStandardOutput(bool parsing) {mIsParsingStandardOutput = parsing;}
+  bool isParsingStandardOutput() {return mIsParsingStandardOutput;}
+  void setInferiorSuspended(bool suspended) {mIsInferiorSuspended = suspended;}
+  bool isInferiorSuspended() {return mIsInferiorSuspended;}
+  void setInferiorTerminated(bool terminated) {mIsInferiorTerminated = terminated;}
+  bool isInferiorTerminated() {return mIsInferiorTerminated;}
+  void setInferiorRunning(bool running) {mIsInferiorRunning = running;}
+  bool isInferiorRunning() {return mIsInferiorRunning;}
+  void setCurrentToken(int token) {mToken = token;}
+  int currentToken() {return mToken;}
+  void setChangeStdStreamBuffer(bool changeStdStreamBuffer) {mChangeStdStreamBuffer = changeStdStreamBuffer;}
+  bool isChangeStdStreamBuffer() {return mChangeStdStreamBuffer;}
   int commandTimeoutTime() const;
   void insertCatchOMCBreakpoint();
   void enableCatchOMCBreakpoint();
   void disableCatchOMCBreakpoint();
   void deleteCatchOMCBreakpoint();
+  void stackListFramesCB(GDBMIResultRecord *pGDBMIResultRecord);
   void stackListVariablesCB(GDBMIResultRecord *pGDBMIResultRecord);
-  void threadSelectCB(GDBMIResultRecord *pGDBMIResultRecord);
   void getTypeOfAnyCB(GDBMIResultRecord *pGDBMIResultRecord);
   void dataEvaluateExpressionCB(GDBMIResultRecord *pGDBMIResultRecord);
   void anyStringCB(GDBMIResultRecord *pGDBMIResultRecord);
@@ -148,8 +160,8 @@ public:
   QString getGDBMIConstantValue(GDBMIResult *pGDBMIResult);
   void insertBreakpoint(BreakpointTreeItem *pBreakpointTreeItem);
   void suspendDebugger();
+  void resumeDebugger();
 private:
-  DebuggerMainWindow *mpDebuggerMainWindow;
   ExecuteCommand mExecuteCommand;
   QString mAttachToProcessId;
   QProcess *mpGDBProcess;
@@ -167,6 +179,7 @@ private:
   bool mIsInferiorTerminated;
   bool mIsInferiorRunning;
   int mToken;
+  bool mChangeStdStreamBuffer;
   QString mCatchOMCBreakpointId;
   QFile mDebuggerLogFile;
   QTextStream mDebuggerLogFileTextStream;
@@ -190,7 +203,6 @@ private:
   void writeDebuggerResponseLog(QString response);
   void insertBreakpoints();
   void startDebugger();
-  void resumeDebugger();
   void processGDBMIResponse(QString response);
   void processGDBMIOutOfBandRecord(GDBMIOutOfBandRecord *pGDBMIOutOfBandRecord);
   void processGDBMIResultRecord(GDBMIResultRecord *pGDBMIResultRecord);
@@ -203,21 +215,22 @@ private:
   void handleSteppingRange(GDBMIResultRecord *pGDBMIResultRecord);
   void handleFunctionFinished(GDBMIResultRecord *pGDBMIResultRecord);
   void handleSignalReceived(GDBMIResultRecord *pGDBMIResultRecord);
-  void stackListFramesCB(GDBMIResultRecord *pGDBMIResultRecord);
   void threadInfoCB(GDBMIResultRecord *pGDBMIResultRecord);
   void attachCB(GDBMIResultRecord *pGDBMIResultRecord);
 signals:
   void GDBProcessStarted();
   void GDBProcessFinished();
+  void commandCompleted();
   void inferiorSuspended();
   void inferiorResumed();
   void stackListFrames(GDBMIValue *pStackGDBMIValue);
   void threadInfo(GDBMIValue *pThreadsGDBMIValue, QString currentThreadId);
+public slots:
+  void readGDBStandardOutput();
 private slots:
   void handleGDBProcessStarted();
   void handleGDBProcessStartedForSimulation();
   void handleGDBProcessStartedForAttach();
-  void readGDBStandardOutput();
   void readGDBErrorOutput();
   void handleGDBProcessError(QProcess::ProcessError error);
   void handleGDBProcessFinished(int exitCode);

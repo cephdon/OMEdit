@@ -29,11 +29,7 @@
  *
  */
 /*
- *
  * @author Martin Sjölund <martin.sjolund@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef OMDUMPXML_H
@@ -43,11 +39,14 @@
 #include <QXmlDefaultHandler>
 #include <QHash>
 
+#include "diff_match_patch.h"
+
 class OMOperation {
 public:
+  virtual ~OMOperation() {}
   virtual QString toString();
-  virtual QString toHtml();
-  QString diffHtml(QString &before, QString &after);
+  virtual QString toHtml(HtmlDiff htmlDiff = HtmlDiff::Both);
+  QString diffHtml(QString &before, QString &after, HtmlDiff htmlDiff);
 };
 
 class OMOperationInfo : public OMOperation
@@ -56,7 +55,7 @@ public:
   QString name,info;
   OMOperationInfo(QString name, QString info);
   QString toString();
-  QString toHtml();
+  QString toHtml(HtmlDiff htmlDiff);
 };
 
 class OMOperationBeforeAfter : public OMOperation
@@ -65,13 +64,13 @@ public:
   QString name,before,after;
   OMOperationBeforeAfter(QString name, QStringList ops);
   QString toString();
-  QString toHtml();
+  QString toHtml(HtmlDiff htmlDiff);
 };
 
 class OMOperationSimplify : public OMOperationBeforeAfter
 {
 public:
-  OMOperationSimplify(QStringList ops) : OMOperationBeforeAfter("simplify",ops) {};
+  OMOperationSimplify(QStringList ops) : OMOperationBeforeAfter("simplify",ops) {}
 };
 
 class OMOperationScalarize : public OMOperation
@@ -86,13 +85,13 @@ public:
 class OMOperationInline : public OMOperationBeforeAfter
 {
 public:
-  OMOperationInline(QStringList ops) : OMOperationBeforeAfter("inline",ops) {};
+  OMOperationInline(QStringList ops) : OMOperationBeforeAfter("inline",ops) {}
 };
 
 class OMOperationSubstitution : public OMOperationBeforeAfter
 {
 public:
-  OMOperationSubstitution(QStringList ops) : OMOperationBeforeAfter("substitution",ops) {};
+  OMOperationSubstitution(QStringList ops) : OMOperationBeforeAfter("substitution",ops) {}
 };
 
 class OMOperationSolved : public OMOperation
@@ -148,7 +147,7 @@ public:
 class OMOperationFlattening : public OMOperationBeforeAfter
 {
 public:
-  OMOperationFlattening(QStringList ops) : OMOperationBeforeAfter("flattening", ops) {};
+  OMOperationFlattening(QStringList ops) : OMOperationBeforeAfter("flattening", ops) {}
 };
 
 struct OMInfo {
@@ -184,6 +183,7 @@ struct OMEquation {
   QStringList depends;
   QList<OMOperation*> ops;
   QList<int> eqs;
+  int unknowns;
   OMEquation();
   ~OMEquation();
   QString toString();

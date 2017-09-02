@@ -28,36 +28,40 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef SIMULATIONPROCESSTHREAD_H
 #define SIMULATIONPROCESSTHREAD_H
 
-#include "SimulationOutputWidget.h"
+#include "Simulation/SimulationOutputWidget.h"
+#include "Util/StringHandler.h"
+
+#include <QThread>
 
 class SimulationOutputWidget;
-
 class SimulationProcessThread : public QThread
 {
   Q_OBJECT
 public:
   SimulationProcessThread(SimulationOutputWidget *pSimulationOutputWidget);
   QProcess* getCompilationProcess() {return mpCompilationProcess;}
+  void setCompilationProcessKilled(bool killed) {mIsCompilationProcessKilled = killed;}
+  bool isCompilationProcessKilled() {return mIsCompilationProcessKilled;}
   bool isCompilationProcessRunning() {return mIsCompilationProcessRunning;}
   QProcess* getSimulationProcess() {return mpSimulationProcess;}
+  void setSimulationProcessKilled(bool killed) {mIsSimulationProcessKilled = killed;}
+  bool isSimulationProcessKilled() {return mIsSimulationProcessKilled;}
   bool isSimulationProcessRunning() {return mIsSimulationProcessRunning;}
 protected:
   virtual void run();
 private:
   SimulationOutputWidget *mpSimulationOutputWidget;
   QProcess *mpCompilationProcess;
+  bool mIsCompilationProcessKilled;
   bool mIsCompilationProcessRunning;
   QProcess *mpSimulationProcess;
+  bool mIsSimulationProcessKilled;
   bool mIsSimulationProcessRunning;
 
   void compileModel();
@@ -66,13 +70,13 @@ private slots:
   void compilationProcessStarted();
   void readCompilationStandardOutput();
   void readCompilationStandardError();
+  void compilationProcessError(QProcess::ProcessError error);
   void compilationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
   void simulationProcessStarted();
   void readSimulationStandardOutput();
   void readSimulationStandardError();
+  void simulationProcessError(QProcess::ProcessError error);
   void simulationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
-  void createSimulationProgressSocket();
-  void readSimulationProgress();
 signals:
   void sendCompilationStarted();
   void sendCompilationOutput(QString, QColor);
@@ -80,7 +84,6 @@ signals:
   void sendSimulationStarted();
   void sendSimulationOutput(QString, StringHandler::SimulationMessageType type, bool);
   void sendSimulationFinished(int, QProcess::ExitStatus);
-  void sendSimulationProgress(int);
 };
 
 #endif // SIMULATIONPROCESSTHREAD_H

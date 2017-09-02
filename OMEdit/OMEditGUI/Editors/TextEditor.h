@@ -28,30 +28,21 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TEXTEDITOR_H
 #define TEXTEDITOR_H
 
-#include "MainWindow.h"
-
-class MainWindow;
-class ModelWidget;
+#include "Editors/BaseEditor.h"
 
 class TextEditor : public BaseEditor
 {
   Q_OBJECT
 public:
-  TextEditor(ModelWidget *pModelWidget);
-  TextEditor(MainWindow *pMainWindow);
+  TextEditor(QWidget *pParent);
   void setPlainText(const QString &text);
-private:
-  bool mForceSetPlainText;
+  virtual void popUpCompleter();
 private slots:
   virtual void showContextMenu(QPoint point);
 public slots:

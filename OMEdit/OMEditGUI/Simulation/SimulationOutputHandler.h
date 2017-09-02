@@ -28,17 +28,15 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef SIMULATIONOUTPUTHANDLER_H
 #define SIMULATIONOUTPUTHANDLER_H
 
-#include "SimulationOutputWidget.h"
+#include "Simulation/SimulationOutputWidget.h"
+
+#include <QXmlDefaultHandler>
 
 class SimulationMessage
 {
@@ -102,7 +100,6 @@ private:
   int mLevel;
   SimulationMessage* mpSimulationMessage;
   QMap<int, SimulationMessage*> mSimulationMessagesLevelMap;
-  QString mOutputBuffer;
   SimulationMessageModel *mpSimulationMessageModel;
   QXmlSimpleReader mXmlSimpleReader;
   QXmlInputSource *mpXmlInputSource;

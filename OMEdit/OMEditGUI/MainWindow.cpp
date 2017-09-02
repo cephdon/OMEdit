@@ -29,24 +29,51 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
+
+
+#include "MainWindow.h"
+/* Keep PlotWindowContainer on top to include OSG first */
+#include "Plotting/PlotWindowContainer.h"
+#include "Options/OptionsDialog.h"
+#include "Modeling/MessagesWidget.h"
+#include "Modeling/LibraryTreeWidget.h"
+#include "Modeling/ModelicaClassDialog.h"
+#include "Debugger/GDB/GDBAdapter.h"
+#include "Debugger/StackFrames/StackFramesWidget.h"
+#include "Debugger/Locals/LocalsWidget.h"
+#include "Modeling/DocumentationWidget.h"
+#include "Plotting/VariablesWidget.h"
+#if !defined(WITHOUT_OSG)
+#include "Animation/ThreeDViewer.h"
+#include "Animation/ViewerWidget.h"
+#endif
+#include "Util/Helper.h"
+#include "Simulation/SimulationOutputWidget.h"
+#include "TLM/FetchInterfaceDataDialog.h"
+#include "TLM/TLMCoSimulationOutputWidget.h"
+#include "Debugger/DebuggerConfigurationsDialog.h"
+#include "Debugger/Attach/AttachToProcessDialog.h"
+#include "TransformationalDebugger/TransformationsWidget.h"
+#include "Options/NotificationsDialog.h"
+#include "Simulation/SimulationDialog.h"
+#include "TLM/TLMCoSimulationDialog.h"
+#include "FMI/ImportFMUDialog.h"
+#include "FMI/ImportFMUModelDescriptionDialog.h"
+#include "Git/CommitChangesDialog.h"
+#include "Git/RevertCommitsDialog.h"
+#include "Git/CleanDialog.h"
+#include "Git/GitCommands.h"
+#include "Traceability/TraceabilityInformationURI.h"
+#include "Traceability/TraceabilityQueryDialog.h"
+#include "Traceability/TraceabilityGraphViewWidget.h"
+#include "omc_config.h"
 
 #include <QtSvg/QSvgGenerator>
 
-#include "MainWindow.h"
-#include "VariablesWidget.h"
-#include "Helper.h"
-#include "SimulationOutputWidget.h"
-#include "FetchInterfaceDataDialog.h"
-#include "TLMCoSimulationOutputWidget.h"
-
-MainWindow::MainWindow(QSplashScreen *pSplashScreen, QWidget *parent)
-  : QMainWindow(parent), mExitApplicationStatus(false)
+MainWindow::MainWindow(bool debug, QWidget *parent)
+  : QMainWindow(parent), mDebug(debug), mExitApplicationStatus(false)
 {
   // This is a very convoluted way of asking for the default system font in Qt
   QFont systmFont("Monospace");
@@ -59,7 +86,7 @@ MainWindow::MainWindow(QSplashScreen *pSplashScreen, QWidget *parent)
   /*! @note Register the RecentFile, FindTextOM and DebuggerConfiguration struct in the Qt's meta system
    * Don't remove/move the following lines.
    * Because RecentFile, FindTextOM and DebuggerConfiguration structs should be registered before reading the recentFilesList, FindTextOM and
-     DebuggerConfiguration section respectively from the settings file.
+   * DebuggerConfiguration section respectively from the settings file.
    */
   qRegisterMetaTypeStreamOperators<RecentFile>("RecentFile");
   qRegisterMetaTypeStreamOperators<FindTextOM>("FindTextOM");
@@ -71,157 +98,73 @@ MainWindow::MainWindow(QSplashScreen *pSplashScreen, QWidget *parent)
   setMinimumSize(400, 300);
   resize(800, 600);
   setContentsMargins(1, 1, 1, 1);
+}
+
+MainWindow *MainWindow::mpInstance = 0;
+
+/*!
+ * \brief MainWindow::instance
+ * Creates an instance of MainWindow. If we already have an instance then just return it.
+ * \param debug
+ * \return
+ */
+MainWindow *MainWindow::instance(bool debug)
+{
+  if (!mpInstance) {
+    mpInstance = new MainWindow(debug);
+  }
+  return mpInstance;
+}
+
+/*!
+ * \brief MainWindow::setUpMainWindow
+ * Creates all the GUI widgets.
+ */
+void MainWindow::setUpMainWindow()
+{
   // Create the OMCProxy object.
   mpOMCProxy = new OMCProxy(this);
   if (getExitApplicationStatus()) {
     return;
   }
-  pSplashScreen->showMessage(tr("Reading Settings"), Qt::AlignRight, Qt::white);
-  mpOptionsDialog = new OptionsDialog(this);
-  pSplashScreen->showMessage(tr("Loading Widgets"), Qt::AlignRight, Qt::white);
+  SplashScreen::instance()->showMessage(tr("Reading Settings"), Qt::AlignRight, Qt::white);
+  // Create an object of OptionsDialog
+  OptionsDialog::create();
+  SplashScreen::instance()->showMessage(tr("Loading Widgets"), Qt::AlignRight, Qt::white);
   // Create an object of MessagesWidget.
-  mpMessagesWidget = new MessagesWidget(this);
+  MessagesWidget::create();
   // Create MessagesDockWidget dock
   mpMessagesDockWidget = new QDockWidget(tr("Messages Browser"), this);
   mpMessagesDockWidget->setObjectName("Messages");
-  mpMessagesDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
-  mpMessagesDockWidget->setWidget(mpMessagesWidget);
+  mpMessagesDockWidget->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
+  mpMessagesDockWidget->setWidget(MessagesWidget::instance());
   addDockWidget(Qt::BottomDockWidgetArea, mpMessagesDockWidget);
   mpMessagesDockWidget->hide();
-  connect(mpMessagesWidget, SIGNAL(MessageAdded()), mpMessagesDockWidget, SLOT(show()));
+  connect(MessagesWidget::instance(), SIGNAL(MessageAdded()), mpMessagesDockWidget, SLOT(show()));
   // Reopen the standard output stream.
-  QString outputFileName = mpOMCProxy->changeDirectory()+ "/omeditoutput.txt";
+  QString outputFileName = Utilities::tempDirectory() + "/omeditoutput.txt";
   freopen(outputFileName.toStdString().c_str(), "w", stdout);
   setbuf(stdout, NULL); // used non-buffered stdout
   mpOutputFileDataNotifier = 0;
-  mOutputFile.setFileName(outputFileName);
-  if (mOutputFile.open(QIODevice::ReadOnly)) {
-    mpOutputFileDataNotifier = new FileDataNotifier(outputFileName);
-    connect(mpOutputFileDataNotifier, SIGNAL(bytesAvailable(qint64)), SLOT(readOutputFile(qint64)));
-    mpOutputFileDataNotifier->start();
-  } else {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, tr("Can't open file %1.").arg(outputFileName), Helper::scriptingKind,
-                                                Helper::errorLevel));
-
-  }
+  mpOutputFileDataNotifier = new FileDataNotifier(outputFileName);
+  connect(mpOutputFileDataNotifier, SIGNAL(sendData(QString)), SLOT(writeOutputFileData(QString)));
+  mpOutputFileDataNotifier->start();
   // Reopen the standard error stream.
-  QString errorFileName = mpOMCProxy->changeDirectory()+ "/omediterror.txt";
+  QString errorFileName = Utilities::tempDirectory() + "/omediterror.txt";
   freopen(errorFileName.toStdString().c_str(), "w", stderr);
   setbuf(stderr, NULL); // used non-buffered stderr
   mpErrorFileDataNotifier = 0;
-  mErrorFile.setFileName(errorFileName);
-  if (mErrorFile.open(QIODevice::ReadOnly)) {
-    mpErrorFileDataNotifier = new FileDataNotifier(errorFileName);
-    connect(mpErrorFileDataNotifier, SIGNAL(bytesAvailable(qint64)), SLOT(readErrorFile(qint64)));
-    mpErrorFileDataNotifier->start();
-  } else {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, tr("Can't open file %1.").arg(errorFileName), Helper::scriptingKind,
-                                                Helper::errorLevel));
-
-  }
-  // Create an object of SearchClassWidget
-  mpSearchClassWidget = new SearchClassWidget(this);
-  // Create LibraryTreeWidget dock
-  mpSearchClassDockWidget = new QDockWidget(tr("Search Browser"), this);
-  mpSearchClassDockWidget->setObjectName("SearchClassWidget");
-  mpSearchClassDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  mpSearchClassDockWidget->setWidget(mpSearchClassWidget);
-  addDockWidget(Qt::LeftDockWidgetArea, mpSearchClassDockWidget);
-  setCorner(Qt::TopLeftCorner, Qt::LeftDockWidgetArea);
-  connect(mpSearchClassDockWidget, SIGNAL(visibilityChanged(bool)), SLOT(focusSearchClassWidget(bool)));
-  mpSearchClassDockWidget->hide();
-  // Create an object of LibraryTreeWidget
-  mpLibraryTreeWidget = new LibraryTreeWidget(false, this);
-  // Loads and adds the OM Standard Library into the Library Widget.
-  mpLibraryTreeWidget->addModelicaLibraries(pSplashScreen);
-  // Create LibraryTreeWidget dock
-  mpLibraryTreeDockWidget = new QDockWidget(tr("Libraries Browser"), this);
-  mpLibraryTreeDockWidget->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
-  mpLibraryTreeDockWidget->setObjectName("Libraries");
-  mpLibraryTreeDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  mpLibraryTreeDockWidget->setWidget(mpLibraryTreeWidget);
-  addDockWidget(Qt::LeftDockWidgetArea, mpLibraryTreeDockWidget);
-  setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
-  // create an object of DocumentationWidget
-  mpDocumentationWidget = new DocumentationWidget(this);
-  // Create DocumentationWidget dock
-  mpDocumentationDockWidget = new QDockWidget(tr("Documentation Browser"), this);
-  mpDocumentationDockWidget->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
-  mpDocumentationDockWidget->setObjectName("Documentation");
-  mpDocumentationDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  mpDocumentationDockWidget->setWidget(mpDocumentationWidget);
-  addDockWidget(Qt::RightDockWidgetArea, mpDocumentationDockWidget);
-  setCorner(Qt::TopRightCorner, Qt::RightDockWidgetArea);
-  mpDocumentationDockWidget->hide();
-  // Create VariablesWidget dock
-  mpVariablesDockWidget = new QDockWidget(Helper::variablesBrowser, this);
-  mpVariablesDockWidget->setObjectName("Variables");
-  mpVariablesDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-  addDockWidget(Qt::RightDockWidgetArea, mpVariablesDockWidget);
-  setCorner(Qt::TopRightCorner, Qt::RightDockWidgetArea);
-  mpVariablesDockWidget->hide();
-  //Create Actions, Toolbar and Menus
-  pSplashScreen->showMessage(tr("Creating Widgets"), Qt::AlignRight, Qt::white);
-  setAcceptDrops(true);
-  createActions();
-  createToolbars();
-  createMenus();
-  // Create simulation dialog
-  mpSimulationDialog = new SimulationDialog(this);
-  // Create TLM co-simulation dialog
-  mpTLMCoSimulationDialog = new TLMCoSimulationDialog(this);
-  // Create an object of PlotWindowContainer
-  mpPlotWindowContainer = new PlotWindowContainer(this);
-  // create an object of VariablesWidget
-  mpVariablesWidget = new VariablesWidget(this);
-  mpVariablesDockWidget->setWidget(mpVariablesWidget);
-  /* Debugger MainWindow */
-  /* Important. Create the instance of DebuggerMainWindow before ModelWidgetContainer otherwise the ctrl+tab changer does not work. */
-  mpDebuggerMainWindow = new DebuggerMainWindow(this);
-  // Create an object of ModelWidgetContainer
-  mpModelWidgetContainer = new ModelWidgetContainer(this);
-  // Create an object of WelcomePageWidget
-  mpWelcomePageWidget = new WelcomePageWidget(this);
-  updateRecentFileActions();
-  // create the OMEdit About widget
-  mpAboutOMEditDialog = new AboutOMEditWidget(this);
-  mpAboutOMEditDialog->hide();
-  // create an instance of InfoBar
-  mpInfoBar = new InfoBar(this);
-  mpInfoBar->hide();
-  //Create a centralwidget for the main window
-  QWidget *pCentralwidget = new QWidget;
-  mpCentralStackedWidget = new QStackedWidget;
-  mpCentralStackedWidget->addWidget(mpWelcomePageWidget);
-  mpCentralStackedWidget->addWidget(mpModelWidgetContainer);
-  mpCentralStackedWidget->addWidget(mpPlotWindowContainer);
-  // set the layout
-  QGridLayout *pCentralgrid = new QGridLayout;
-  pCentralgrid->setVerticalSpacing(4);
-  pCentralgrid->setContentsMargins(0, 1, 0, 0);
-  pCentralgrid->addWidget(mpInfoBar, 0, 0);
-  pCentralgrid->addWidget(mpCentralStackedWidget, 1, 0);
-  pCentralwidget->setLayout(pCentralgrid);
-  //Set the centralwidget
-  setCentralWidget(pCentralwidget);
-  // Create an object of QStatusBar
-  mpStatusBar = new QStatusBar();
-  mpStatusBar->setObjectName("statusBar");
-  mpStatusBar->setContentsMargins(0, 0, 0, 0);
+  mpErrorFileDataNotifier = new FileDataNotifier(errorFileName);
+  connect(mpErrorFileDataNotifier, SIGNAL(sendData(QString)), SLOT(writeErrorFileData(QString)));
+  mpErrorFileDataNotifier->start();
   // Create an object of QProgressBar
   mpProgressBar = new QProgressBar;
   mpProgressBar->setMaximumWidth(300);
   mpProgressBar->setTextVisible(false);
   mpProgressBar->setVisible(false);
-  // pointer position Label
-  mpPointerXPositionLabel = new Label;
-  mpPointerXPositionLabel->setMinimumWidth(60);
-  mpPointerYPositionLabel = new Label;
-  mpPointerYPositionLabel->setMinimumWidth(60);
-  // add progressbar to statusbar
-  mpStatusBar->addPermanentWidget(mpProgressBar);
-  mpStatusBar->addPermanentWidget(mpPointerXPositionLabel);
-  mpStatusBar->addPermanentWidget(mpPointerYPositionLabel);
+  // Position Label
+  mpPositionLabel = new Label;
+  mpPositionLabel->setMinimumWidth(75);
   // create the perspective tabs
   mpPerspectiveTabbar = new QTabBar;
   mpPerspectiveTabbar->setDocumentMode(true);
@@ -241,26 +184,184 @@ MainWindow::MainWindow(QSplashScreen *pSplashScreen, QWidget *parent)
   QShortcut *pPlottingShortcut = new QShortcut(QKeySequence("Ctrl+f3"), this);
   connect(pPlottingShortcut, SIGNAL(activated()), SLOT(switchToPlottingPerspectiveSlot()));
   mpPerspectiveTabbar->setTabToolTip(2, tr("Changes to plotting perspective (%1)").arg(pPlottingShortcut->key().toString()));
+  // algorithmic debugging perspective
+  mpPerspectiveTabbar->addTab(QIcon(":/Resources/icons/debugger.svg"), tr("Debugging"));
+  QShortcut *pAlgorithmicDebuggingShortcut = new QShortcut(QKeySequence("Ctrl+f5"), this);
+  connect(pAlgorithmicDebuggingShortcut, SIGNAL(activated()), SLOT(switchToAlgorithmicDebuggingPerspectiveSlot()));
+  mpPerspectiveTabbar->setTabToolTip(3, tr("Changes to debugging perspective (%1)").arg(pAlgorithmicDebuggingShortcut->key().toString()));
+  // change the perspective when perspective tab bar selection is changed
   connect(mpPerspectiveTabbar, SIGNAL(currentChanged(int)), SLOT(perspectiveTabChanged(int)));
+  // Create an object of QStatusBar
+  mpStatusBar = new QStatusBar();
+  mpStatusBar->setObjectName("statusBar");
+  mpStatusBar->setContentsMargins(0, 0, 0, 0);
+  // add items to statusbar
+  mpStatusBar->addPermanentWidget(mpProgressBar);
+  mpStatusBar->addPermanentWidget(mpPositionLabel);
   mpStatusBar->addPermanentWidget(mpPerspectiveTabbar);
   // set status bar for MainWindow
   setStatusBar(mpStatusBar);
+  // Create an object of LibraryWidget
+  mpLibraryWidget = new LibraryWidget(this);
+  // Create LibraryDockWidget
+  mpLibraryDockWidget = new QDockWidget(tr("Libraries Browser"), this);
+  //mpLibraryDockWidget->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+  mpLibraryDockWidget->setObjectName("Libraries");
+  mpLibraryDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+  mpLibraryDockWidget->setWidget(mpLibraryWidget);
+  addDockWidget(Qt::LeftDockWidgetArea, mpLibraryDockWidget);
+  mpLibraryWidget->getLibraryTreeView()->setFocus(Qt::ActiveWindowFocusReason);
+  // create the GDB adapter instance
+  GDBAdapter::create();
+  // create stack frames widget
+  mpStackFramesWidget = new StackFramesWidget(this);
+  // Create stack frames dock widget
+  mpStackFramesDockWidget = new QDockWidget(tr("Stack Frames Browser"), this);
+  mpStackFramesDockWidget->setObjectName("StackFrames");
+  mpStackFramesDockWidget->setWidget(mpStackFramesWidget);
+  addDockWidget(Qt::TopDockWidgetArea, mpStackFramesDockWidget);
+  // create breakpoints widget
+  mpBreakpointsWidget = new BreakpointsWidget(this);
+  // Create breakpoints dock widget
+  mpBreakpointsDockWidget = new QDockWidget(tr("BreakPoints Browser"), this);
+  mpBreakpointsDockWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
+  mpBreakpointsDockWidget->setObjectName("BreakPoints");
+  mpBreakpointsDockWidget->setWidget(mpBreakpointsWidget);
+  addDockWidget(Qt::TopDockWidgetArea, mpBreakpointsDockWidget);
+  // create locals widget
+  mpLocalsWidget = new LocalsWidget(this);
+  // Create locals dock widget
+  mpLocalsDockWidget = new QDockWidget(tr("Locals Browser"), this);
+  mpLocalsDockWidget->setObjectName("Locals");
+  mpLocalsDockWidget->setWidget(mpLocalsWidget);
+  addDockWidget(Qt::RightDockWidgetArea, mpLocalsDockWidget);
+  // Create target output widget
+  mpTargetOutputWidget = new TargetOutputWidget(this);
+  // Create GDB console dock widget
+  mpTargetOutputDockWidget = new QDockWidget(tr("Output Browser"), this);
+  mpTargetOutputDockWidget->setObjectName("OutputBrowser");
+  mpTargetOutputDockWidget->setWidget(mpTargetOutputWidget);
+  addDockWidget(Qt::BottomDockWidgetArea, mpTargetOutputDockWidget);
+  // Create GDB console widget
+  mpGDBLoggerWidget = new GDBLoggerWidget(this);
+  // Create GDB console dock widget
+  mpGDBLoggerDockWidget = new QDockWidget(tr("Debugger CLI"), this);
+  mpGDBLoggerDockWidget->setObjectName("DebuggerLog");
+  mpGDBLoggerDockWidget->setWidget(mpGDBLoggerWidget);
+  addDockWidget(Qt::BottomDockWidgetArea, mpGDBLoggerDockWidget);
+  // put the GDB logger dock widget and output dock widget as tabbed items.
+  tabifyDockWidget(mpGDBLoggerDockWidget, mpTargetOutputDockWidget);
+  // create an object of DocumentationWidget
+  mpDocumentationWidget = new DocumentationWidget(this);
+  // Create DocumentationWidget dock
+  mpDocumentationDockWidget = new QDockWidget(tr("Documentation Browser"), this);
+  mpDocumentationDockWidget->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
+  mpDocumentationDockWidget->setObjectName("Documentation");
+  mpDocumentationDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+  mpDocumentationDockWidget->setWidget(mpDocumentationWidget);
+  addDockWidget(Qt::RightDockWidgetArea, mpDocumentationDockWidget);
+  mpDocumentationDockWidget->hide();
+  connect(mpDocumentationDockWidget, SIGNAL(visibilityChanged(bool)), SLOT(documentationDockWidgetVisibilityChanged(bool)));
+  // Create an object of PlotWindowContainer
+  mpPlotWindowContainer = new PlotWindowContainer(this);
+  // create an object of VariablesWidget
+  mpVariablesWidget = new VariablesWidget(this);
+  // Create VariablesWidget dock
+  mpVariablesDockWidget = new QDockWidget(Helper::variablesBrowser, this);
+  mpVariablesDockWidget->setObjectName("Variables");
+  mpVariablesDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+  addDockWidget(Qt::RightDockWidgetArea, mpVariablesDockWidget);
+  mpVariablesDockWidget->setWidget(mpVariablesWidget);
+  // create traceability graph view widget
+  //  mpTraceabilityGraphViewWidget = new TraceabilityGraphViewWidget(this);
+  mpTraceabilityInformationURI = new TraceabilityInformationURI(this);
+#if !defined(WITHOUT_OSG)
+  /* Ticket #4252
+   * Do not create an object of ThreeDViewer by default.
+   * Only create it when user really use it.
+   */
+  mpThreeDViewer = 0;
+  // Create ThreeDViewer dock
+  mpThreeDViewerDockWidget = new QDockWidget(tr("3D Viewer Browser"), this);
+  mpThreeDViewerDockWidget->setObjectName("3DViewer");
+  mpThreeDViewerDockWidget->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+  addDockWidget(Qt::RightDockWidgetArea, mpThreeDViewerDockWidget);
+  mpThreeDViewerDockWidget->hide();
+  connect(mpThreeDViewerDockWidget, SIGNAL(visibilityChanged(bool)), SLOT(threeDViewerDockWidgetVisibilityChanged(bool)));
+#endif
+  // set the corners for the dock widgets
+  setCorner(Qt::TopLeftCorner, Qt::LeftDockWidgetArea);
+  setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+  setCorner(Qt::TopRightCorner, Qt::RightDockWidgetArea);
+  setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+  //Create Actions, Toolbar and Menus
+  SplashScreen::instance()->showMessage(tr("Creating Widgets"), Qt::AlignRight, Qt::white);
+  setAcceptDrops(true);
+  createActions();
+  createToolbars();
+  createMenus();
+  // enable/disable re-simulation toolbar based on variables browser visibiltiy.
+  connect(mpVariablesDockWidget, SIGNAL(visibilityChanged(bool)), this, SLOT(enableReSimulationToolbar(bool)));
+  // Create simulation dialog when needed
+  mpSimulationDialog = 0;
+  // Create TLM co-simulation dialog when needed
+  mpTLMCoSimulationDialog = 0;
+  // Create an object of ModelWidgetContainer
+  mpModelWidgetContainer = new ModelWidgetContainer(this);
+  // Create an object of WelcomePageWidget
+  mpWelcomePageWidget = new WelcomePageWidget(this);
+  updateRecentFileActions();
+  // create the Git commands instance
+  //mpGitCommands = new GitCommands(this);
+  GitCommands::create();
+  //Create a centralwidget for the main window
+  QWidget *pCentralwidget = new QWidget;
+  mpCentralStackedWidget = new QStackedWidget;
+  mpCentralStackedWidget->addWidget(mpWelcomePageWidget);
+  mpCentralStackedWidget->addWidget(mpModelWidgetContainer);
+  mpCentralStackedWidget->addWidget(mpPlotWindowContainer);
+  // set the layout
+  QGridLayout *pCentralgrid = new QGridLayout;
+  pCentralgrid->setVerticalSpacing(4);
+  pCentralgrid->setContentsMargins(0, 1, 0, 0);
+  pCentralgrid->addWidget(mpCentralStackedWidget, 0, 0);
+  pCentralwidget->setLayout(pCentralgrid);
+  //Set the centralwidget
+  setCentralWidget(pCentralwidget);
+  // Load and add user defined Modelica libraries into the Library Widget.
+  mpLibraryWidget->getLibraryTreeModel()->addModelicaLibraries();
   // set the matching algorithm.
-  mpOMCProxy->setMatchingAlgorithm(mpOptionsDialog->getSimulationPage()->getMatchingAlgorithmComboBox()->currentText());
+  mpOMCProxy->setMatchingAlgorithm(OptionsDialog::instance()->getSimulationPage()->getMatchingAlgorithmComboBox()->currentText());
   // set the index reduction methods.
-  mpOMCProxy->setIndexReductionMethod(mpOptionsDialog->getSimulationPage()->getIndexReductionMethodComboBox()->currentText());
+  mpOMCProxy->setIndexReductionMethod(OptionsDialog::instance()->getSimulationPage()->getIndexReductionMethodComboBox()->currentText());
   // set the OMC Flags.
-  if (!mpOptionsDialog->getSimulationPage()->getOMCFlagsTextBox()->text().isEmpty())
-    mpOMCProxy->setCommandLineOptions(mpOptionsDialog->getSimulationPage()->getOMCFlagsTextBox()->text());
-  if (mpOptionsDialog->getDebuggerPage()->getGenerateOperationsCheckBox()->isChecked())
-    mpOMCProxy->setCommandLineOptions("+d=infoXmlOperations");
+  if (!OptionsDialog::instance()->getSimulationPage()->getOMCFlagsTextBox()->text().isEmpty()) {
+    mpOMCProxy->setCommandLineOptions(OptionsDialog::instance()->getSimulationPage()->getOMCFlagsTextBox()->text());
+  }
+  if (OptionsDialog::instance()->getDebuggerPage()->getGenerateOperationsCheckBox()->isChecked()) {
+    mpOMCProxy->setCommandLineOptions("-d=infoXmlOperations");
+  }
+  mpOMCProxy->setCommandLineOptions(QString("--simCodeTarget=%1").arg(OptionsDialog::instance()->getSimulationPage()->getTargetLanguageComboBox()->currentText()));
+  mpOMCProxy->setCommandLineOptions(QString("--target=%1").arg(OptionsDialog::instance()->getSimulationPage()->getTargetCompilerComboBox()->currentText()));
+  if (OptionsDialog::instance()->getSimulationPage()->getIgnoreCommandLineOptionsAnnotationCheckBox()->isChecked()) {
+    mpOMCProxy->setCommandLineOptions("--ignoreCommandLineOptionsAnnotation=true");
+  }
+  if (OptionsDialog::instance()->getSimulationPage()->getIgnoreSimulationFlagsAnnotationCheckBox()->isChecked()) {
+    mpOMCProxy->setCommandLineOptions("--ignoreSimulationFlagsAnnotation=true");
+  }
   // restore OMEdit widgets state
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
-  if (mpOptionsDialog->getGeneralSettingsPage()->getPreserveUserCustomizations())
+  QSettings *pSettings = Utilities::getApplicationSettings();
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getPreserveUserCustomizations())
   {
     restoreGeometry(pSettings->value("application/geometry").toByteArray());
-    bool restoreMessagesWidget = !mpMessagesWidget->getMessagesTextBrowser()->toPlainText().isEmpty();
+    bool restoreMessagesWidget = !MessagesWidget::instance()->getMessagesTextBrowser()->toPlainText().isEmpty();
     restoreState(pSettings->value("application/windowState").toByteArray());
+    pSettings->beginGroup("algorithmicDebugger");
+    /* restore stackframes list and locals columns width */
+    mpStackFramesWidget->getStackFramesTreeWidget()->header()->restoreState(pSettings->value("stackFramesTreeState").toByteArray());
+    mpBreakpointsWidget->getBreakpointsTreeView()->header()->restoreState(pSettings->value("breakPointsTreeState").toByteArray());
+    mpLocalsWidget->getLocalsTreeView()->header()->restoreState(pSettings->value("localsTreeState").toByteArray());
+    pSettings->endGroup();
     if (restoreMessagesWidget) {
       mpMessagesDockWidget->show();
     }
@@ -276,252 +377,53 @@ MainWindow::MainWindow(QSplashScreen *pSplashScreen, QWidget *parent)
   }
   // create the auto save timer
   mpAutoSaveTimer = new QTimer(this);
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+  mpAutoSaveTimer->setTimerType(Qt::PreciseTimer);
+#endif
+  mpAutoSaveTimer->setInterval(OptionsDialog::instance()->getGeneralSettingsPage()->getAutoSaveIntervalSpinBox()->value() * 1000);
   connect(mpAutoSaveTimer, SIGNAL(timeout()), SLOT(autoSave()));
   // read auto save settings
-  if (mpOptionsDialog->getGeneralSettingsPage()->getEnableAutoSaveGroupBox()->isChecked())
-  {
-    mpAutoSaveTimer->start(mpOptionsDialog->getGeneralSettingsPage()->getAutoSaveIntervalSpinBox()->value() * 1000);
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getEnableAutoSaveGroupBox()->isChecked()) {
+    mpAutoSaveTimer->start();
   }
 }
 
-//! Returns the instance of OMCProxy.
-//! @return Instance of OMCProxy.
-OMCProxy* MainWindow::getOMCProxy()
+#if !defined(WITHOUT_OSG)
+/*!
+ * \brief MainWindow::isThreeDViewerInitialized
+ * Returns true if ThreeDViewer is initialized.
+ * \return
+ */
+bool MainWindow::isThreeDViewerInitialized()
 {
-  return mpOMCProxy;
+  return mpThreeDViewer ? true : false;
 }
 
-//! sets the value of ExitApplicationStatus variable.
-void MainWindow::setExitApplicationStatus(bool status)
+/*!
+ * \brief MainWindow::getThreeDViewer
+ * Returns the ThreeDViewer object. Initializes it if its not initialized.
+ * \return
+ */
+ThreeDViewer* MainWindow::getThreeDViewer()
 {
-  mExitApplicationStatus = status;
+  // create an object of ThreeDViewer
+  if (!mpThreeDViewer) {
+    mpThreeDViewer = new ThreeDViewer(this);
+    mpThreeDViewerDockWidget->setWidget(mpThreeDViewer);
+  }
+  return mpThreeDViewer;
 }
+#endif
 
-//! Returns the value of ExitApplicationStatus variable.
-bool MainWindow::getExitApplicationStatus()
-{
-  return mExitApplicationStatus;
-}
-
-OptionsDialog* MainWindow::getOptionsDialog()
-{
-  return mpOptionsDialog;
-}
-
-MessagesWidget* MainWindow::getMessagesWidget()
-{
-  return mpMessagesWidget;
-}
-
-LibraryTreeWidget* MainWindow::getLibraryTreeWidget()
-{
-  return mpLibraryTreeWidget;
-}
-
-DocumentationWidget* MainWindow::getDocumentationWidget()
-{
-  return mpDocumentationWidget;
-}
-
-QDockWidget* MainWindow::getDocumentationDockWidget()
-{
-  return mpDocumentationDockWidget;
-}
-
-VariablesWidget* MainWindow::getVariablesWidget()
-{
-  return mpVariablesWidget;
-}
-
-QDockWidget* MainWindow::getVariablesDockWidget()
-{
-  return mpVariablesDockWidget;
-}
-
-SimulationDialog* MainWindow::getSimulationDialog()
-{
-  return mpSimulationDialog;
-}
-
-PlotWindowContainer* MainWindow::getPlotWindowContainer()
-{
-  return mpPlotWindowContainer;
-}
-
-ModelWidgetContainer* MainWindow::getModelWidgetContainer()
-{
-  return mpModelWidgetContainer;
-}
-
-WelcomePageWidget* MainWindow::getWelcomePageWidget()
-{
-  return mpWelcomePageWidget;
-}
-
-InfoBar* MainWindow::getInfoBar()
-{
-  return mpInfoBar;
-}
-
-QStatusBar* MainWindow::getStatusBar()
-{
-  return mpStatusBar;
-}
-
-QProgressBar* MainWindow::getProgressBar()
-{
-  return mpProgressBar;
-}
-
-Label* MainWindow::getPointerXPositionLabel()
-{
-  return mpPointerXPositionLabel;
-}
-
-Label* MainWindow::getPointerYPositionLabel()
-{
-  return mpPointerYPositionLabel;
-}
-
-QTabBar* MainWindow::getPerspectiveTabBar()
-{
-  return mpPerspectiveTabbar;
-}
-
-QAction* MainWindow::getSaveAction()
-{
-  return mpSaveAction;
-}
-
-QAction* MainWindow::getSaveAsAction()
-{
-  return mpSaveAsAction;
-}
-
-QAction* MainWindow::getPrintModelAction()
-{
-  return mpPrintModelAction;
-}
-
-QAction* MainWindow::getSaveAllAction()
-{
-  return mpSaveAllAction;
-}
-
-QAction* MainWindow::getShowGridLinesAction()
-{
-  return mpShowGridLinesAction;
-}
-
-QAction* MainWindow::getResetZoomAction()
-{
-  return mpResetZoomAction;
-}
-
-QAction* MainWindow::getZoomInAction()
-{
-  return mpZoomInAction;
-}
-
-QAction* MainWindow::getZoomOutAction()
-{
-  return mpZoomOutAction;
-}
-
-QAction* MainWindow::getSimulateModelAction()
-{
-  return mpSimulateModelAction;
-}
-
-QAction* MainWindow::getSimulationSetupAction()
-{
-  return mpSimulationSetupAction;
-}
-
-QAction* MainWindow::getInstantiateModelAction()
-{
-  return mpInstantiateModelAction;
-}
-
-QAction* MainWindow::getCheckModelAction()
-{
-  return mpCheckModelAction;
-}
-
-QAction* MainWindow::getExportFMUAction()
-{
-  return mpExportFMUAction;
-}
-
-QAction* MainWindow::getExportXMLAction()
-{
-  return mpExportXMLAction;
-}
-
-QAction* MainWindow::getExportFigaroAction()
-{
-  return mpExportFigaroAction;
-}
-
-QAction* MainWindow::getLineShapeAction()
-{
-  return mpLineShapeAction;
-}
-
-QAction* MainWindow::getPolygonShapeAction()
-{
-  return mpPolygonShapeAction;
-}
-
-QAction* MainWindow::getRectangleShapeAction()
-{
-  return mpRectangleShapeAction;
-}
-
-QAction* MainWindow::getEllipseShapeAction()
-{
-  return mpEllipseShapeAction;
-}
-
-QAction* MainWindow::getTextShapeAction()
-{
-  return mpTextShapeAction;
-}
-
-QAction* MainWindow::getBitmapShapeAction()
-{
-  return mpBitmapShapeAction;
-}
-
-QAction* MainWindow::getExportAsImageAction()
-{
-  return mpExportAsImageAction;
-}
-
-QAction* MainWindow::getExportToOMNotebookAction()
-{
-  return mpExportToOMNotebookAction;
-}
-
-QAction* MainWindow::getImportFromOMNotebookAction()
-{
-  return mpImportFromOMNotebookAction;
-}
-
-QAction* MainWindow::getImportNgspiceNetlistAction()
-{
-  return mpImportNgspiceNetlistAction;
-}
-
-QAction* MainWindow::getConnectModeAction()
-{
-  return mpConnectModeAction;
-}
-
-//! Adds the currently opened file to the recentFilesList settings.
+/*!
+ * \brief MainWindow::addRecentFile
+ * Adds the currently opened file to the recentFilesList settings.
+ * \param fileName
+ * \param encoding
+ */
 void MainWindow::addRecentFile(const QString &fileName, const QString &encoding)
 {
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
+  QSettings *pSettings = Utilities::getApplicationSettings();
   QList<QVariant> files = pSettings->value("recentFilesList/files").toList();
   // remove the already present RecentFile instance from the list.
   foreach (QVariant file, files)
@@ -542,14 +444,17 @@ void MainWindow::addRecentFile(const QString &fileName, const QString &encoding)
   updateRecentFileActions();
 }
 
-//! Updates the actions of the recent files menu items.
+/*!
+ * \brief MainWindow::updateRecentFileActions
+ * Updates the actions of the recent files menu items.
+ */
 void MainWindow::updateRecentFileActions()
 {
   /* first set all recent files actions visibility to false. */
   for (int i = 0; i < MaxRecentFiles; ++i)
     mpRecentFileActions[i]->setVisible(false);
   /* read the new recent files list */
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
+  QSettings *pSettings = Utilities::getApplicationSettings();
   QList<QVariant> files = pSettings->value("recentFilesList/files").toList();
   int numRecentFiles = qMin(files.size(), (int)MaxRecentFiles);
   for (int i = 0; i < numRecentFiles; ++i)
@@ -564,35 +469,36 @@ void MainWindow::updateRecentFileActions()
   mpWelcomePageWidget->addRecentFilesListItems();
 }
 
-//! Event triggered re-implemented method that closes the main window.
-//! First all tabs (models) are closed, if the user do not push Cancel
-//! (closeAllProjectTabs then returns 'false') the event is accepted and
-//! the main window is closed.
-//! @param event contains information of the closing operation.
+/*!
+ * \brief MainWindow::closeEvent
+ * Event triggered re-implemented method that closes the main window.
+ * Proposes the user to save the unsaved classes.
+ * Asks for quit depending on the settings value.
+ * \param event
+ */
 void MainWindow::closeEvent(QCloseEvent *event)
 {
   SaveChangesDialog *pSaveChangesDialog = new SaveChangesDialog(this);
-  if (pSaveChangesDialog->exec())
-  {
-    if (askForExit())
-    {
+  if (pSaveChangesDialog->exec()) {
+    if (askForExit()) {
       beforeClosingMainWindow();
       event->accept();
-    }
-    else
-    {
+    } else {
       event->ignore();
     }
-  }
-  else
-  {
+  } else {
     event->ignore();
   }
 }
 
+/*!
+ * \brief MainWindow::askForExit
+ * Asks the user before exiting.
+ * \return
+ */
 int MainWindow::askForExit()
 {
-  if (!mpOptionsDialog->getNotificationsPage()->getQuitApplicationCheckBox()->isChecked()) {
+  if (!OptionsDialog::instance()->getNotificationsPage()->getQuitApplicationCheckBox()->isChecked()) {
     NotificationsDialog *pNotificationsDialog = new NotificationsDialog(NotificationsDialog::QuitApplication,
                                                                         NotificationsDialog::QuestionIcon, this);
     return pNotificationsDialog->exec();
@@ -610,24 +516,25 @@ void MainWindow::beforeClosingMainWindow()
 {
   mpOMCProxy->quitOMC();
   if (mpOutputFileDataNotifier) {
-    mOutputFile.close();
     mpOutputFileDataNotifier->exit();
     mpOutputFileDataNotifier->wait();
     delete mpOutputFileDataNotifier;
   }
   if (mpErrorFileDataNotifier) {
-    mErrorFile.close();
     mpErrorFileDataNotifier->exit();
     mpErrorFileDataNotifier->wait();
     delete mpErrorFileDataNotifier;
   }
   delete mpOMCProxy;
   delete mpModelWidgetContainer;
-  delete mpDebuggerMainWindow;
-  delete mpSimulationDialog;
-  delete mpTLMCoSimulationDialog;
+  if (mpSimulationDialog) {
+    delete mpSimulationDialog;
+  }
+  if (mpTLMCoSimulationDialog) {
+    delete mpTLMCoSimulationDialog;
+  }
   /* save the TransformationsWidget last window geometry and splitters state. */
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
+  QSettings *pSettings = Utilities::getApplicationSettings();
   QHashIterator<QString, TransformationsWidget*> transformationsWidgets(mTransformationsWidgetHash);
   if (mTransformationsWidgetHash.size() > 0) {
     transformationsWidgets.toBack();
@@ -643,7 +550,6 @@ void MainWindow::beforeClosingMainWindow()
       pSettings->setValue("equationsNestedVerticalSplitter", pTransformationsWidget->getEquationsNestedVerticalSplitter()->saveState());
       pSettings->setValue("equationsHorizontalSplitter", pTransformationsWidget->getEquationsHorizontalSplitter()->saveState());
       pSettings->setValue("transformationsVerticalSplitter", pTransformationsWidget->getTransformationsVerticalSplitter()->saveState());
-      pSettings->setValue("transformationsHorizontalSplitter", pTransformationsWidget->getTransformationsHorizontalSplitter()->saveState());
       pSettings->endGroup();
     }
   }
@@ -655,6 +561,12 @@ void MainWindow::beforeClosingMainWindow()
     delete pTransformationsWidget;
   }
   mTransformationsWidgetHash.clear();
+  /* save stackframes list and locals columns width */
+  pSettings->beginGroup("algorithmicDebugger");
+  pSettings->setValue("stackFramesTreeState", mpStackFramesWidget->getStackFramesTreeWidget()->header()->saveState());
+  pSettings->setValue("breakPointsTreeState", mpBreakpointsWidget->getBreakpointsTreeView()->header()->saveState());
+  pSettings->setValue("localsTreeState", mpLocalsWidget->getLocalsTreeView()->header()->saveState());
+  pSettings->endGroup();
   /* save OMEdit MainWindow geometry state */
   pSettings->setValue("application/geometry", saveGeometry());
   pSettings->setValue("application/windowState", saveState());
@@ -662,128 +574,165 @@ void MainWindow::beforeClosingMainWindow()
   pSettings->setValue("lastOpenDirectory", StringHandler::getLastOpenDirectory());
   // save the grid lines
   pSettings->setValue("modeling/gridLines", mpShowGridLinesAction->isChecked());
+  // save the splitter state of welcome page
+  pSettings->setValue("welcomePage/splitterState", mpWelcomePageWidget->getSplitter()->saveState());
   delete pSettings;
+  // delete the OptionsDialog object
+  OptionsDialog::destroy();
+  // delete the MessagesWidget object
+  MessagesWidget::destroy();
+  // delete the GDBAdapter object
+  GDBAdapter::destroy();
+  // delete the GitCommands object
+  GitCommands::destroy();
 }
 
+/*!
+ * \brief MainWindow::openDroppedFile
+ * Opens the dropped file.
+ * \param event
+ */
 void MainWindow::openDroppedFile(QDropEvent *event)
 {
   int progressValue = 0;
   mpProgressBar->setRange(0, event->mimeData()->urls().size());
   showProgressBar();
   //retrieves the filenames of all the dragged files in list and opens the valid files.
-  foreach (QUrl fileUrl, event->mimeData()->urls())
-  {
+  foreach (QUrl fileUrl, event->mimeData()->urls()) {
     QFileInfo fileInfo(fileUrl.toLocalFile());
     // show file loading message
     mpStatusBar->showMessage(QString(Helper::loading).append(": ").append(fileInfo.absoluteFilePath()));
     mpProgressBar->setValue(++progressValue);
     // check the file extension
     QRegExp resultFilesRegExp("\\b(mat|plt|csv)\\b");
-    if ((fileInfo.suffix().compare("mo", Qt::CaseInsensitive) == 0) || (fileInfo.suffix().compare("xml", Qt::CaseInsensitive) == 0)) {
-      mpLibraryTreeWidget->openFile(fileInfo.absoluteFilePath(), Helper::utf8, false);
-    } else if (resultFilesRegExp.indexIn(fileInfo.suffix()) != -1) {
+    if (resultFilesRegExp.indexIn(fileInfo.suffix()) != -1) {
       openResultFiles(QStringList(fileInfo.absoluteFilePath()));
-    }
-    else
-    {
-      QMessageBox *pMessageBox = new QMessageBox(this);
-      pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::error));
-      pMessageBox->setIcon(QMessageBox::Critical);
-      pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
-      pMessageBox->setText(GUIMessages::getMessage(GUIMessages::FILE_FORMAT_NOT_SUPPORTED).arg(fileInfo.fileName())
-                           .arg(Helper::omFileTypes));
-      pMessageBox->setStandardButtons(QMessageBox::Ok);
-      pMessageBox->exec();
+    } else {
+      mpLibraryWidget->openFile(fileInfo.absoluteFilePath(), Helper::utf8, false);
     }
   }
   mpStatusBar->clearMessage();
   hideProgressBar();
 }
 
+/*!
+ * \brief MainWindow::openResultFiles
+ * Opens the result file(s).
+ * \param fileNames
+ */
 void MainWindow::openResultFiles(QStringList fileNames)
 {
-  QString currentDirectory = mpOMCProxy->changeDirectory();
-  foreach (QString fileName, fileNames)
-  {
+  foreach (QString fileName, fileNames) {
     QFileInfo fileInfo(fileName);
-    mpOMCProxy->changeDirectory(fileInfo.absoluteDir().absolutePath());
-    QStringList list = mpOMCProxy->readSimulationResultVars(fileInfo.fileName());
+    QStringList list = mpOMCProxy->readSimulationResultVars(fileInfo.absoluteFilePath());
     // close the simulation result file.
     mpOMCProxy->closeSimulationResultFile();
     if (list.size() > 0) {
       mpPerspectiveTabbar->setCurrentIndex(2);
       mpVariablesWidget->insertVariablesItemsToTree(fileInfo.fileName(), fileInfo.absoluteDir().absolutePath(), list, SimulationOptions());
-      mpVariablesDockWidget->show();
     }
   }
-  mpOMCProxy->changeDirectory(currentDirectory);
 }
 
-void MainWindow::simulate(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::simulate(LibraryTreeItem *pLibraryTreeItem)
 {
+  if (!mpSimulationDialog) {
+    mpSimulationDialog = new SimulationDialog(this);
+  }
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  mpSimulationDialog->directSimulate(pLibraryTreeNode, false, false);
+  mpSimulationDialog->directSimulate(pLibraryTreeItem, false, false, false);
 }
 
-void MainWindow::simulateWithTransformationalDebugger(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::simulateWithTransformationalDebugger(LibraryTreeItem *pLibraryTreeItem)
 {
+  if (!mpSimulationDialog) {
+    mpSimulationDialog = new SimulationDialog(this);
+  }
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  mpSimulationDialog->directSimulate(pLibraryTreeNode, true, false);
+  mpSimulationDialog->directSimulate(pLibraryTreeItem, true, false, false);
 }
 
-void MainWindow::simulateWithAlgorithmicDebugger(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::simulateWithAlgorithmicDebugger(LibraryTreeItem *pLibraryTreeItem)
 {
+  if (!mpSimulationDialog) {
+    mpSimulationDialog = new SimulationDialog(this);
+  }
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  mpSimulationDialog->directSimulate(pLibraryTreeNode, false, true);
+  mpSimulationDialog->directSimulate(pLibraryTreeItem, false, true, false);
 }
 
-void MainWindow::simulationSetup(LibraryTreeNode *pLibraryTreeNode)
+#if !defined(WITHOUT_OSG)
+void MainWindow::simulateWithAnimation(LibraryTreeItem *pLibraryTreeItem)
 {
+  if (!mpSimulationDialog) {
+    mpSimulationDialog = new SimulationDialog(this);
+  }
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  mpSimulationDialog->show(pLibraryTreeNode, false, SimulationOptions());
+  mpSimulationDialog->directSimulate(pLibraryTreeItem, false, false, true);
+}
+#endif
+
+void MainWindow::simulationSetup(LibraryTreeItem *pLibraryTreeItem)
+{
+  if (!mpSimulationDialog) {
+    mpSimulationDialog = new SimulationDialog(this);
+  }
+  /* if Modelica text is changed manually by user then validate it before saving. */
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
+      return;
+    }
+  }
+  mpSimulationDialog->show(pLibraryTreeItem, false, SimulationOptions());
 }
 
-void MainWindow::instantiatesModel(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::instantiateModel(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
   // set the status message.
-  mpStatusBar->showMessage(QString(Helper::instantiateModel).append(" ").append(pLibraryTreeNode->getNameStructure()));
+  mpStatusBar->showMessage(QString(Helper::instantiateModel).append(" ").append(pLibraryTreeItem->getNameStructure()));
   // show the progress bar
   mpProgressBar->setRange(0, 0);
   showProgressBar();
-  QString instantiateModelResult = mpOMCProxy->instantiateModel(pLibraryTreeNode->getNameStructure());
+  // check reset messages number before instantiating
+  if (OptionsDialog::instance()->getMessagesPage()->getResetMessagesNumberBeforeSimulationCheckBox()->isChecked()) {
+    MessagesWidget::instance()->resetMessagesNumber();
+  }
+  // check clear messages browser before instantiating
+  if (OptionsDialog::instance()->getMessagesPage()->getClearMessagesBrowserBeforeSimulationCheckBox()->isChecked()) {
+    MessagesWidget::instance()->clearMessages();
+  }
+  QString instantiateModelResult = mpOMCProxy->instantiateModel(pLibraryTreeItem->getNameStructure());
   if (!instantiateModelResult.isEmpty()) {
-    QString windowTitle = QString(Helper::instantiateModel).append(" - ").append(pLibraryTreeNode->getName());
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                tr("Instantiation of %1 completed successfully.").arg(pLibraryTreeItem->getNameStructure()),
+                                                Helper::scriptingKind, Helper::notificationLevel));
+    QString windowTitle = QString(Helper::instantiateModel).append(" - ").append(pLibraryTreeItem->getNameStructure());
     InformationDialog *pInformationDialog = new InformationDialog(windowTitle, instantiateModelResult, true, this);
     pInformationDialog->show();
   }
@@ -793,23 +742,33 @@ void MainWindow::instantiatesModel(LibraryTreeNode *pLibraryTreeNode)
   mpStatusBar->clearMessage();
 }
 
-void MainWindow::checkModel(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::checkModel(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
   // set the status message.
-  mpStatusBar->showMessage(QString(Helper::checkModel).append(" ").append(pLibraryTreeNode->getNameStructure()));
+  mpStatusBar->showMessage(QString(Helper::checkModel).append(" ").append(pLibraryTreeItem->getNameStructure()));
   // show the progress bar
   mpProgressBar->setRange(0, 0);
   showProgressBar();
-  QString checkModelResult = mpOMCProxy->checkModel(pLibraryTreeNode->getNameStructure());
+  // check reset messages number before checking
+  if (OptionsDialog::instance()->getMessagesPage()->getResetMessagesNumberBeforeSimulationCheckBox()->isChecked()) {
+    MessagesWidget::instance()->resetMessagesNumber();
+  }
+  // check clear messages browser before checking
+  if (OptionsDialog::instance()->getMessagesPage()->getClearMessagesBrowserBeforeSimulationCheckBox()->isChecked()) {
+    MessagesWidget::instance()->clearMessages();
+  }
+  QString checkModelResult = mpOMCProxy->checkModel(pLibraryTreeItem->getNameStructure());
   if (!checkModelResult.isEmpty()) {
-    QString windowTitle = QString(Helper::checkModel).append(" - ").append(pLibraryTreeNode->getName());
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                tr("Check of %1 completed successfully.").arg(pLibraryTreeItem->getNameStructure()),
+                                                Helper::scriptingKind, Helper::notificationLevel));
+    QString windowTitle = QString(Helper::checkModel).append(" - ").append(pLibraryTreeItem->getNameStructure());
     InformationDialog *pInformationDialog = new InformationDialog(windowTitle, checkModelResult, false, this);
     pInformationDialog->show();
   }
@@ -819,23 +778,22 @@ void MainWindow::checkModel(LibraryTreeNode *pLibraryTreeNode)
   mpStatusBar->clearMessage();
 }
 
-void MainWindow::checkAllModels(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::checkAllModels(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
   // set the status message.
-  mpStatusBar->showMessage(QString(Helper::checkModel).append(" ").append(pLibraryTreeNode->getNameStructure()));
+  mpStatusBar->showMessage(QString(Helper::checkModel).append(" ").append(pLibraryTreeItem->getNameStructure()));
   // show the progress bar
   mpProgressBar->setRange(0, 0);
   showProgressBar();
-  QString checkAllModelsResult = mpOMCProxy->checkAllModelsRecursive(pLibraryTreeNode->getNameStructure());
+  QString checkAllModelsResult = mpOMCProxy->checkAllModelsRecursive(pLibraryTreeItem->getNameStructure());
   if (!checkAllModelsResult.isEmpty()) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, checkAllModelsResult, Helper::scriptingKind,
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, checkAllModelsResult, Helper::scriptingKind,
                                                 Helper::notificationLevel));
   }
   // hide progress bar
@@ -844,12 +802,11 @@ void MainWindow::checkAllModels(LibraryTreeNode *pLibraryTreeNode)
   mpStatusBar->clearMessage();
 }
 
-void MainWindow::exportModelFMU(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::exportModelFMU(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
@@ -858,13 +815,25 @@ void MainWindow::exportModelFMU(LibraryTreeNode *pLibraryTreeNode)
   // show the progress bar
   mpProgressBar->setRange(0, 0);
   showProgressBar();
-  double version = mpOptionsDialog->getFMIPage()->getFMIExportVersion();
-  QString FMUName = mpOptionsDialog->getFMIPage()->getFMUNameTextBox()->text();
-  if (mpOMCProxy->translateModelFMU(pLibraryTreeNode->getNameStructure(), version, FMUName)) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::FMU_GENERATED)
-                                                .arg(FMUName.isEmpty() ? pLibraryTreeNode->getNameStructure() : FMUName)
-                                                .arg(mpOMCProxy->changeDirectory()), Helper::scriptingKind,
-                                                Helper::notificationLevel));
+  double version = OptionsDialog::instance()->getFMIPage()->getFMIExportVersion();
+  QString type = OptionsDialog::instance()->getFMIPage()->getFMIExportType();
+  QString FMUName = OptionsDialog::instance()->getFMIPage()->getFMUNameTextBox()->text();
+  QSettings *pSettings = Utilities::getApplicationSettings();
+  QList<QString> platforms = pSettings->value("FMIExport/Platforms").toStringList();
+  int index = platforms.indexOf("none");
+  if (index > -1) {
+    platforms.removeAt(index);
+  }
+  QString fmuFileName = mpOMCProxy->buildModelFMU(pLibraryTreeItem->getNameStructure(), version, type, FMUName, platforms);
+  if (!fmuFileName.isEmpty()) {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                          GUIMessages::getMessage(GUIMessages::FMU_GENERATED).arg(fmuFileName),
+                                                          Helper::scriptingKind, Helper::notificationLevel));
+  }
+  //trace export FMU
+  if (OptionsDialog::instance()->getTraceabilityPage()->getTraceabilityGroupBox()->isChecked() && !fmuFileName.isEmpty()) {
+    //Push traceability information automaticaly to Daemon
+    MainWindow::instance()->getCommitChangesDialog()->generateTraceabilityURI("fmuExport", pLibraryTreeItem->getFileName(), pLibraryTreeItem->getNameStructure(), fmuFileName);
   }
   // hide progress bar
   hideProgressBar();
@@ -872,12 +841,11 @@ void MainWindow::exportModelFMU(LibraryTreeNode *pLibraryTreeNode)
   mpStatusBar->clearMessage();
 }
 
-void MainWindow::exportModelXML(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::exportModelXML(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
@@ -886,10 +854,11 @@ void MainWindow::exportModelXML(LibraryTreeNode *pLibraryTreeNode)
   // show the progress bar
   mpProgressBar->setRange(0, 0);
   showProgressBar();
-  if (mpOMCProxy->translateModelXML(pLibraryTreeNode->getNameStructure())) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::XML_GENERATED)
-                                                .arg(mpOMCProxy->changeDirectory()).arg(pLibraryTreeNode->getNameStructure()),
-                                                Helper::scriptingKind, Helper::notificationLevel));
+  QString xmlFileName = mpOMCProxy->translateModelXML(pLibraryTreeItem->getNameStructure());
+  if (!xmlFileName.isEmpty()) {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                          GUIMessages::getMessage(GUIMessages::XML_GENERATED).arg(xmlFileName),
+                                                          Helper::scriptingKind, Helper::notificationLevel));
   }
   // hide progress bar
   hideProgressBar();
@@ -897,116 +866,105 @@ void MainWindow::exportModelXML(LibraryTreeNode *pLibraryTreeNode)
   mpStatusBar->clearMessage();
 }
 
-void MainWindow::exportModelFigaro(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::exportModelFigaro(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  ExportFigaroDialog *pExportFigaroDialog = new ExportFigaroDialog(this, pLibraryTreeNode);
+  ExportFigaroDialog *pExportFigaroDialog = new ExportFigaroDialog(pLibraryTreeItem, this);
   pExportFigaroDialog->exec();
 }
 
 /*!
  * \brief MainWindow::fetchInterfaceData
- * \param pLibraryTreeNode
+ * \param pLibraryTreeItem
  * Fetches the interface data for TLM co-simulation.
  */
-void MainWindow::fetchInterfaceData(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::fetchInterfaceData(LibraryTreeItem *pLibraryTreeItem, QString singleModel)
 {
-  /* if MetaModel text is changed manually by user then validate it before fetaching the interface data. */
-  if (pLibraryTreeNode->getModelWidget()) {
-      TLMEditor *pTLMEditor = dynamic_cast<TLMEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-      if (pTLMEditor && !pTLMEditor->validateMetaModelText()) {
-          return;
-        }
+  /* if CompositeModel text is changed manually by user then validate it before fetching the interface data. */
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
+      return;
     }
-  if (mpOptionsDialog->getTLMPage()->getTLMManagerProcessTextBox()->text().isEmpty()) {
-    QString message;
-#ifdef Q_OS_MAC
-    message = GUIMessages::getMessage(GUIMessages::TLMMANAGER_NOT_SET).arg(GUIMessages::getMessage(GUIMessages::TLMMANAGER_NOT_SET_MSG_MAC));
-#else
-    message = GUIMessages::getMessage(GUIMessages::TLMMANAGER_NOT_SET).arg(GUIMessages::getMessage(GUIMessages::TLMMANAGER_NOT_SET_MSG));
-#endif
-    QMessageBox::information(this, QString(Helper::applicationName).append(" - ").append(Helper::information), message, Helper::ok);
+  }
+  if (pLibraryTreeItem->isSaved()) {
+    fetchInterfaceDataHelper(pLibraryTreeItem, singleModel);
   } else {
-    if (pLibraryTreeNode->isSaved()) {
-      fetchInterfaceDataHelper(pLibraryTreeNode);
-    } else {
-      QMessageBox *pMessageBox = new QMessageBox(this);
-      pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::question));
-      pMessageBox->setIcon(QMessageBox::Question);
-      pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
-      pMessageBox->setText(GUIMessages::getMessage(GUIMessages::METAMODEL_UNSAVED).arg(pLibraryTreeNode->getNameStructure()));
-      pMessageBox->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-      pMessageBox->setDefaultButton(QMessageBox::Yes);
-      int answer = pMessageBox->exec();
-      switch (answer) {
-        case QMessageBox::Yes:
-          if (mpLibraryTreeWidget->saveLibraryTreeNode(pLibraryTreeNode)) {
-            fetchInterfaceDataHelper(pLibraryTreeNode);
-          }
-          break;
-        case QMessageBox::No:
-        default:
-          break;
-      }
+    QMessageBox *pMessageBox = new QMessageBox(this);
+    pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::question));
+    pMessageBox->setIcon(QMessageBox::Question);
+    pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
+    pMessageBox->setText(GUIMessages::getMessage(GUIMessages::COMPOSITEMODEL_UNSAVED).arg(pLibraryTreeItem->getNameStructure()));
+    pMessageBox->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    pMessageBox->setDefaultButton(QMessageBox::Yes);
+    int answer = pMessageBox->exec();
+    switch (answer) {
+      case QMessageBox::Yes:
+        if (mpLibraryWidget->saveLibraryTreeItem(pLibraryTreeItem)) {
+          fetchInterfaceDataHelper(pLibraryTreeItem, singleModel);
+        }
+        break;
+      case QMessageBox::No:
+      default:
+        break;
     }
   }
 }
 
 /*!
  * \brief MainWindow::TLMSimulate
- * \param pLibraryTreeNode
+ * \param pLibraryTreeItem
  * Starts the TLM co-simulation.
  */
-void MainWindow::TLMSimulate(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::TLMSimulate(LibraryTreeItem *pLibraryTreeItem)
 {
-  /* if MetaModel text is changed manually by user then validate it before starting the TLM co-simulation. */
-  if (pLibraryTreeNode->getModelWidget()) {
-      TLMEditor *pTLMEditor = dynamic_cast<TLMEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-      if (pTLMEditor && !pTLMEditor->validateMetaModelText()) {
-          return;
-        }
+  if (!mpTLMCoSimulationDialog) {
+    mpTLMCoSimulationDialog = new TLMCoSimulationDialog(this);
+  }
+  /* if CompositeModel text is changed manually by user then validate it before starting the TLM co-simulation. */
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
+      return;
     }
-  if (pLibraryTreeNode->isSaved()) {
-      mpTLMCoSimulationDialog->show(pLibraryTreeNode);
-    } else {
-      QMessageBox *pMessageBox = new QMessageBox(this);
-      pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::question));
-      pMessageBox->setIcon(QMessageBox::Question);
-      pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
-      pMessageBox->setText(GUIMessages::getMessage(GUIMessages::METAMODEL_UNSAVED).arg(pLibraryTreeNode->getNameStructure()));
-      pMessageBox->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-      pMessageBox->setDefaultButton(QMessageBox::Yes);
-      int answer = pMessageBox->exec();
-      switch (answer) {
-        case QMessageBox::Yes:
-          if (mpLibraryTreeWidget->saveLibraryTreeNode(pLibraryTreeNode)) {
-              mpTLMCoSimulationDialog->show(pLibraryTreeNode);
-            }
-          break;
-        case QMessageBox::No:
-        default:
-          break;
+  }
+  if (pLibraryTreeItem->isSaved()) {
+    mpTLMCoSimulationDialog->show(pLibraryTreeItem);
+  } else {
+    QMessageBox *pMessageBox = new QMessageBox(this);
+    pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::question));
+    pMessageBox->setIcon(QMessageBox::Question);
+    pMessageBox->setAttribute(Qt::WA_DeleteOnClose);
+    pMessageBox->setText(GUIMessages::getMessage(GUIMessages::COMPOSITEMODEL_UNSAVED).arg(pLibraryTreeItem->getNameStructure()));
+    pMessageBox->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    pMessageBox->setDefaultButton(QMessageBox::Yes);
+    int answer = pMessageBox->exec();
+    switch (answer) {
+      case QMessageBox::Yes:
+        if (mpLibraryWidget->saveLibraryTreeItem(pLibraryTreeItem)) {
+          mpTLMCoSimulationDialog->show(pLibraryTreeItem);
         }
+        break;
+      case QMessageBox::No:
+      default:
+        break;
     }
+  }
 }
 
-void MainWindow::exportModelToOMNotebook(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::exportModelToOMNotebook(LibraryTreeItem *pLibraryTreeItem)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    ModelicaTextEditor *pModelicaTextEditor = dynamic_cast<ModelicaTextEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pModelicaTextEditor && !pModelicaTextEditor->validateModelicaText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
   QString omnotebookFileName = StringHandler::getSaveFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::exportToOMNotebook),
-                                                              NULL, Helper::omnotebookFileTypes, NULL, "onb", &pLibraryTreeNode->getName());
+                                                              NULL, Helper::omnotebookFileTypes, NULL, "onb", &pLibraryTreeItem->getName());
   // if user cancels the operation. or closes the export dialog box.
   if (omnotebookFileName.isEmpty()) {
     return;
@@ -1026,16 +984,16 @@ void MainWindow::exportModelToOMNotebook(LibraryTreeNode *pLibraryTreeNode)
   xmlDocument.appendChild(notebookElement);
   mpProgressBar->setValue(value++);
   // create title cell
-  createOMNotebookTitleCell(pLibraryTreeNode, xmlDocument, notebookElement);
+  createOMNotebookTitleCell(pLibraryTreeItem, xmlDocument, notebookElement);
   mpProgressBar->setValue(value++);
   // create image cell
   QStringList pathList = omnotebookFileName.split('/');
   pathList.removeLast();
   QString modelImagePath(pathList.join("/"));
-  createOMNotebookImageCell(pLibraryTreeNode, xmlDocument, notebookElement, modelImagePath);
+  createOMNotebookImageCell(pLibraryTreeItem, xmlDocument, notebookElement, modelImagePath);
   mpProgressBar->setValue(value++);
   // create a code cell
-  createOMNotebookCodeCell(pLibraryTreeNode, xmlDocument, notebookElement);
+  createOMNotebookCodeCell(pLibraryTreeItem, xmlDocument, notebookElement);
   mpProgressBar->setValue(value++);
   // create a file object and write the xml in it.
   QFile omnotebookFile(omnotebookFileName);
@@ -1052,22 +1010,22 @@ void MainWindow::exportModelToOMNotebook(LibraryTreeNode *pLibraryTreeNode)
 }
 
 //! creates a title cell in omnotebook xml file
-void MainWindow::createOMNotebookTitleCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement)
+void MainWindow::createOMNotebookTitleCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement)
 {
   QDomElement textCellElement = xmlDocument.createElement("TextCell");
   textCellElement.setAttribute("style", "Text");
   domElement.appendChild(textCellElement);
   // create text Element
   QDomElement textElement = xmlDocument.createElement("Text");
-  textElement.appendChild(xmlDocument.createTextNode("<html><head><meta name=\"qrichtext\" content=\"1\" /><head><body style=\"white-space: pre-wrap; font-family:MS Shell Dlg; font-size:8.25pt; font-weight:400; font-style:normal; text-decoration:none;\"><p style=\"margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:Arial; font-size:38pt; font-weight:600; color:#000000;\">" + pLibraryTreeNode->getName() + "</p></body></html>"));
+  textElement.appendChild(xmlDocument.createTextNode("<html><head><meta name=\"qrichtext\" content=\"1\" /><head><body style=\"white-space: pre-wrap; font-family:MS Shell Dlg; font-size:8.25pt; font-weight:400; font-style:normal; text-decoration:none;\"><p style=\"margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px; font-family:Arial; font-size:38pt; font-weight:600; color:#000000;\">" + pLibraryTreeItem->getName() + "</p></body></html>"));
   textCellElement.appendChild(textElement);
 }
 
 //! creates a image cell in omnotebook xml file
-void MainWindow::createOMNotebookImageCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement,
+void MainWindow::createOMNotebookImageCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement,
                                            QString filePath)
 {
-  GraphicsView *pGraphicsView = pLibraryTreeNode->getModelWidget()->getDiagramGraphicsView();
+  GraphicsView *pGraphicsView = pLibraryTreeItem->getModelWidget()->getDiagramGraphicsView();
   QPixmap modelImage(pGraphicsView->viewport()->size());
   modelImage.fill(QColor(Qt::transparent));
   QPainter painter(&modelImage);
@@ -1103,13 +1061,13 @@ void MainWindow::createOMNotebookImageCell(LibraryTreeNode *pLibraryTreeNode, QD
 }
 
 //! creates a code cell in omnotebook xml file
-void MainWindow::createOMNotebookCodeCell(LibraryTreeNode *pLibraryTreeNode, QDomDocument xmlDocument, QDomElement domElement)
+void MainWindow::createOMNotebookCodeCell(LibraryTreeItem *pLibraryTreeItem, QDomDocument xmlDocument, QDomElement domElement)
 {
   QDomElement textCellElement = xmlDocument.createElement("InputCell");
   domElement.appendChild(textCellElement);
   // create input Element
   QDomElement inputElement = xmlDocument.createElement("Input");
-  inputElement.appendChild(xmlDocument.createTextNode(mpOMCProxy->list(pLibraryTreeNode->getNameStructure())));
+  inputElement.appendChild(xmlDocument.createTextNode(mpOMCProxy->list(pLibraryTreeItem->getNameStructure())));
   textCellElement.appendChild(inputElement);
   // create output Element
   QDomElement outputElement = xmlDocument.createElement("Output");
@@ -1117,16 +1075,19 @@ void MainWindow::createOMNotebookCodeCell(LibraryTreeNode *pLibraryTreeNode, QDo
   textCellElement.appendChild(outputElement);
 }
 
+/*!
+ * \brief MainWindow::showTransformationsWidget
+ * Creates a TransformationsWidget and show it to the user.
+ * \param fileName
+ * \return
+ */
 TransformationsWidget *MainWindow::showTransformationsWidget(QString fileName)
 {
   TransformationsWidget *pTransformationsWidget = mTransformationsWidgetHash.value(fileName, 0);
-  if (!pTransformationsWidget)
-  {
-    pTransformationsWidget = new TransformationsWidget(fileName, this);
+  if (!pTransformationsWidget) {
+    pTransformationsWidget = new TransformationsWidget(fileName);
     mTransformationsWidgetHash.insert(fileName, pTransformationsWidget);
-  }
-  else
-  {
+  } else {
     pTransformationsWidget->reloadTransformations();
   }
   pTransformationsWidget->show();
@@ -1134,6 +1095,27 @@ TransformationsWidget *MainWindow::showTransformationsWidget(QString fileName)
   pTransformationsWidget->activateWindow();
   pTransformationsWidget->setWindowState(pTransformationsWidget->windowState() & (~Qt::WindowMinimized | Qt::WindowActive));
   return pTransformationsWidget;
+}
+
+/*!
+ * \brief MainWindow::findFileAndGoToLine
+ * Finds the file and opens it at specified line number.
+ * \param fileName
+ * \param lineNumber
+ */
+void MainWindow::findFileAndGoToLine(QString fileName, QString lineNumber)
+{
+  LibraryTreeItem *pLibraryTreeItem = mpLibraryWidget->getLibraryTreeModel()->getLibraryTreeItemFromFile(fileName, lineNumber.toInt());
+  if (pLibraryTreeItem) {
+    mpLibraryWidget->getLibraryTreeModel()->showModelWidget(pLibraryTreeItem);
+    if (pLibraryTreeItem->getModelWidget() && pLibraryTreeItem->getModelWidget()->getEditor()) {
+      pLibraryTreeItem->getModelWidget()->getTextViewToolButton()->setChecked(true);
+      pLibraryTreeItem->getModelWidget()->getEditor()->getPlainTextEdit()->goToLineNumber(lineNumber.toInt());
+    }
+  } else {
+    QString msg = tr("Unable to find the file <b>%1</b> with line number <b>%2</b>").arg(fileName).arg(lineNumber);
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, msg, Helper::scriptingKind, Helper::errorLevel));
+  }
 }
 
 void MainWindow::PlotCallbackFunction(void *p, int externalWindow, const char* filename, const char *title, const char *grid,
@@ -1239,19 +1221,18 @@ void MainWindow::openModelicaFile()
   QStringList fileNames;
   fileNames = StringHandler::getOpenFileNames(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseFiles),
                                               NULL, Helper::omFileTypes, NULL);
-  if (fileNames.isEmpty())
+  if (fileNames.isEmpty()) {
     return;
+  }
   int progressValue = 0;
   mpProgressBar->setRange(0, fileNames.size());
   showProgressBar();
-  foreach (QString file, fileNames)
-  {
+  foreach (QString file, fileNames) {
     file = file.replace("\\", "/");
     mpStatusBar->showMessage(QString(Helper::loading).append(": ").append(file));
     mpProgressBar->setValue(++progressValue);
     // if file doesn't exists
-    if (!QFile::exists(file))
-    {
+    if (!QFile::exists(file)) {
       QMessageBox *pMessageBox = new QMessageBox(this);
       pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::error));
       pMessageBox->setIcon(QMessageBox::Critical);
@@ -1260,10 +1241,8 @@ void MainWindow::openModelicaFile()
       pMessageBox->setInformativeText(QString(GUIMessages::getMessage(GUIMessages::FILE_NOT_FOUND).arg(file)));
       pMessageBox->setStandardButtons(QMessageBox::Ok);
       pMessageBox->exec();
-    }
-    else
-    {
-      mpLibraryTreeWidget->openFile(file, Helper::utf8, false);
+    } else {
+      mpLibraryWidget->openFile(file, Helper::utf8, false);
     }
   }
   mpStatusBar->clearMessage();
@@ -1283,7 +1262,7 @@ void MainWindow::loadModelicaLibrary()
     return;
   libraryPath = libraryPath + QDir::separator() + "package.mo";
   libraryPath = libraryPath.replace("\\", "/");
-  mpLibraryTreeWidget->openFile(libraryPath, Helper::utf8, true, true);
+  mpLibraryWidget->openFile(libraryPath, Helper::utf8, true, true);
 }
 
 void MainWindow::showOpenResultFileDialog()
@@ -1295,36 +1274,43 @@ void MainWindow::showOpenResultFileDialog()
   openResultFiles(fileNames);
 }
 
+/*!
+ * \brief MainWindow::showOpenTransformationFileDialog
+ * Slot activated when mpOpenTransformationFileAction triggered signal is raised.\n
+ * Shows a TransformationsWidget.
+ */
 void MainWindow::showOpenTransformationFileDialog()
 {
   QString fileName = StringHandler::getOpenFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseFile),
                                                     NULL, Helper::infoXmlFileTypes, NULL);
-  if (fileName.isEmpty())
+  if (fileName.isEmpty()) {
     return;
-
+  }
   showTransformationsWidget(fileName);
 }
 
 /*!
-  Creates a new TLM LibraryTreeNode & ModelWidget.\n
-  Slot activated when mpNewMetaModelFileAction triggered signal is raised.
-  */
-void MainWindow::createNewMetaModelFile()
+ * \brief MainWindow::createNewCompositeModelFile
+ * Creates a new TLM LibraryTreeItem & ModelWidget.\n
+ * Slot activated when mpNewCompositeModelFileAction triggered signal is raised.
+ */
+void MainWindow::createNewCompositeModelFile()
 {
-  QString metaModelName = mpLibraryTreeWidget->getUniqueLibraryTreeNodeName("MetaModel");
-  LibraryTreeNode *pLibraryTreeNode = mpLibraryTreeWidget->addLibraryTreeNode(LibraryTreeNode::TLM, metaModelName, false);
-  if (pLibraryTreeNode) {
-    pLibraryTreeNode->setSaveContentsType(LibraryTreeNode::SaveInOneFile);
-    mpLibraryTreeWidget->addToExpandedLibraryTreeNodesList(pLibraryTreeNode);
-    mpLibraryTreeWidget->showModelWidget(pLibraryTreeNode, true);
+  QString compositeModelName = mpLibraryWidget->getLibraryTreeModel()->getUniqueTopLevelItemName("CompositeModel");
+  LibraryTreeModel *pLibraryTreeModel = mpLibraryWidget->getLibraryTreeModel();
+  LibraryTreeItem *pLibraryTreeItem = pLibraryTreeModel->createLibraryTreeItem(LibraryTreeItem::CompositeModel, compositeModelName, compositeModelName, "",
+                                                                               false, pLibraryTreeModel->getRootLibraryTreeItem());
+  if (pLibraryTreeItem) {
+    mpLibraryWidget->getLibraryTreeModel()->showModelWidget(pLibraryTreeItem);
   }
 }
 
 /*!
-  Opens the TLM file(s).\n
-  Slot activated when mpOpenMetaModelFileAction triggered signal is raised.
-  */
-void MainWindow::openMetaModelFile()
+ * \brief MainWindow::openCompositeModelFile
+ * Opens the CompositeModel file(s).\n
+ * Slot activated when mpOpenCompositeModelFileAction triggered signal is raised.
+ */
+void MainWindow::openCompositeModelFile()
 {
   QStringList fileNames;
   fileNames = StringHandler::getOpenFileNames(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseFiles), NULL,
@@ -1350,7 +1336,7 @@ void MainWindow::openMetaModelFile()
       pMessageBox->setStandardButtons(QMessageBox::Ok);
       pMessageBox->exec();
     } else {
-      mpLibraryTreeWidget->openFile(file, Helper::utf8, false);
+      mpLibraryWidget->openFile(file, Helper::utf8, false);
     }
   }
   mpStatusBar->clearMessage();
@@ -1388,26 +1374,37 @@ void MainWindow::loadExternalModels()
       pMessageBox->setStandardButtons(QMessageBox::Ok);
       pMessageBox->exec();
     } else {
-      QFileInfo fileInfo(file);
-      LibraryTreeNode *pLibraryTreeNode = mpLibraryTreeWidget->addLibraryTreeNode(LibraryTreeNode::Text, fileInfo.completeBaseName(), true);
-      if (pLibraryTreeNode) {
-        pLibraryTreeNode->setSaveContentsType(LibraryTreeNode::SaveInOneFile);
-        pLibraryTreeNode->setIsSaved(true);
-        pLibraryTreeNode->setFileName(fileInfo.absoluteFilePath());
-        mpLibraryTreeWidget->addToExpandedLibraryTreeNodesList(pLibraryTreeNode);
-      }
+      mpLibraryWidget->openFile(file, Helper::utf8, false, false, true);
     }
   }
   mpStatusBar->clearMessage();
   hideProgressBar();
 }
 
+/*!
+ * \brief MainWindow::openDirectory
+ * Opens the directory.
+ */
+void MainWindow::openDirectory()
+{
+  QString dir = StringHandler::getExistingDirectory(this, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::chooseDirectory), NULL);
+  if (dir.isEmpty()) {
+    return;
+  }
+  mpLibraryWidget->openFile(dir, Helper::utf8, true);
+}
+
+/*!
+ * \brief MainWindow::loadSystemLibrary
+ * Loads a system library.
+ */
 void MainWindow::loadSystemLibrary()
 {
   QAction *pAction = qobject_cast<QAction*>(sender());
   if (pAction) {
     /* check if library is already loaded. */
-    if (mpOMCProxy->existClass(pAction->text())) {
+    LibraryTreeModel *pLibraryTreeModel = mpLibraryWidget->getLibraryTreeModel();
+    if (pLibraryTreeModel->findLibraryTreeItemOneLevel(pAction->text())) {
       QMessageBox *pMessageBox = new QMessageBox(this);
       pMessageBox->setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::information));
       pMessageBox->setIcon(QMessageBox::Information);
@@ -1422,8 +1419,12 @@ void MainWindow::loadSystemLibrary()
       mpProgressBar->setRange(0, 0);
       showProgressBar();
       mpStatusBar->showMessage(QString(Helper::loading).append(": ").append(pAction->text()));
-      if (mpOMCProxy->loadModel(pAction->text())) {
-        mpLibraryTreeWidget->loadDependentLibraries(mpOMCProxy->getClassNames());
+
+      if (pAction->text().compare("OpenModelica") == 0) {
+        pLibraryTreeModel->createLibraryTreeItem(pAction->text(), pLibraryTreeModel->getRootLibraryTreeItem(), true, true, true);
+        pLibraryTreeModel->checkIfAnyNonExistingClassLoaded();
+      } else if (mpOMCProxy->loadModel(pAction->text())) {
+        mpLibraryWidget->getLibraryTreeModel()->loadDependentLibraries(mpOMCProxy->getClassNames());
       }
       mpStatusBar->clearMessage();
       hideProgressBar();
@@ -1432,31 +1433,25 @@ void MainWindow::loadSystemLibrary()
 }
 
 /*!
- * \brief MainWindow::readOutputFile
- * Reads the available output data from file and adds it to MessagesWidget.
- * \param bytes
+ * \brief MainWindow::writeOutputFileData
+ * Writes the output data from stdout file and adds it to MessagesWidget.
+ * \param data
  */
-void MainWindow::readOutputFile(qint64 bytes)
+void MainWindow::writeOutputFileData(QString data)
 {
-  QString data = mOutputFile.read(bytes);
-  mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, data, Helper::scriptingKind, Helper::notificationLevel));
+  MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, data,
+                                                        Helper::scriptingKind, Helper::notificationLevel));
 }
 
 /*!
- * \brief MainWindow::readErrorFile
- * Reads the available error data from file and adds it to MessagesWidget.
- * \param bytes
+ * \brief MainWindow::writeErrorFileData
+ * Writes the error data from stderr file and adds it to MessagesWidget.
+ * \param data
  */
-void MainWindow::readErrorFile(qint64 bytes)
+void MainWindow::writeErrorFileData(QString data)
 {
-  QString data = mErrorFile.read(bytes);
-  mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, data, Helper::scriptingKind, Helper::notificationLevel));
-}
-
-void MainWindow::focusSearchClassWidget(bool visible)
-{
-  if (visible)
-    mpSearchClassWidget->getSearchClassTextBox()->setFocus();
+  MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, data,
+                                                        Helper::scriptingKind, Helper::errorLevel));
 }
 
 //! Opens the recent file.
@@ -1465,83 +1460,174 @@ void MainWindow::openRecentFile()
   QAction *pAction = qobject_cast<QAction*>(sender());
   if (pAction) {
     QStringList dataList = pAction->data().toStringList();
-    mpLibraryTreeWidget->openFile(dataList.at(0), dataList.at(1), true, true);
+    mpLibraryWidget->openFile(dataList.at(0), dataList.at(1), true, true);
   }
 }
 
 void MainWindow::clearRecentFilesList()
 {
-  QSettings *pSettings = OpenModelica::getApplicationSettings();
+  QSettings *pSettings = Utilities::getApplicationSettings();
   pSettings->remove("recentFilesList/files");
   updateRecentFileActions();
   mpWelcomePageWidget->addRecentFilesListItems();
+}
+
+/*!
+ * \brief MainWindow::undo
+ * Calls the undo command for the selected view.
+ */
+void MainWindow::undo()
+{
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget &&
+      ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+       (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+    pModelWidget->clearSelection();
+    pModelWidget->getUndoStack()->undo();
+    pModelWidget->updateClassAnnotationIfNeeded();
+    pModelWidget->updateModelText(false);
+  }
+  if (pModelWidget && pModelWidget->getEditor() && (pModelWidget->getEditor()->getPlainTextEdit()->document()->isUndoAvailable())) {
+    if (pModelWidget &&
+        ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+         (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+      pModelWidget->getEditor()->setForceSetPlainText(true);
+    }
+    pModelWidget->getEditor()->getPlainTextEdit()->document()->undo();
+//    if (pModelWidget->getEditor()->isVisible() &&
+//        pModelWidget->getEditor()->getPlainTextEdit()->document()->availableUndoSteps() + 1 == pModelWidget->getUndoStack()->index()) {
+//      pModelWidget->clearSelection();
+//      pModelWidget->getUndoStack()->undo();
+//      pModelWidget->updateClassAnnotationIfNeeded();
+//    } else {
+//      pModelWidget->getEditor()->setTextChanged(true);
+//    }
+//    pModelWidget->updateModelText(false);
+    if (pModelWidget &&
+        ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+         (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+      pModelWidget->getEditor()->setForceSetPlainText(false);
+    }
+  }
+}
+
+/*!
+ * \brief MainWindow::redo
+ * Calls the redo command for the selected view.
+ */
+void MainWindow::redo()
+{
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget &&
+      ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+       (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+    pModelWidget->clearSelection();
+    pModelWidget->getUndoStack()->redo();
+    pModelWidget->updateClassAnnotationIfNeeded();
+    pModelWidget->updateModelText(false);
+  }
+  if (pModelWidget && pModelWidget->getEditor() && (pModelWidget->getEditor()->getPlainTextEdit()->document()->isRedoAvailable())) {
+    if (pModelWidget &&
+        ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+         (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+      pModelWidget->getEditor()->setForceSetPlainText(true);
+    }
+    pModelWidget->getEditor()->getPlainTextEdit()->document()->redo();
+//    if (pModelWidget->getEditor()->isVisible() &&
+//        pModelWidget->getEditor()->getPlainTextEdit()->document()->availableRedoSteps() == pModelWidget->getUndoStack()->index()) {
+//      pModelWidget->clearSelection();
+//      pModelWidget->getUndoStack()->redo();
+//      pModelWidget->updateClassAnnotationIfNeeded();
+//    } else {
+//      pModelWidget->getEditor()->setTextChanged(true);
+//    }
+//    pModelWidget->updateModelText(false);
+    if (pModelWidget &&
+        ((pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) ||
+         (pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()))) {
+      pModelWidget->getEditor()->setForceSetPlainText(false);
+    }
+  }
+}
+
+/*!
+ * \brief MainWindow::focusFilterClasses
+ * Sets the focus on filter classes text box in Libraries Browser.
+ */
+void MainWindow::focusFilterClasses()
+{
+  mpLibraryWidget->getTreeSearchFilters()->getFilterTextBox()->setFocus(Qt::ActiveWindowFocusReason);
 }
 
 void MainWindow::setShowGridLines(bool showLines)
 {
   mpModelWidgetContainer->setShowGridLines(showLines);
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    if (pModelWidget->getDiagramGraphicsView()->isVisible())
-      pModelWidget->getDiagramGraphicsView()->scene()->update();
-    else if (pModelWidget->getIconGraphicsView()->isVisible())
-      pModelWidget->getIconGraphicsView()->scene()->update();
+  if (pModelWidget && pModelWidget->getIconGraphicsView() && pModelWidget->getIconGraphicsView()->isVisible()) {
+    pModelWidget->getIconGraphicsView()->scene()->update();
+  } else if (pModelWidget && pModelWidget->getDiagramGraphicsView() && pModelWidget->getDiagramGraphicsView()->isVisible()) {
+    pModelWidget->getDiagramGraphicsView()->scene()->update();
   }
 }
 
-//! Tells the current model to reset zoom to 100%.
-//! @see zoomIn()
-//! @see zoomOut()
+/*!
+ * \brief MainWindow::resetZoom
+ * Tells the current model to reset zoom to 100%.
+ * \sa MainWindow::zoomIn()
+ * \sa MainWindow::zoomOut()
+ */
 void MainWindow::resetZoom()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    if (pModelWidget->getDiagramGraphicsView()->isVisible())
+  if (pModelWidget) {
+    if (pModelWidget->getDiagramGraphicsView()->isVisible()) {
       pModelWidget->getDiagramGraphicsView()->resetZoom();
-    else if (pModelWidget->getIconGraphicsView()->isVisible())
+    } else if (pModelWidget->getIconGraphicsView()->isVisible()) {
       pModelWidget->getIconGraphicsView()->resetZoom();
+    } else if (pModelWidget->getEditor()->isVisible()) {
+      pModelWidget->getEditor()->getPlainTextEdit()->resetZoom();
+    }
   }
 }
 
-//! Tells the current model to increase its zoom factor.
-//! @see resetZoom()
-//! @see zoomOut()
+/*!
+ * \brief MainWindow::zoomIn
+ * Tells the current model to increase its zoom factor.
+ * \sa MainWindow::resetZoom()
+ * \sa MainWindow::zoomOut()
+ */
 void MainWindow::zoomIn()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    if (pModelWidget->getDiagramGraphicsView()->isVisible())
+  if (pModelWidget) {
+    if (pModelWidget->getDiagramGraphicsView()->isVisible()) {
       pModelWidget->getDiagramGraphicsView()->zoomIn();
-    else if (pModelWidget->getIconGraphicsView()->isVisible())
+    } else if (pModelWidget->getIconGraphicsView()->isVisible()) {
       pModelWidget->getIconGraphicsView()->zoomIn();
+    } else if (pModelWidget->getEditor()->isVisible()) {
+      pModelWidget->getEditor()->getPlainTextEdit()->zoomIn();
+    }
   }
 }
 
-//! Tells the current model to decrease its zoom factor.
-//! @see resetZoom()
-//! @see zoomIn()
+/*!
+ * \brief MainWindow::zoomOut
+ * Tells the current model to decrease its zoom factor.
+ * \sa MainWindow::resetZoom()
+ * \sa MainWindow::zoomIn()
+ */
 void MainWindow::zoomOut()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    if (pModelWidget->getDiagramGraphicsView()->isVisible())
+  if (pModelWidget) {
+    if (pModelWidget->getDiagramGraphicsView()->isVisible()) {
       pModelWidget->getDiagramGraphicsView()->zoomOut();
-    else if (pModelWidget->getIconGraphicsView()->isVisible())
+    } else if (pModelWidget->getIconGraphicsView()->isVisible()) {
       pModelWidget->getIconGraphicsView()->zoomOut();
+    } else if (pModelWidget->getEditor()->isVisible()) {
+      pModelWidget->getEditor()->getPlainTextEdit()->zoomOut();
+    }
   }
-}
-
-void MainWindow::showAlgorithmicDebugger()
-{
-  mpDebuggerMainWindow->show();
-  mpDebuggerMainWindow->raise();
-  mpDebuggerMainWindow->activateWindow();
-  mpDebuggerMainWindow->setWindowState(mpDebuggerMainWindow->windowState() & (~Qt::WindowMinimized | Qt::WindowActive));
-  mpDebuggerMainWindow->restoreWindows();
 }
 
 /*!
@@ -1646,18 +1732,53 @@ void MainWindow::tileSubWindowsVertically()
   }
 }
 
-void MainWindow::instantiatesModel()
+/*!
+ * \brief MainWindow::toggleTabOrSubWindowView
+ * Slot activated when mpToggleTabOrSubWindowView triggered signal is raised.\n
+ * Toggles between tab or sub-window view mode.
+ */
+void MainWindow::toggleTabOrSubWindowView()
+{
+  QMdiArea *pMdiArea = 0;
+  // get the current QMdiArea
+  switch (mpCentralStackedWidget->currentIndex()) {
+    case 1:
+      pMdiArea = mpModelWidgetContainer;
+      break;
+    case 2:
+      pMdiArea = mpPlotWindowContainer;
+      break;
+    default:
+      return;
+  }
+  // set the QMdiArea view mode
+  if (pMdiArea) {
+    QMdiSubWindow *pSubWindow = 0;
+    switch (pMdiArea->viewMode()) {
+      case QMdiArea::SubWindowView:
+        pMdiArea->setViewMode(QMdiArea::TabbedView);
+        break;
+      case QMdiArea::TabbedView:
+        pMdiArea->setViewMode(QMdiArea::SubWindowView);
+        pSubWindow = pMdiArea->currentSubWindow();
+        if (pSubWindow) {
+          pSubWindow->show();
+          pSubWindow->setWindowState(Qt::WindowMaximized);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+void MainWindow::instantiateModel()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      instantiatesModel(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    instantiateModel(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("instantiating")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1665,15 +1786,10 @@ void MainWindow::instantiatesModel()
 void MainWindow::checkModel()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      checkModel(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    checkModel(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("checking")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1681,15 +1797,10 @@ void MainWindow::checkModel()
 void MainWindow::checkAllModels()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      checkAllModels(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    checkAllModels(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("checking")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1701,12 +1812,25 @@ void MainWindow::checkAllModels()
 void MainWindow::simulateModel()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      simulate(pLibraryTreeNode);
+  if (pModelWidget) {
+    simulate(pModelWidget->getLibraryTreeItem());
   }
+}
+
+/*!
+  Simualtes the model directly with animation flag.
+  */
+//!
+void MainWindow::simulateModelWithAnimation()
+{
+#if !defined(WITHOUT_OSG)
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget) {
+    simulateWithAnimation(pModelWidget->getLibraryTreeItem());
+  }
+#else
+  assert(0);
+#endif
 }
 
 /*!
@@ -1715,11 +1839,8 @@ void MainWindow::simulateModel()
 void MainWindow::simulateModelWithTransformationalDebugger()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      simulateWithTransformationalDebugger(pLibraryTreeNode);
+  if (pModelWidget) {
+    simulateWithTransformationalDebugger(pModelWidget->getLibraryTreeItem());
   }
 }
 
@@ -1729,11 +1850,8 @@ void MainWindow::simulateModelWithTransformationalDebugger()
 void MainWindow::simulateModelWithAlgorithmicDebugger()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      simulateWithAlgorithmicDebugger(pLibraryTreeNode);
+  if (pModelWidget) {
+    simulateWithAlgorithmicDebugger(pModelWidget->getLibraryTreeItem());
   }
 }
 
@@ -1744,10 +1862,7 @@ void MainWindow::openSimulationDialog()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
   if (pModelWidget) {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode) {
-      simulationSetup(pLibraryTreeNode);
-    }
+    simulationSetup(pModelWidget->getLibraryTreeItem());
   }
 }
 
@@ -1755,15 +1870,10 @@ void MainWindow::openSimulationDialog()
 void MainWindow::exportModelFMU()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      exportModelFMU(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    exportModelFMU(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("making FMU")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1772,15 +1882,10 @@ void MainWindow::exportModelFMU()
 void MainWindow::exportModelXML()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      exportModelXML(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    exportModelXML(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("making XML")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1789,16 +1894,28 @@ void MainWindow::exportModelXML()
 void MainWindow::exportModelFigaro()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      exportModelFigaro(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    exportModelFigaro(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("exporting to Figaro")), Helper::scriptingKind, Helper::notificationLevel));
+  }
+}
+
+/*!
+ * \brief MainWindow::showOpenModelicaCommandPrompt
+ * Opens the command prompt to compile OpenModelica generated code with MinGW and run it.
+ */
+void MainWindow::showOpenModelicaCommandPrompt()
+{
+  QString commandPrompt = "cmd.exe";
+  QString promptBatch = QString("%1/share/omc/scripts/Prompt.bat").arg(Helper::OpenModelicaHome);
+  QStringList args;
+  args << "/K" << promptBatch;
+  if (!QProcess::startDetached(commandPrompt, args, OptionsDialog::instance()->getGeneralSettingsPage()->getWorkingDirectory())) {
+    QString errorString = tr("Unable to run command <b>%1</b> with arguments <b>%2</b>.").arg(commandPrompt).arg(args.join(" "));
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, errorString, Helper::scriptingKind,
+                                                Helper::errorLevel));
   }
 }
 
@@ -1806,7 +1923,14 @@ void MainWindow::exportModelFigaro()
 void MainWindow::importModelFMU()
 {
   ImportFMUDialog *pImportFMUDialog = new ImportFMUDialog(this);
-  pImportFMUDialog->show();
+  pImportFMUDialog->exec();
+}
+
+//! Imports the model from FMU model description
+void MainWindow::importFMUModelDescription()
+{
+  ImportFMUModelDescriptionDialog *pImportFMUModelDescriptionDialog = new ImportFMUModelDescriptionDialog(this);
+  pImportFMUModelDescriptionDialog->exec();
 }
 
 //! Exports the current model to OMNotebook.
@@ -1815,15 +1939,10 @@ void MainWindow::importModelFMU()
 void MainWindow::exportModelToOMNotebook()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode)
-      exportModelToOMNotebook(pLibraryTreeNode);
-  }
-  else
-  {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+  if (pModelWidget) {
+    exportModelToOMNotebook(pModelWidget->getLibraryTreeItem());
+  } else {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("exporting to OMNotebook")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1871,7 +1990,7 @@ void MainWindow::importModelfromOMNotebook()
   {
     if (nodes.at(i).toElement().text().toLower().startsWith("model"))
     {
-      mpLibraryTreeWidget->parseAndLoadModelicaText(nodes.at(i).toElement().text());
+      mpLibraryWidget->parseAndLoadModelicaText(nodes.at(i).toElement().text());
     }
     mpProgressBar->setValue(value++);
   }
@@ -1898,7 +2017,7 @@ void MainWindow::importNgspiceNetlist()
   {
     QFileInfo fileInfo(fileName);
     QString modelicaFile = QString(fileInfo.absoluteDir().absolutePath()).append("/").append(fileInfo.baseName()).append(".mo");
-    mpLibraryTreeWidget->openFile(modelicaFile, Helper::utf8, true, true);
+    mpLibraryWidget->openFile(modelicaFile, Helper::utf8, true, true);
   }
   // hide the progress bar and clear the message in status bar
   mpStatusBar->clearMessage();
@@ -1910,70 +2029,67 @@ void MainWindow::exportModelAsImage(bool copyToClipboard)
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
   if (pModelWidget) {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode) {
-      QString fileName;
-      if (!copyToClipboard) {
-        fileName = StringHandler::getSaveFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::exportAsImage),
-                                                  NULL, Helper::imageFileTypes, NULL, "svg", &pLibraryTreeNode->getName());
-        // if user cancels the operation. or closes the export dialog box.
-        if (fileName.isEmpty()) {
-          return;
-        }
+    LibraryTreeItem *pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
+    QString fileName;
+    if (!copyToClipboard) {
+      fileName = StringHandler::getSaveFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::exportAsImage),
+                                                NULL, Helper::imageFileTypes, NULL, "svg", &pLibraryTreeItem->getName());
+      // if user cancels the operation. or closes the export dialog box.
+      if (fileName.isEmpty()) {
+        return;
       }
-      bool oldSkipDrawBackground;
-      // show the progressbar and set the message in status bar
-      mpProgressBar->setRange(0, 0);
-      showProgressBar();
-      mpStatusBar->showMessage(tr("Exporting model as an Image"));
-      QPainter painter;
-      QSvgGenerator svgGenerator;
-      GraphicsView *pGraphicsView;
-      if (pLibraryTreeNode->getModelWidget()->getIconGraphicsView()->isVisible()) {
-        pGraphicsView = pLibraryTreeNode->getModelWidget()->getIconGraphicsView();
-      } else {
-        pGraphicsView = pLibraryTreeNode->getModelWidget()->getDiagramGraphicsView();
-      }
-      QRect destinationRect = pGraphicsView->itemsBoundingRect().toAlignedRect();
-      QImage modelImage(destinationRect.size(), QImage::Format_ARGB32_Premultiplied);
-      // export svg
-      if (fileName.endsWith(".svg")) {
-        svgGenerator.setTitle(QString(Helper::applicationName).append(" - ").append(Helper::applicationIntroText));
-        svgGenerator.setDescription("Generated by OMEdit - OpenModelica Connection Editor");
-        svgGenerator.setSize(destinationRect.size());
-        svgGenerator.setViewBox(QRect(0, 0, destinationRect.width(), destinationRect.height()));
-        svgGenerator.setFileName(fileName);
-        painter.begin(&svgGenerator);
-      } else {
-        if (fileName.endsWith(".png") || fileName.endsWith(".tiff")) {
-          modelImage.fill(QColor(Qt::transparent));
-        } else if (fileName.endsWith(".bmp") || copyToClipboard) {
-          modelImage.fill(QColor(Qt::white));
-        }
-        painter.begin(&modelImage);
-      }
-      painter.setWindow(destinationRect);
-      // paint all the items
-      oldSkipDrawBackground = pGraphicsView->mSkipBackground;
-      pGraphicsView->mSkipBackground = true;
-      pGraphicsView->render(&painter, destinationRect, destinationRect);
-      painter.end();
-      pGraphicsView->mSkipBackground = oldSkipDrawBackground;
-      if (!fileName.endsWith(".svg") && !copyToClipboard) {
-        if (!modelImage.save(fileName)) {
-          QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::error),
-                                tr("Error saving the image file"), Helper::ok);
-        }
-      } else if (copyToClipboard) {
-        QClipboard *pClipboard = QApplication::clipboard();
-        pClipboard->setImage(modelImage);
-      }
-      // hide the progressbar and clear the message in status bar
-      mpStatusBar->clearMessage();
-      hideProgressBar();
     }
+    // show the progressbar and set the message in status bar
+    mpProgressBar->setRange(0, 0);
+    showProgressBar();
+    mpStatusBar->showMessage(tr("Exporting model as an Image"));
+    QPainter painter;
+    QSvgGenerator svgGenerator;
+    GraphicsView *pGraphicsView;
+    if (pLibraryTreeItem->getModelWidget()->getIconGraphicsView()->isVisible()) {
+      pGraphicsView = pLibraryTreeItem->getModelWidget()->getIconGraphicsView();
+    } else {
+      pGraphicsView = pLibraryTreeItem->getModelWidget()->getDiagramGraphicsView();
+    }
+    QRect destinationRect = pGraphicsView->itemsBoundingRect().toAlignedRect();
+    QImage modelImage(destinationRect.size(), QImage::Format_ARGB32_Premultiplied);
+    // export svg
+    if (fileName.endsWith(".svg")) {
+      svgGenerator.setTitle(QString(Helper::applicationName).append(" - ").append(Helper::applicationIntroText));
+      svgGenerator.setDescription("Generated by OMEdit - OpenModelica Connection Editor");
+      svgGenerator.setSize(destinationRect.size());
+      svgGenerator.setViewBox(QRect(0, 0, destinationRect.width(), destinationRect.height()));
+      svgGenerator.setFileName(fileName);
+      painter.begin(&svgGenerator);
+    } else {
+      if (fileName.endsWith(".png") || fileName.endsWith(".tiff")) {
+        modelImage.fill(QColor(Qt::transparent));
+      } else if (fileName.endsWith(".bmp") || copyToClipboard) {
+        modelImage.fill(QColor(Qt::white));
+      }
+      painter.begin(&modelImage);
+    }
+    painter.setWindow(destinationRect);
+    // paint all the items
+    bool oldSkipDrawBackground = pGraphicsView->mSkipBackground;
+    pGraphicsView->mSkipBackground = true;
+    pGraphicsView->render(&painter, destinationRect, destinationRect);
+    painter.end();
+    pGraphicsView->mSkipBackground = oldSkipDrawBackground;
+    if (!fileName.endsWith(".svg") && !copyToClipboard) {
+      if (!modelImage.save(fileName)) {
+        QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::error),
+                              tr("Error saving the image file"), Helper::ok);
+      }
+    } else if (copyToClipboard) {
+      QClipboard *pClipboard = QApplication::clipboard();
+      pClipboard->setImage(modelImage);
+    }
+    // hide the progressbar and clear the message in status bar
+    mpStatusBar->clearMessage();
+    hideProgressBar();
   } else {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, GUIMessages::getMessage(GUIMessages::NO_MODELICA_CLASS_OPEN)
                                                 .arg(tr("exporting to Image")), Helper::scriptingKind, Helper::notificationLevel));
   }
 }
@@ -1995,12 +2111,8 @@ void MainWindow::exportToClipboard()
 void MainWindow::fetchInterfaceData()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode) {
-      fetchInterfaceData(pLibraryTreeNode);
-    }
+  if (pModelWidget) {
+    fetchInterfaceData(pModelWidget->getLibraryTreeItem());
   }
 }
 
@@ -2012,18 +2124,55 @@ void MainWindow::fetchInterfaceData()
 void MainWindow::TLMSimulate()
 {
   ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
-  if (pModelWidget)
-  {
-    LibraryTreeNode *pLibraryTreeNode = pModelWidget->getLibraryTreeNode();
-    if (pLibraryTreeNode) {
-      TLMSimulate(pLibraryTreeNode);
-    }
+  if (pModelWidget) {
+    TLMSimulate(pModelWidget->getLibraryTreeItem());
   }
 }
 
+/*!
+ * \brief MainWindow::openWorkingDirectory
+ * Opens the current working directory.
+ */
+void MainWindow::openWorkingDirectory()
+{
+  QUrl workingDirectory (QString("file:///%1").arg(OptionsDialog::instance()->getGeneralSettingsPage()->getWorkingDirectory()));
+  if (!QDesktopServices::openUrl(workingDirectory)) {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(workingDirectory.toString()),
+                                                Helper::scriptingKind, Helper::errorLevel));
+  }
+}
+
+/*!
+ * \brief MainWindow::openTerminal
+ * Opens the terminal.
+ */
+void MainWindow::openTerminal()
+{
+  QString terminalCommand = OptionsDialog::instance()->getGeneralSettingsPage()->getTerminalCommand();
+  if (terminalCommand.isEmpty()) {
+    QString message = GUIMessages::getMessage(GUIMessages::TERMINAL_COMMAND_NOT_SET).arg(Helper::toolsOptionsPath);
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, message, Helper::scriptingKind,
+                                                Helper::errorLevel));
+    return;
+  }
+  QString arguments = OptionsDialog::instance()->getGeneralSettingsPage()->getTerminalCommandArguments();
+  QStringList args = arguments.split(" ");
+  if (!QProcess::startDetached(terminalCommand, args, OptionsDialog::instance()->getGeneralSettingsPage()->getWorkingDirectory())) {
+    QString errorString = tr("Unable to run terminal command <b>%1</b> with arguments <b>%2</b>.").arg(terminalCommand).arg(arguments);
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0, errorString, Helper::scriptingKind,
+                                                Helper::errorLevel));
+  }
+}
+
+/*!
+ * \brief MainWindow::openConfigurationOptions
+ * Slot activated when mpOptionsAction triggered signal is raised.
+ * Shows the OptionsDialog
+ */
 void MainWindow::openConfigurationOptions()
 {
-  mpOptionsDialog->show();
+  OptionsDialog::instance()->show();
 }
 
 /*!
@@ -2036,9 +2185,9 @@ void MainWindow::openUsersGuide()
   QUrl usersGuidePath (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
                        .append("/share/doc/omc/OpenModelicaUsersGuide/index.html"));
   if (!QDesktopServices::openUrl(usersGuidePath)) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
-                                                  GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
-                                                  Helper::scriptingKind, Helper::errorLevel));
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
+                                                Helper::scriptingKind, Helper::errorLevel));
   }
 }
 
@@ -2052,9 +2201,9 @@ void MainWindow::openUsersGuidePdf()
   QUrl usersGuidePath (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
                        .append("/share/doc/omc/OpenModelicaUsersGuide-latest.pdf"));
   if (!QDesktopServices::openUrl(usersGuidePath)) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
-                                                  GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
-                                                  Helper::scriptingKind, Helper::errorLevel));
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
+                                                Helper::scriptingKind, Helper::errorLevel));
   }
 }
 
@@ -2068,9 +2217,9 @@ void MainWindow::openUsersGuideOldPdf()
   QUrl usersGuidePath (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
                        .append("/share/doc/omc/OpenModelicaUsersGuide.pdf"));
   if (!QDesktopServices::openUrl(usersGuidePath)) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
-                                                  GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
-                                                  Helper::scriptingKind, Helper::errorLevel));
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(usersGuidePath.toString()),
+                                                Helper::scriptingKind, Helper::errorLevel));
   }
 }
 
@@ -2082,9 +2231,9 @@ void MainWindow::openUsersGuideOldPdf()
 void MainWindow::openSystemDocumentation()
 {
   QUrl systemDocumentationPath (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
-                                .append("/share/doc/omc/OpenModelicaSystem.pdf"));
+                                .append("/share/doc/omc/SystemDocumentation/OpenModelicaSystem.pdf"));
   if (!QDesktopServices::openUrl(systemDocumentationPath)) {
-    mpMessagesWidget->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
                                                 GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(systemDocumentationPath.toString()),
                                                 Helper::scriptingKind, Helper::errorLevel));
   }
@@ -2122,12 +2271,26 @@ void MainWindow::openModelicaWebReference()
   QDesktopServices::openUrl(modelicaWebReference);
 }
 
+/*!
+ * \brief MainWindow::openOpenModelicaTLMSimulatorDocumentationAction
+ * Opens the OpenModelica TLM Simulator documentation.
+ */
+void MainWindow::openOpenModelicaTLMSimulatorDocumentationAction()
+{
+  QUrl openModelicaTLMSimulatorDocumentation (QString("file:///").append(QString(Helper::OpenModelicaHome).replace("\\", "/"))
+                                              .append("/OMTLMSimulator/Documentation/OMTLMSimulator.pdf"));
+  if (!QDesktopServices::openUrl(openModelicaTLMSimulatorDocumentation)) {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, "", false, 0, 0, 0, 0,
+                                                          GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE)
+                                                          .arg(openModelicaTLMSimulatorDocumentation.toString()),
+                                                          Helper::scriptingKind, Helper::errorLevel));
+  }
+}
+
 void MainWindow::openAboutOMEdit()
 {
-  mpAboutOMEditDialog->setGeometry(QRect(rect().center() - QPoint(262, 235), rect().center() + QPoint(262, 235)));
-  mpAboutOMEditDialog->setFocus(Qt::ActiveWindowFocusReason);
-  mpAboutOMEditDialog->raise();
-  mpAboutOMEditDialog->show();
+  AboutOMEditDialog *pAboutOMEditDialog = new AboutOMEditDialog(this);
+  pAboutOMEditDialog->exec();
 }
 
 void MainWindow::toggleShapesButton()
@@ -2144,70 +2307,39 @@ void MainWindow::toggleShapesButton()
   if (pModelWidget) {
     GraphicsView *pGraphicsView = pModelWidget->getDiagramGraphicsView();
     if (pGraphicsView->isCreatingConnection()) {
-      pGraphicsView->removeConnection();
+      pGraphicsView->removeCurrentConnection();
+    }
+    if (pGraphicsView->isCreatingTransition()) {
+      pGraphicsView->removeCurrentTransition();
     }
   }
 }
 
+/*!
+ * \brief MainWindow::openRecentModelWidget
+ * Slot activated when mpModelSwitcherActions triggered SIGNAL is raised.\n
+ * Before switching to new ModelWidget try to update the class contents if user has changed anything.
+ */
 void MainWindow::openRecentModelWidget()
 {
+  /* if Model text is changed manually by user then validate it before opening recent ModelWidget. */
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget && pModelWidget->getLibraryTreeItem()) {
+    LibraryTreeItem *pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
+    if (!pModelWidget->validateText(&pLibraryTreeItem)) {
+      return;
+    }
+  }
   QAction *pAction = qobject_cast<QAction*>(sender());
   QToolButton *pToolButton = qobject_cast<QToolButton*>(sender());
-  LibraryTreeNode *pLibraryTreeNode;
+  LibraryTreeItem *pLibraryTreeItem;
   if (pAction) {
-    pLibraryTreeNode = mpLibraryTreeWidget->getLibraryTreeNode(pAction->data().toString());
-    mpModelWidgetContainer->addModelWidget(pLibraryTreeNode->getModelWidget(), false);
+    pLibraryTreeItem = mpLibraryWidget->getLibraryTreeModel()->findLibraryTreeItem(pAction->data().toString());
+    mpModelWidgetContainer->addModelWidget(pLibraryTreeItem->getModelWidget(), false);
   } else if (pToolButton && mpModelSwitcherActions[0]->isVisible()) {
-    pLibraryTreeNode = mpLibraryTreeWidget->getLibraryTreeNode(mpModelSwitcherActions[0]->data().toString());
-    mpModelWidgetContainer->addModelWidget(pLibraryTreeNode->getModelWidget(), false);
+    pLibraryTreeItem = mpLibraryWidget->getLibraryTreeModel()->findLibraryTreeItem(mpModelSwitcherActions[0]->data().toString());
+    mpModelWidgetContainer->addModelWidget(pLibraryTreeItem->getModelWidget(), false);
   }
-}
-
-/*!
-  Slot activated when Re-simulateAction triggered signal is raised.\n
-  Re-simulates the model.
-  */
-void MainWindow::reSimulateModel()
-{
-  mpVariablesWidget->directReSimulate();
-}
-
-/*!
-  Slot activated when Re-simulateSetupAction triggered signal is raised.\n
-  Shows the simulation setup for re-simulation.
-  */
-void MainWindow::showReSimulateSetup()
-{
-  mpVariablesWidget->showReSimulateSetup();
-}
-
-void MainWindow::addNewPlotWindow()
-{
-  mpPlotWindowContainer->addPlotWindow();
-}
-
-void MainWindow::addNewParametricPlotWindow()
-{
-  mpPlotWindowContainer->addParametricPlotWindow();
-}
-
-void MainWindow::clearPlotWindow()
-{
-  mpPlotWindowContainer->clearPlotWindow();
-}
-
-//! shows the progress bar contained inside the status bar
-//! @see hideProgressBar()
-void MainWindow::showProgressBar()
-{
-  mpProgressBar->setVisible(true);
-}
-
-//! hides the progress bar contained inside the status bar
-//! @see hideProgressBar()
-void MainWindow::hideProgressBar()
-{
-  mpProgressBar->setVisible(false);
 }
 
 void MainWindow::updateModelSwitcherMenu(QMdiSubWindow *pActivatedWindow)
@@ -2232,8 +2364,8 @@ void MainWindow::updateModelSwitcherMenu(QMdiSubWindow *pActivatedWindow)
     }
     ModelWidget *pModelWidget = qobject_cast<ModelWidget*>(subWindowsList.at(i)->widget());
     if (pModelWidget) {
-      mpModelSwitcherActions[j]->setText(pModelWidget->getLibraryTreeNode()->getNameStructure());
-      mpModelSwitcherActions[j]->setData(pModelWidget->getLibraryTreeNode()->getNameStructure());
+      mpModelSwitcherActions[j]->setText(pModelWidget->getLibraryTreeItem()->getNameStructure());
+      mpModelSwitcherActions[j]->setData(pModelWidget->getLibraryTreeItem()->getNameStructure());
       mpModelSwitcherActions[j]->setVisible(true);
     }
     j++;
@@ -2245,54 +2377,85 @@ void MainWindow::updateModelSwitcherMenu(QMdiSubWindow *pActivatedWindow)
   }
 }
 
+/*!
+ * \brief MainWindow::toggleAutoSave
+ * Start/Stop the auto save timer based on the settings.
+ */
 void MainWindow::toggleAutoSave()
 {
-  if (mpOptionsDialog->getGeneralSettingsPage()->getEnableAutoSaveGroupBox()->isChecked())
-  {
-    mpAutoSaveTimer->start(mpOptionsDialog->getGeneralSettingsPage()->getAutoSaveIntervalSpinBox()->value() * 1000);
-  }
-  else
-  {
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getEnableAutoSaveGroupBox()->isChecked()) {
+    mpAutoSaveTimer->start();
+  } else {
     mpAutoSaveTimer->stop();
   }
 }
 
 /*!
  * \brief MainWindow::readInterfaceData
- * \param pLibraryTreeNode
+ * \param pLibraryTreeItem
  * Reads the interface data by reading the interfaceData.xml file and updates the meta-model text.
  */
-void MainWindow::readInterfaceData(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::readInterfaceData(LibraryTreeItem *pLibraryTreeItem)
 {
-  if (!pLibraryTreeNode) {
+  if (!pLibraryTreeItem) {
     return;
   }
 
-  QFileInfo fileInfo(pLibraryTreeNode->getFileName());
+  FetchInterfaceDataDialog *pDialog = qobject_cast<FetchInterfaceDataDialog*>(sender());
+  QString singleModel = pDialog->getSingleModel();
+
+  QFileInfo fileInfo(pLibraryTreeItem->getFileName());
   QFile file(fileInfo.absoluteDir().absolutePath()+ "/interfaceData.xml");
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     QMessageBox::critical(this, QString(Helper::applicationName).append(" - ").append(Helper::error),
                           GUIMessages::getMessage(GUIMessages::ERROR_OPENING_FILE).arg("interfaceData.xml")
                           .arg(file.errorString()), Helper::ok);
   } else {
-    QDomDocument interfaceData;
-    interfaceData.setContent(&file);
+    QDomDocument modelDataDocument;
+    modelDataDocument.setContent(&file);
     file.close();
     // Get the interfaces element
-    QDomElement interfaces = interfaceData.documentElement();
-    // if we don't have ModelWidget then show it.
-    if (!pLibraryTreeNode->getModelWidget()) {
-      mpLibraryTreeWidget->showModelWidget(pLibraryTreeNode);
+    QDomElement modelData, interfaces,parameters;
+    modelData = modelDataDocument.documentElement();
+    interfaces = modelData.firstChildElement("Interfaces");
+    parameters = modelData.firstChildElement("Parameters");
+    if(interfaces.isNull() && parameters.isNull()) {
+        interfaces = modelDataDocument.documentElement();   //Backwards compatibility, remove later /Robert
     }
-    TLMEditor *pTLMEditor = dynamic_cast<TLMEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    pTLMEditor->addInterfacesData(interfaces);
+
+    // if we don't have ModelWidget then show it.
+    if (!pLibraryTreeItem->getModelWidget()) {
+      mpLibraryWidget->getLibraryTreeModel()->showModelWidget(pLibraryTreeItem);
+    }
+    CompositeModelEditor *pCompositeModelEditor = dynamic_cast<CompositeModelEditor*>(pLibraryTreeItem->getModelWidget()->getEditor());
+    pCompositeModelEditor->addInterfacesData(interfaces, parameters, singleModel);
+    pLibraryTreeItem->getModelWidget()->updateModelText();
   }
 }
 
+/*!
+ * \brief MainWindow::enableReSimulationToolbar
+ * * Handles the VisibilityChanged signal of Variables Dock Widget.
+ * \param visible
+ */
+void MainWindow::enableReSimulationToolbar(bool visible)
+{
+  mpReSimulationToolBar->setVisible(visible);
+  if (visible) {
+    mpReSimulationToolBar->setEnabled(!mpVariablesWidget->getVariablesTreeView()->selectionModel()->selectedIndexes().isEmpty());
+  } else {
+    mpReSimulationToolBar->setEnabled(false);
+  }
+}
+
+/*!
+ * \brief MainWindow::perspectiveTabChanged
+ * Handles the perspective tab changed case.
+ * \param tabIndex
+ */
 void MainWindow::perspectiveTabChanged(int tabIndex)
 {
-  switch (tabIndex)
-  {
+  switch (tabIndex) {
     case 0:
       switchToWelcomePerspective();
       break;
@@ -2302,65 +2465,219 @@ void MainWindow::perspectiveTabChanged(int tabIndex)
     case 2:
       switchToPlottingPerspective();
       break;
+    case 3:
+      switchToAlgorithmicDebuggingPerspective();
+      break;
     default:
       switchToWelcomePerspective();
       break;
   }
 }
 
-void MainWindow::autoSave()
+/*!
+ * \brief MainWindow::documentationDockWidgetVisibilityChanged
+ * Handles the VisibilityChanged signal of Documentation Dock Widget.
+ * \param visible
+ */
+void MainWindow::documentationDockWidgetVisibilityChanged(bool visible)
 {
-  bool autoSaveForSingleClasses = mpOptionsDialog->getGeneralSettingsPage()->getEnableAutoSaveForSingleClassesCheckBox()->isChecked();
-  bool autoSaveForOneFilePackages = mpOptionsDialog->getGeneralSettingsPage()->getEnableAutoSaveForOneFilePackagesCheckBox()->isChecked();
-  bool autoSaveForFolderPackages = false;
-  // if auto save for any class type is enabled.
-  if (autoSaveForSingleClasses || autoSaveForOneFilePackages || autoSaveForFolderPackages)
-  {
-    foreach (LibraryTreeNode* pLibraryTreeNode, mpLibraryTreeWidget->getLibraryTreeNodesList())
-    {
-      if (!pLibraryTreeNode->isSaved() && !pLibraryTreeNode->getFileName().isEmpty())
-      {
-        // if auto save for single file class is enabled.
-        if (pLibraryTreeNode->getParentName().isEmpty() && pLibraryTreeNode->childCount() == 0 && autoSaveForSingleClasses)
-        {
-          mpLibraryTreeWidget->saveLibraryTreeNode(pLibraryTreeNode);
-        }
-        // if auto save for one file package is enabled.
-        else if (pLibraryTreeNode->getParentName().isEmpty() && pLibraryTreeNode->childCount() > 0 && autoSaveForOneFilePackages)
-        {
-          mpLibraryTreeWidget->saveLibraryTreeNode(pLibraryTreeNode);
-        }
-        // if auto save for folder package is enabled.
-        else if (autoSaveForFolderPackages)
-        {
-          LibraryTreeNode *pParentLibraryTreeNode = mpLibraryTreeWidget->getLibraryTreeNode(StringHandler::getFirstWordBeforeDot(pLibraryTreeNode->getNameStructure()));
-          if (pParentLibraryTreeNode)
-          {
-            QFileInfo fileInfo(pParentLibraryTreeNode->getFileName());
-            if ((pParentLibraryTreeNode->getSaveContentsType() == LibraryTreeNode::SaveFolderStructure) || (fileInfo.fileName().compare("package.mo") == 0))
-            {
-              mpLibraryTreeWidget->saveLibraryTreeNode(pParentLibraryTreeNode);
-            }
-          }
-        }
+  if (visible) {
+    ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+    if (pModelWidget && pModelWidget->getLibraryTreeItem() &&
+        pModelWidget->getLibraryTreeItem()->getLibraryType() == LibraryTreeItem::Modelica) {
+      LibraryTreeItem *pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
+      if (pModelWidget->validateText(&pLibraryTreeItem)) {
+        mpDocumentationWidget->showDocumentation(pLibraryTreeItem);
       }
     }
   }
 }
 
+/*!
+ * \brief MainWindow::threeDViewerDockWidgetVisibilityChanged
+ * Handles the VisibilityChanged signal of ThreeDViewer Dock Widget.
+ * \param visible
+ */
+void MainWindow::threeDViewerDockWidgetVisibilityChanged(bool visible)
+{
+#if !defined(WITHOUT_OSG)
+  if (visible) {
+    getThreeDViewer()->getViewerWidget()->update();
+  }
+#else
+  Q_UNUSED(visible);
+#endif
+}
+
+/*!
+ * \brief MainWindow::autoSave
+ * Slot activated when mpAutoSaveTimer timeout SIGNAL is raised.\n
+ * Auto saves the classes which user has alreadys saved to a file. Classes not saved to a file are not saved.
+ */
+void MainWindow::autoSave()
+{
+  autoSaveHelper(mpLibraryWidget->getLibraryTreeModel()->getRootLibraryTreeItem());
+}
+
+/*!
+ * \brief MainWindow::switchToWelcomePerspectiveSlot
+ * Slot activated when Ctrl+f1 is clicked.
+ * Switches to welcome perspective.
+ */
 void MainWindow::switchToWelcomePerspectiveSlot()
 {
   mpPerspectiveTabbar->setCurrentIndex(0);
 }
 
+/*!
+ * \brief MainWindow::switchToModelingPerspectiveSlot
+ * Slot activated when Ctrl+f2 is clicked.
+ * Switches to modeling perspective.
+ */
 void MainWindow::switchToModelingPerspectiveSlot()
 {
   mpPerspectiveTabbar->setCurrentIndex(1);
 }
 
+/*!
+ * \brief MainWindow::switchToPlottingPerspectiveSlot
+ * Slot activated when Ctrl+f3 is clicked.
+ * Switches to plotting perspective.
+ */
 void MainWindow::switchToPlottingPerspectiveSlot()
 {
   mpPerspectiveTabbar->setCurrentIndex(2);
+}
+
+/*!
+ * \brief MainWindow::switchToAlgorithmicDebuggingPerspectiveSlot
+ * Slot activated when Ctrl+f5 is clicked.
+ * Switches to algorithmic debugging perspective.
+ */
+void MainWindow::switchToAlgorithmicDebuggingPerspectiveSlot()
+{
+  mpPerspectiveTabbar->setCurrentIndex(3);
+}
+
+/*!
+ * \brief MainWindow::showConfigureDialog
+ * Slot activated when mpDebugConfigurationsAction triggered signal is raised.\n
+ * Shows the debugger configurations.
+ */
+void MainWindow::showConfigureDialog()
+{
+  DebuggerConfigurationsDialog *pDebuggerConfigurationsDialog = new DebuggerConfigurationsDialog(this);
+  connect(pDebuggerConfigurationsDialog, SIGNAL(debuggerLaunched()), SLOT(switchToAlgorithmicDebuggingPerspectiveSlot()));
+  pDebuggerConfigurationsDialog->exec();
+}
+
+/*!
+ * \brief MainWindow::showAttachToProcessDialog
+ * Slot activated when mpAttachDebuggerToRunningProcessAction triggered signal is raised.\n
+ * Shows the attach to process dialog.
+ */
+void MainWindow::showAttachToProcessDialog()
+{
+  AttachToProcessDialog *pAttachToProcessDialog = new AttachToProcessDialog(this);
+  pAttachToProcessDialog->exec();
+}
+
+/*!
+ * \brief MainWindow::createGitRepository
+ * Slot activated when mpcreateGitRepositoryAction triggered signal is raised.\n
+ * creates a git repository.
+ */
+void MainWindow::createGitRepository()
+{
+  QString gitRepositoryPath = StringHandler::getExistingDirectory(this, QString("%1 - %2").arg(Helper::applicationName).arg(Helper::chooseDirectory), NULL);
+  if (gitRepositoryPath.isEmpty())
+    return;
+  GitCommands::instance()->createGitRepository(gitRepositoryPath);
+}
+
+/*!
+ * \brief MainWindow::logCurrentFile
+ * Slot activated when mplogCurrentFileAction triggered signal is raised.\n
+ * Shows the commited history of the current file.
+ */
+void MainWindow::logCurrentFile()
+{
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget) {
+     GitCommands::instance()->logCurrentFile(pModelWidget->getLibraryTreeItem()->getFileName());
+  }
+}
+
+/*!
+ * \brief MainWindow::stageCurrentFileForCommit
+ * Slot activated when mpstageCurrentFileForCommitAction triggered signal is raised.\n
+ * Sstages the current file for the next commit.
+ */
+void MainWindow::stageCurrentFileForCommit()
+{
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget) {
+     GitCommands::instance()->stageCurrentFileForCommit(pModelWidget->getLibraryTreeItem()->getFileName());
+  }
+}
+
+/*!
+ * \brief MainWindow::unstageCurrentFileFromCommit
+ * Slot activated when mpunstageCurrentFileFromCommitAction triggered signal is raised.\n
+ * unSstages the current file from the next commit.
+ */
+void MainWindow::unstageCurrentFileFromCommit()
+{
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget) {
+     GitCommands::instance()->unstageCurrentFileFromCommit(pModelWidget->getLibraryTreeItem()->getFileName());
+  }
+}
+
+/*!
+ * \brief MainWindow::commitFiles
+ * Slot activated when mpcommitFilesaction triggered signal is raised.\n
+ * commites modified files to git repository.
+ */
+void MainWindow::commitFiles()
+{
+  CommitChangesDialog *pCommitChangesDialog = new CommitChangesDialog(this);
+  pCommitChangesDialog->exec();
+}
+
+/*!
+ * \brief MainWindow::revertCommit
+ * Slot activated when mpRevertCommitAction triggered signal is raised.\n
+ * reverts previous commit.
+ */
+void MainWindow::revertCommit()
+{
+  RevertCommitsDialog *pRevertCommitsDialog = new RevertCommitsDialog(this);
+  pRevertCommitsDialog->exec();
+}
+
+/*!
+ * \brief MainWindow::cleanWorkingDirectory
+ * Slot activated when mpCleanWorkingDirectoryAction triggered signal is raised.\n
+ */
+void MainWindow::cleanWorkingDirectory()
+{
+  CleanDialog *pCleanDialog = new CleanDialog(this);
+  pCleanDialog->exec();
+//  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+//  if (pModelWidget) {
+//     mpGitCommands->cleanWorkingDirectory();
+//  }
+}
+
+/*!
+ * \brief MainWindow::queryTreaceabilityInformation
+ * Slot activated when mpQueryTraceabilityAction triggered signal is raised.\n
+ */
+void MainWindow::queryTraceabilityInformation()
+{
+  TraceabilityQueryDialog *pTraceabilityQueryDialog = new TraceabilityQueryDialog(this);
+  pTraceabilityQueryDialog->exec();
 }
 
 //! Defines the actions used by the toolbars
@@ -2395,38 +2712,41 @@ void MainWindow::createActions()
   mpOpenTransformationFileAction = new QAction(tr("Open Transformations File"), this);
   mpOpenTransformationFileAction->setStatusTip(tr("Opens the class transformations file"));
   connect(mpOpenTransformationFileAction, SIGNAL(triggered()), SLOT(showOpenTransformationFileDialog()));
-  // create new MetaModel action
-  mpNewMetaModelFileAction = new QAction(QIcon(":/Resources/icons/new.svg"), tr("New MetaModel"), this);
-  mpNewMetaModelFileAction->setStatusTip(tr("Create New MetaModel File"));
-  connect(mpNewMetaModelFileAction, SIGNAL(triggered()), SLOT(createNewMetaModelFile()));
-  // open TLM file action
-  mpOpenMetaModelFileAction = new QAction(QIcon(":/Resources/icons/open.svg"), tr("Open MetaModel"), this);
-  mpOpenMetaModelFileAction->setStatusTip(tr("Opens the MetaModel file(s)"));
-  connect(mpOpenMetaModelFileAction, SIGNAL(triggered()), SLOT(openMetaModelFile()));
+  // create new CompositeModel action
+  mpNewCompositeModelFileAction = new QAction(QIcon(":/Resources/icons/new.svg"), tr("New Composite Model"), this);
+  mpNewCompositeModelFileAction->setStatusTip(tr("Create New Composite Model file"));
+  connect(mpNewCompositeModelFileAction, SIGNAL(triggered()), SLOT(createNewCompositeModelFile()));
+  // open CompositeModel file action
+  mpOpenCompositeModelFileAction = new QAction(QIcon(":/Resources/icons/open.svg"), tr("Open Composite Model(s)"), this);
+  mpOpenCompositeModelFileAction->setStatusTip(tr("Opens the Composite Model file(s)"));
+  connect(mpOpenCompositeModelFileAction, SIGNAL(triggered()), SLOT(openCompositeModelFile()));
   // load External Model action
   mpLoadExternModelAction = new QAction(tr("Load External Model(s)"), this);
-  mpLoadExternModelAction->setStatusTip(tr("Loads the External Model(s) for the TLM meta-modeling"));
+  mpLoadExternModelAction->setStatusTip(tr("Loads the External Model(s) for the TLM co-simulation"));
   connect(mpLoadExternModelAction, SIGNAL(triggered()), SLOT(loadExternalModels()));
+  // open the directory action
+  mpOpenDirectoryAction = new QAction(tr("Open Directory"), this);
+  mpOpenDirectoryAction->setStatusTip(tr("Opens the directory"));
+  connect(mpOpenDirectoryAction, SIGNAL(triggered()), SLOT(openDirectory()));
   // save file action
-  mpSaveAction = new QAction(QIcon(":/Resources/icons/save.svg"), tr("Save"), this);
+  mpSaveAction = new QAction(QIcon(":/Resources/icons/save.svg"), Helper::save, this);
   mpSaveAction->setShortcut(QKeySequence("Ctrl+s"));
-  mpSaveAction->setStatusTip(tr("Save a file"));
+  mpSaveAction->setStatusTip(Helper::saveTip);
   mpSaveAction->setEnabled(false);
   // save as file action
-  mpSaveAsAction = new QAction(QIcon(":/Resources/icons/saveas.svg"), tr("Save As"), this);
-  mpSaveAsAction->setStatusTip(tr("Save As a File"));
+  mpSaveAsAction = new QAction(QIcon(":/Resources/icons/saveas.svg"), Helper::saveAs, this);
+  mpSaveAsAction->setStatusTip(Helper::saveAsTip);
   mpSaveAsAction->setEnabled(false);
   // save all file action
   mpSaveAllAction = new QAction(QIcon(":/Resources/icons/saveall.svg"), tr("Save All"), this);
   mpSaveAllAction->setStatusTip(tr("Save All Files"));
   mpSaveAllAction->setEnabled(false);
-  // Dump Total Model action
-  mpSaveTotalModelAction = new QAction(tr("Save Total Model"), this);
-  mpSaveTotalModelAction->setStatusTip(tr("Dumps the total model to a file"));
-  mpSaveTotalModelAction->setEnabled(false);
+  // Save Total action
+  mpSaveTotalAction = new QAction(Helper::saveTotal, this);
+  mpSaveTotalAction->setStatusTip(Helper::saveTotalTip);
+  mpSaveTotalAction->setEnabled(false);
   // recent files action
-  for (int i = 0; i < MaxRecentFiles; ++i)
-  {
+  for (int i = 0; i < MaxRecentFiles; ++i) {
     mpRecentFileActions[i] = new QAction(this);
     mpRecentFileActions[i]->setVisible(false);
     connect(mpRecentFileActions[i], SIGNAL(triggered()), this, SLOT(openRecentFile()));
@@ -2443,8 +2763,23 @@ void MainWindow::createActions()
   mpQuitAction = new QAction(QIcon(":/Resources/icons/quit.svg"), tr("Quit"), this);
   mpQuitAction->setStatusTip(tr("Quit the ").append(Helper::applicationIntroText));
   mpQuitAction->setShortcut(QKeySequence("Ctrl+q"));
+  mpQuitAction->setMenuRole(QAction::QuitRole);
   connect(mpQuitAction, SIGNAL(triggered()), SLOT(close()));
   // Edit Menu
+  // undo action
+  mpUndoAction = new QAction(QIcon(":/Resources/icons/undo.svg"), tr("Undo"), this);
+  mpUndoAction->setShortcut(QKeySequence::Undo);
+  mpUndoAction->setEnabled(false);
+  connect(mpUndoAction, SIGNAL(triggered()), SLOT(undo()));
+  // redo action
+  mpRedoAction = new QAction(QIcon(":/Resources/icons/redo.svg"), tr("Redo"), this);
+  mpRedoAction->setShortcut(QKeySequence::Redo);
+  mpRedoAction->setEnabled(false);
+  connect(mpRedoAction, SIGNAL(triggered()), SLOT(redo()));
+  // filter classes action
+  mpFilterClassesAction = new QAction(Helper::filterClasses, this);
+  mpFilterClassesAction->setShortcut(QKeySequence("Ctrl+Shift+f"));
+  connect(mpFilterClassesAction, SIGNAL(triggered()), SLOT(focusFilterClasses()));
   // cut action
   mpCutAction = new QAction(QIcon(":/Resources/icons/cut.svg"), tr("Cut"), this);
   mpCutAction->setShortcut(QKeySequence("Ctrl+x"));
@@ -2464,28 +2799,23 @@ void MainWindow::createActions()
   mpShowGridLinesAction->setEnabled(false);
   connect(mpShowGridLinesAction, SIGNAL(toggled(bool)), SLOT(setShowGridLines(bool)));
   // reset zoom action
-  mpResetZoomAction = new QAction(QIcon(":/Resources/icons/zoomReset.svg"), tr("Reset Zoom"), this);
-  mpResetZoomAction->setStatusTip(tr("Resets the zoom"));
+  mpResetZoomAction = new QAction(QIcon(":/Resources/icons/zoomReset.svg"), Helper::resetZoom, this);
+  mpResetZoomAction->setStatusTip(Helper::resetZoom);
   mpResetZoomAction->setShortcut(QKeySequence("Ctrl+0"));
   mpResetZoomAction->setEnabled(false);
   connect(mpResetZoomAction, SIGNAL(triggered()), SLOT(resetZoom()));
   // zoom in action
-  mpZoomInAction = new QAction(QIcon(":/Resources/icons/zoomIn.svg"), tr("Zoom In"), this);
-  mpZoomInAction->setStatusTip(tr("Zoom in"));
+  mpZoomInAction = new QAction(QIcon(":/Resources/icons/zoomIn.svg"), Helper::zoomIn, this);
+  mpZoomInAction->setStatusTip(Helper::zoomIn);
   mpZoomInAction->setShortcut(QKeySequence("Ctrl++"));
   mpZoomInAction->setEnabled(false);
   connect(mpZoomInAction, SIGNAL(triggered()), SLOT(zoomIn()));
   // zoom out action
-  mpZoomOutAction = new QAction(QIcon(":/Resources/icons/zoomOut.svg"), tr("Zoom Out"), this);
-  mpZoomOutAction->setStatusTip(tr("Zoom out"));
+  mpZoomOutAction = new QAction(QIcon(":/Resources/icons/zoomOut.svg"), Helper::zoomOut, this);
+  mpZoomOutAction->setStatusTip(Helper::zoomOut);
   mpZoomOutAction->setShortcut(QKeySequence("Ctrl+-"));
   mpZoomOutAction->setEnabled(false);
   connect(mpZoomOutAction, SIGNAL(triggered()), SLOT(zoomOut()));
-  // Algorithmic Debugger action
-  mpShowAlgorithmicDebuggerAction = new QAction(Helper::algorithmicDebugger, this);
-  mpShowAlgorithmicDebuggerAction->setShortcut(QKeySequence("ctrl+t"));
-  mpShowAlgorithmicDebuggerAction->setStatusTip(Helper::algorithmicDebugger);
-  connect(mpShowAlgorithmicDebuggerAction, SIGNAL(triggered()), SLOT(showAlgorithmicDebugger()));
   // close window action
   mpCloseWindowAction = new QAction(tr("Close Window"), this);
   mpCloseWindowAction->setStatusTip(tr("Closes the active window"));
@@ -2510,12 +2840,16 @@ void MainWindow::createActions()
   mpTileWindowsVerticallyAction = new QAction(tr("Tile Windows Vertically"), this);
   mpTileWindowsVerticallyAction->setStatusTip(tr("Arranges all child windows in a vertically tiled pattern"));
   connect(mpTileWindowsVerticallyAction, SIGNAL(triggered()), SLOT(tileSubWindowsVertically()));
+  // Toggle between tab or sub-window view
+  mpToggleTabOrSubWindowView = new QAction(tr("Toggle Tab/Sub-window View"), this);
+  mpToggleTabOrSubWindowView->setStatusTip(tr("Toggle between tab or sub-window view mode"));
+  connect(mpToggleTabOrSubWindowView, SIGNAL(triggered()), SLOT(toggleTabOrSubWindowView()));
   // Simulation Menu
   // instantiate model action
   mpInstantiateModelAction = new QAction(QIcon(":/Resources/icons/flatmodel.svg"), tr("Instantiate Model"), this);
   mpInstantiateModelAction->setStatusTip(tr("Instantiates the modelica model"));
   mpInstantiateModelAction->setEnabled(false);
-  connect(mpInstantiateModelAction, SIGNAL(triggered()), SLOT(instantiatesModel()));
+  connect(mpInstantiateModelAction, SIGNAL(triggered()), SLOT(instantiateModel()));
   // check model action
   mpCheckModelAction = new QAction(QIcon(":/Resources/icons/check.svg"), Helper::checkModel, this);
   mpCheckModelAction->setStatusTip(Helper::checkModelTip);
@@ -2529,7 +2863,6 @@ void MainWindow::createActions()
   // simulate action
   mpSimulateModelAction = new QAction(QIcon(":/Resources/icons/simulate.svg"), Helper::simulate, this);
   mpSimulateModelAction->setStatusTip(Helper::simulateTip);
-  mpSimulateModelAction->setShortcut(QKeySequence("Ctrl+b"));
   mpSimulateModelAction->setEnabled(false);
   connect(mpSimulateModelAction, SIGNAL(triggered()), SLOT(simulateModel()));
   // simulate with transformational debugger action
@@ -2542,6 +2875,13 @@ void MainWindow::createActions()
   mpSimulateWithAlgorithmicDebuggerAction->setStatusTip(Helper::simulateWithAlgorithmicDebuggerTip);
   mpSimulateWithAlgorithmicDebuggerAction->setEnabled(false);
   connect(mpSimulateWithAlgorithmicDebuggerAction, SIGNAL(triggered()), SLOT(simulateModelWithAlgorithmicDebugger()));
+#if !defined(WITHOUT_OSG)
+  // simulate with animation action
+  mpSimulateWithAnimationAction = new QAction(QIcon(":/Resources/icons/simulate-animation.svg"), Helper::simulateWithAnimation, this);
+  mpSimulateWithAnimationAction->setStatusTip(Helper::simulateWithAnimationTip);
+  mpSimulateWithAnimationAction->setEnabled(false);
+  connect(mpSimulateWithAnimationAction, SIGNAL(triggered()), SLOT(simulateModelWithAnimation()));
+#endif
   // simulation setup action
   mpSimulationSetupAction = new QAction(QIcon(":/Resources/icons/simulation-center.svg"), Helper::simulationSetup, this);
   mpSimulationSetupAction->setStatusTip(Helper::simulationSetupTip);
@@ -2557,6 +2897,10 @@ void MainWindow::createActions()
   mpImportFMUAction = new QAction(QIcon(":/Resources/icons/import-fmu.svg"), Helper::importFMU, this);
   mpImportFMUAction->setStatusTip(Helper::importFMUTip);
   connect(mpImportFMUAction, SIGNAL(triggered()), SLOT(importModelFMU()));
+  // import FMU model description action
+  mpImportFMUModelDescriptionAction = new QAction(tr("Import FMU Model Description"), this);
+  mpImportFMUModelDescriptionAction->setStatusTip(Helper::importFMUTip);
+  connect(mpImportFMUModelDescriptionAction, SIGNAL(triggered()), SLOT(importFMUModelDescription()));
   // XML Menu
   // export XML action
   mpExportXMLAction = new QAction(QIcon(":/Resources/icons/export-xml.svg"), Helper::exportXML, this);
@@ -2568,11 +2912,68 @@ void MainWindow::createActions()
   mpExportFigaroAction->setStatusTip(Helper::exportFigaroTip);
   mpExportFigaroAction->setEnabled(false);
   connect(mpExportFigaroAction, SIGNAL(triggered()), SLOT(exportModelFigaro()));
+  // Debug Menu
+  // Debug configurations
+  mpDebugConfigurationsAction = new QAction(Helper::debugConfigurations, this);
+  mpDebugConfigurationsAction->setStatusTip(Helper::debugConfigurationsTip);
+  connect(mpDebugConfigurationsAction, SIGNAL(triggered()), SLOT(showConfigureDialog()));
+  // attach debugger to process
+  mpAttachDebuggerToRunningProcessAction = new QAction(Helper::attachToRunningProcess, this);
+  mpAttachDebuggerToRunningProcessAction->setStatusTip(Helper::attachToRunningProcessTip);
+  connect(mpAttachDebuggerToRunningProcessAction, SIGNAL(triggered()), SLOT(showAttachToProcessDialog()));
+  // Git and traceability Menu
+  // Create git repository action
+  mpCreateGitRepositoryAction = new QAction(Helper::createGitReposiory, this);
+  mpCreateGitRepositoryAction->setStatusTip(Helper::createGitReposioryTip);
+  connect(mpCreateGitRepositoryAction, SIGNAL(triggered()), SLOT(createGitRepository()));
+  // Log current file action
+  mpLogCurrentFileAction = new QAction(Helper::logCurrentFile, this);
+  mpLogCurrentFileAction->setStatusTip(Helper::logCurrentFileTip);
+  mpLogCurrentFileAction->setEnabled(false);
+  connect(mpLogCurrentFileAction, SIGNAL(triggered()), SLOT(logCurrentFile()));
+  // Stage current file for commit action
+  mpStageCurrentFileForCommitAction = new QAction(Helper::stageCurrentFileForCommit, this);
+  mpStageCurrentFileForCommitAction->setStatusTip(Helper::stageCurrentFileForCommitTip);
+  mpStageCurrentFileForCommitAction->setEnabled(false);
+  connect(mpStageCurrentFileForCommitAction, SIGNAL(triggered()), SLOT(stageCurrentFileForCommit()));
+  // Unstage current file from commit action
+  mpUnstageCurrentFileFromCommitAction = new QAction(Helper::unstageCurrentFileFromCommit, this);
+  mpUnstageCurrentFileFromCommitAction->setStatusTip(Helper::unstageCurrentFileFromCommitTip);
+  mpUnstageCurrentFileFromCommitAction->setEnabled(false);
+  connect(mpUnstageCurrentFileFromCommitAction, SIGNAL(triggered()), SLOT(unstageCurrentFileFromCommit()));
+  // Commit action
+  mpCommitFilesAction = new QAction(Helper::commitFiles, this);
+  mpCommitFilesAction->setStatusTip(Helper::commitFilesTip);
+  mpCommitFilesAction->setEnabled(false);
+  connect(mpCommitFilesAction, SIGNAL(triggered()), SLOT(commitFiles()));
+  // revert action
+  mpRevertCommitAction = new QAction("Revert", this);
+  // mpRevertCommitAction->setStatusTip(Helper::commitFilesTip);
+  mpRevertCommitAction->setEnabled(false);
+  connect(mpRevertCommitAction, SIGNAL(triggered()), SLOT(revertCommit()));
+  // clean working directory action
+  mpCleanWorkingDirectoryAction = new QAction("Clean", this);
+  mpCleanWorkingDirectoryAction->setEnabled(false);
+  connect(mpCleanWorkingDirectoryAction, SIGNAL(triggered()), SLOT(cleanWorkingDirectory()));
+  // Treaceability actions
+  mpTraceabilityQueryAction = new QAction("Query Traceability Information", this);
+  mpTraceabilityQueryAction->setEnabled(false);
+  connect(mpTraceabilityQueryAction, SIGNAL(triggered()), SLOT(queryTraceabilityInformation()));
   // Tools Menu
   // show OMC Logger widget action
   mpShowOMCLoggerWidgetAction = new QAction(QIcon(":/Resources/icons/console.svg"), Helper::OpenModelicaCompilerCLI, this);
   mpShowOMCLoggerWidgetAction->setStatusTip(tr("Shows OpenModelica Compiler CLI"));
   connect(mpShowOMCLoggerWidgetAction, SIGNAL(triggered()), mpOMCProxy, SLOT(openOMCLoggerWidget()));
+  // show OpenModelica command prompt action
+  mpShowOpenModelicaCommandPromptAction = new QAction(QIcon(":/Resources/icons/console.svg"), tr("OpenModelica Command Prompt"), this);
+  mpShowOpenModelicaCommandPromptAction->setStatusTip(tr("Shows OpenModelica Compiler CLI"));
+  connect(mpShowOpenModelicaCommandPromptAction, SIGNAL(triggered()), SLOT(showOpenModelicaCommandPrompt()));
+  // show OMC Diff widget action
+  if (isDebug()) {
+    mpShowOMCDiffWidgetAction = new QAction(QIcon(":/Resources/icons/console.svg"), tr("OpenModelica Compiler Diff"), this);
+    mpShowOMCDiffWidgetAction->setStatusTip(tr("Shows OpenModelica Compiler Diff"));
+    connect(mpShowOMCDiffWidgetAction, SIGNAL(triggered()), mpOMCProxy, SLOT(openOMCDiffWidget()));
+  }
   // export to OMNotebook action
   mpExportToOMNotebookAction = new QAction(QIcon(":/Resources/icons/export-omnotebook.svg"), Helper::exportToOMNotebook, this);
   mpExportToOMNotebookAction->setStatusTip(Helper::exportToOMNotebookTip);
@@ -2582,10 +2983,18 @@ void MainWindow::createActions()
   mpImportFromOMNotebookAction = new QAction(QIcon(":/Resources/icons/import-omnotebook.svg"), Helper::importFromOMNotebook, this);
   mpImportFromOMNotebookAction->setStatusTip(Helper::importFromOMNotebookTip);
   connect(mpImportFromOMNotebookAction, SIGNAL(triggered()), SLOT(importModelfromOMNotebook()));
-    // import ngspice netlist action
+  // import ngspice netlist action
   mpImportNgspiceNetlistAction = new QAction(Helper::importNgspiceNetlist, this);
   mpImportNgspiceNetlistAction->setStatusTip(Helper::importNgspiceNetlistTip);
   connect(mpImportNgspiceNetlistAction, SIGNAL(triggered()), SLOT(importNgspiceNetlist()));
+  // open working directory action
+  mpOpenWorkingDirectoryAction = new QAction(tr("Open Working Directory"), this);
+  mpOpenWorkingDirectoryAction->setStatusTip(tr("Opens the current working directory"));
+  connect(mpOpenWorkingDirectoryAction, SIGNAL(triggered()), SLOT(openWorkingDirectory()));
+  // open terminal action
+  mpOpenTerminalAction = new QAction(tr("Open Terminal"), this);
+  mpOpenTerminalAction->setStatusTip(tr("Opens the terminal"));
+  connect(mpOpenTerminalAction, SIGNAL(triggered()), SLOT(openTerminal()));
   // open options action
   mpOptionsAction = new QAction(QIcon(":/Resources/icons/options.svg"), tr("Options"), this);
   mpOptionsAction->setStatusTip(tr("Shows the options window"));
@@ -2601,10 +3010,6 @@ void MainWindow::createActions()
   mpUsersGuidePdfAction = new QAction(tr("OpenModelica Users Guide (PDF)"), this);
   mpUsersGuidePdfAction->setStatusTip(tr("Opens the OpenModelica Users Guide (PDF)"));
   connect(mpUsersGuidePdfAction, SIGNAL(triggered()), SLOT(openUsersGuidePdf()));
-  // users guide old pdf action
-  mpUsersGuideOldPdfAction = new QAction(tr("OpenModelica Users Guide (Old PDF)"), this);
-  mpUsersGuideOldPdfAction->setStatusTip(tr("Opens the OpenModelica Users Guide (Old PDF)"));
-  connect(mpUsersGuideOldPdfAction, SIGNAL(triggered()), SLOT(openUsersGuideOldPdf()));
   // system documentation action
   mpSystemDocumentationAction = new QAction(tr("OpenModelica System Documentation"), this);
   mpSystemDocumentationAction->setStatusTip(tr("Opens the OpenModelica System Documentation"));
@@ -2625,9 +3030,14 @@ void MainWindow::createActions()
   mpModelicaWebReferenceAction = new QAction(tr("Modelica Web Reference"), this);
   mpModelicaWebReferenceAction->setStatusTip(tr("Opens the Modelica Web Reference"));
   connect(mpModelicaWebReferenceAction, SIGNAL(triggered()), SLOT(openModelicaWebReference()));
+  // OMTLMSimulator documenatation action
+  mpOpenModelicaTLMSimulatorDocumentationAction = new QAction(tr("OpenModelica TLM Simulator Documentation"), this);
+  mpOpenModelicaTLMSimulatorDocumentationAction->setStatusTip(tr("Opens the OpenModelica TLM Simulator Documentation"));
+  connect(mpOpenModelicaTLMSimulatorDocumentationAction, SIGNAL(triggered()), SLOT(openOpenModelicaTLMSimulatorDocumentationAction()));
   // about OMEdit action
   mpAboutOMEditAction = new QAction(tr("About OMEdit"), this);
   mpAboutOMEditAction->setStatusTip(tr("Information about OMEdit"));
+  mpAboutOMEditAction->setMenuRole(QAction::AboutRole);
   connect(mpAboutOMEditAction, SIGNAL(triggered()), SLOT(openAboutOMEdit()));
   /* Toolbar Actions */
   // custom shapes group
@@ -2669,6 +3079,11 @@ void MainWindow::createActions()
   mpConnectModeAction->setCheckable(true);
   mpConnectModeAction->setChecked(true);
   connect(mpConnectModeAction, SIGNAL(triggered()), SLOT(toggleShapesButton()));
+  // transition mode action
+  mpTransitionModeAction = new QAction(QIcon(":/Resources/icons/transition-mode.svg"), tr("Transition Mode"), this);
+  mpTransitionModeAction->setStatusTip(tr("Changes to/from transition mode"));
+  mpTransitionModeAction->setCheckable(true);
+  mpTransitionModeAction->setChecked(true);
   // model switcher actions
   for (int i = 0; i < MaxRecentFiles; ++i) {
     mpModelSwitcherActions[i] = new QAction(this);
@@ -2678,23 +3093,44 @@ void MainWindow::createActions()
   // resimulate action
   mpReSimulateModelAction = new QAction(QIcon(":/Resources/icons/re-simulate.svg"), Helper::reSimulate, this);
   mpReSimulateModelAction->setStatusTip(Helper::reSimulateTip);
-  connect(mpReSimulateModelAction, SIGNAL(triggered()), SLOT(reSimulateModel()));
+  connect(mpReSimulateModelAction, SIGNAL(triggered()), mpVariablesWidget, SLOT(directReSimulate()));
   // resimulate setup action
   mpReSimulateSetupAction = new QAction(QIcon(":/Resources/icons/re-simulation-center.svg"), Helper::reSimulateSetup, this);
   mpReSimulateSetupAction->setStatusTip(Helper::reSimulateSetupTip);
-  connect(mpReSimulateSetupAction, SIGNAL(triggered()), SLOT(showReSimulateSetup()));
+  connect(mpReSimulateSetupAction, SIGNAL(triggered()), mpVariablesWidget, SLOT(showReSimulateSetup()));
   // new plot window action
   mpNewPlotWindowAction = new QAction(QIcon(":/Resources/icons/plot-window.svg"), tr("New Plot Window"), this);
   mpNewPlotWindowAction->setStatusTip(tr("Inserts new plot window"));
-  connect(mpNewPlotWindowAction, SIGNAL(triggered()), SLOT(addNewPlotWindow()));
+  connect(mpNewPlotWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(addPlotWindow()));
   // new parametric plot action
   mpNewParametricPlotWindowAction = new QAction(QIcon(":/Resources/icons/parametric-plot-window.svg"), tr("New Parametric Plot Window"), this);
   mpNewParametricPlotWindowAction->setStatusTip(tr("Inserts new parametric plot window"));
-  connect(mpNewParametricPlotWindowAction, SIGNAL(triggered()), SLOT(addNewParametricPlotWindow()));
+  connect(mpNewParametricPlotWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(addParametricPlotWindow()));
+
+  // new array plot window action
+  mpNewArrayPlotWindowAction = new QAction(QIcon(":/Resources/icons/array-plot-window.svg"), tr("New Array Plot Window"), this);
+  mpNewArrayPlotWindowAction->setStatusTip(tr("Inserts new array plot window"));
+  connect(mpNewArrayPlotWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(addArrayPlotWindow()));
+
+  // new array parametric plot window action
+  mpNewArrayParametricPlotWindowAction = new QAction(QIcon(":/Resources/icons/array-parametric-plot-window.svg"), tr("New Array Parametric Plot Window"), this);
+  mpNewArrayParametricPlotWindowAction->setStatusTip(tr("Inserts new array parametric plot window"));
+  connect(mpNewArrayParametricPlotWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(addArrayParametricPlotWindow()));
+
+  #if !defined(WITHOUT_OSG)
+  // new mpAnimationWindowAction plot action
+  mpNewAnimationWindowAction = new QAction(QIcon(":/Resources/icons/animation.svg"), tr("New Animation Window"), this);
+  mpNewAnimationWindowAction->setStatusTip(tr("Inserts new animation window"));
+  connect(mpNewAnimationWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(addAnimationWindow()));
+#endif
+  // export variables action
+  mpExportVariablesAction = new QAction(QIcon(":/Resources/icons/export-variables.svg"), Helper::exportVariables, this);
+  mpExportVariablesAction->setStatusTip(tr("Exports the plotted variables to a CSV file"));
+  connect(mpExportVariablesAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(exportVariables()));
   // clear plot window action
   mpClearPlotWindowAction = new QAction(QIcon(":/Resources/icons/clear.svg"), tr("Clear Plot Window"), this);
   mpClearPlotWindowAction->setStatusTip(tr("Clears all the curves from the plot window"));
-  connect(mpClearPlotWindowAction, SIGNAL(triggered()), SLOT(clearPlotWindow()));
+  connect(mpClearPlotWindowAction, SIGNAL(triggered()), mpPlotWindowContainer, SLOT(clearPlotWindow()));
   // Other Actions
   // export as image action
   mpExportAsImageAction = new QAction(QIcon(":/Resources/icons/bitmap-shape.svg"), Helper::exportAsImage, this);
@@ -2705,11 +3141,17 @@ void MainWindow::createActions()
   mpExportToClipboardAction->setStatusTip(Helper::exportAsImageTip);
   mpExportToClipboardAction->setEnabled(false);
   connect(mpExportToClipboardAction, SIGNAL(triggered()), SLOT(exportToClipboard()));
+  // simulation parameters
+  mpSimulationParamsAction = new QAction(QIcon(":/Resources/icons/simulation-parameters.svg"), Helper::simulationParams, this);
+  mpSimulationParamsAction->setStatusTip(Helper::simulationParamsTip);
   // fetch interface data
   mpFetchInterfaceDataAction = new QAction(QIcon(":/Resources/icons/interface-data.svg"), Helper::fetchInterfaceData, this);
   mpFetchInterfaceDataAction->setStatusTip(Helper::fetchInterfaceDataTip);
   connect(mpFetchInterfaceDataAction, SIGNAL(triggered()), SLOT(fetchInterfaceData()));
-  // TLM simulate actions
+  // align interfaces
+  mpAlignInterfacesAction = new QAction(QIcon(":/Resources/icons/align-interfaces.svg"), Helper::alignInterfaces, this);
+  mpAlignInterfacesAction->setStatusTip(Helper::alignInterfacesTip);
+  // TLM simulate action
   mpTLMCoSimulationAction = new QAction(QIcon(":/Resources/icons/tlm-simulate.svg"), Helper::tlmCoSimulationSetup, this);
   mpTLMCoSimulationAction->setStatusTip(Helper::tlmCoSimulationSetupTip);
   mpTLMCoSimulationAction->setEnabled(false);
@@ -2733,22 +3175,25 @@ void MainWindow::createMenus()
   pFileMenu->addAction(mpOpenResultFileAction);
   pFileMenu->addAction(mpOpenTransformationFileAction);
   pFileMenu->addSeparator();
-  pFileMenu->addAction(mpNewMetaModelFileAction);
-  pFileMenu->addAction(mpOpenMetaModelFileAction);
+  pFileMenu->addAction(mpNewCompositeModelFileAction);
+  pFileMenu->addAction(mpOpenCompositeModelFileAction);
   pFileMenu->addAction(mpLoadExternModelAction);
+  pFileMenu->addSeparator();
+  pFileMenu->addAction(mpOpenDirectoryAction);
   pFileMenu->addSeparator();
   pFileMenu->addAction(mpSaveAction);
   pFileMenu->addAction(mpSaveAsAction);
   //menuFile->addAction(saveAllAction);
-  pFileMenu->addAction(mpSaveTotalModelAction);
+  pFileMenu->addAction(mpSaveTotalAction);
   pFileMenu->addSeparator();
   mpLibrariesMenu = new QMenu(menuBar());
   mpLibrariesMenu->setObjectName("LibrariesMenu");
   mpLibrariesMenu->setTitle(tr("&System Libraries"));
   // get the available libraries.
   QStringList libraries = mpOMCProxy->getAvailableLibraries();
-  for (int i = 0; i < libraries.size(); ++i)
-  {
+  libraries.append("OpenModelica");
+  libraries.sort();
+  for (int i = 0; i < libraries.size(); ++i) {
     QAction *pAction = new QAction(libraries[i], this);
     connect(pAction, SIGNAL(triggered()), SLOT(loadSystemLibrary()));
     mpLibrariesMenu->addAction(pAction);
@@ -2772,13 +3217,13 @@ void MainWindow::createMenus()
   QMenu *pEditMenu = new QMenu(menuBar());
   pEditMenu->setTitle(tr("&Edit"));
   // add actions to Edit menu
-  pEditMenu->addAction(mpCutAction);
-  pEditMenu->addAction(mpCopyAction);
-  pEditMenu->addAction(mpPasteAction);
+  pEditMenu->addAction(mpUndoAction);
+  pEditMenu->addAction(mpRedoAction);
   pEditMenu->addSeparator();
-  QAction *pSearchClassAction = mpSearchClassDockWidget->toggleViewAction();
-  pSearchClassAction->setShortcut(QKeySequence("Ctrl+Shift+f"));
-  pEditMenu->addAction(pSearchClassAction);
+  pEditMenu->addAction(mpFilterClassesAction);
+  //  pEditMenu->addAction(mpCutAction);
+  //  pEditMenu->addAction(mpCopyAction);
+  //  pEditMenu->addAction(mpPasteAction);
   // add Edit menu to menu bar
   menuBar()->addAction(pEditMenu->menuAction());
   // View menu
@@ -2798,17 +3243,24 @@ void MainWindow::createMenus()
   pViewToolbarsMenu->addAction(mpEditToolBar->toggleViewAction());
   pViewToolbarsMenu->addAction(mpViewToolBar->toggleViewAction());
   pViewToolbarsMenu->addAction(mpShapesToolBar->toggleViewAction());
-  pViewToolbarsMenu->addAction(mpSimulationToolBar->toggleViewAction());
-  pViewToolbarsMenu->addAction(mpPlotToolBar->toggleViewAction());
   pViewToolbarsMenu->addAction(mpModelSwitcherToolBar->toggleViewAction());
+  pViewToolbarsMenu->addAction(mpCheckToolBar->toggleViewAction());
+  pViewToolbarsMenu->addAction(mpSimulationToolBar->toggleViewAction());
+  pViewToolbarsMenu->addAction(mpReSimulationToolBar->toggleViewAction());
+  pViewToolbarsMenu->addAction(mpPlotToolBar->toggleViewAction());
   // Add Actions to Windows View Sub Menu
-  pViewWindowsMenu->addAction(pSearchClassAction);
-  pViewWindowsMenu->addAction(mpLibraryTreeDockWidget->toggleViewAction());
+  pViewWindowsMenu->addAction(mpLibraryDockWidget->toggleViewAction());
   pViewWindowsMenu->addAction(mpDocumentationDockWidget->toggleViewAction());
-  //  pViewWindowsMenu->addAction(mpSimulationDockWidget->toggleViewAction());
   pViewWindowsMenu->addAction(mpVariablesDockWidget->toggleViewAction());
+#if !defined(WITHOUT_OSG)
+  pViewWindowsMenu->addAction(mpThreeDViewerDockWidget->toggleViewAction());
+#endif
   pViewWindowsMenu->addAction(mpMessagesDockWidget->toggleViewAction());
-  pViewWindowsMenu->addAction(mpShowAlgorithmicDebuggerAction);
+  pViewWindowsMenu->addAction(mpStackFramesDockWidget->toggleViewAction());
+  pViewWindowsMenu->addAction(mpBreakpointsDockWidget->toggleViewAction());
+  pViewWindowsMenu->addAction(mpLocalsDockWidget->toggleViewAction());
+  pViewWindowsMenu->addAction(mpTargetOutputDockWidget->toggleViewAction());
+  pViewWindowsMenu->addAction(mpGDBLoggerDockWidget->toggleViewAction());
   pViewWindowsMenu->addSeparator();
   pViewWindowsMenu->addAction(mpCloseWindowAction);
   pViewWindowsMenu->addAction(mpCloseAllWindowsAction);
@@ -2819,6 +3271,8 @@ void MainWindow::createMenus()
   pViewWindowsMenu->addAction(mpTileWindowsVerticallyAction);
   pViewMenu->addAction(pViewToolbarsMenu->menuAction());
   pViewMenu->addAction(pViewWindowsMenu->menuAction());
+  pViewMenu->addSeparator();
+  pViewMenu->addAction(mpToggleTabOrSubWindowView);
   pViewMenu->addSeparator();
   pViewMenu->addAction(mpShowGridLinesAction);
   pViewMenu->addAction(mpResetZoomAction);
@@ -2836,6 +3290,9 @@ void MainWindow::createMenus()
   pSimulationMenu->addAction(mpSimulateModelAction);
   pSimulationMenu->addAction(mpSimulateWithTransformationalDebuggerAction);
   pSimulationMenu->addAction(mpSimulateWithAlgorithmicDebuggerAction);
+#if !defined(WITHOUT_OSG)
+  pSimulationMenu->addAction(mpSimulateWithAnimationAction);
+#endif
   pSimulationMenu->addAction(mpSimulationSetupAction);
   // add Simulation menu to menu bar
   menuBar()->addAction(pSimulationMenu->menuAction());
@@ -2845,26 +3302,67 @@ void MainWindow::createMenus()
   // add actions to FMI menu
   pFMIMenu->addAction(mpExportFMUAction);
   pFMIMenu->addAction(mpImportFMUAction);
+  pFMIMenu->addAction(mpImportFMUModelDescriptionAction);
   // add FMI menu to menu bar
   menuBar()->addAction(pFMIMenu->menuAction());
   // Export menu
   QMenu *pExportMenu = new QMenu(menuBar());
-  pExportMenu->setTitle(tr("&Export"));
+  pExportMenu->setTitle(tr("E&xport"));
   // add actions to Export menu
   pExportMenu->addAction(mpExportXMLAction);
   pExportMenu->addAction(mpExportFigaroAction);
   // add Export menu to menu bar
   menuBar()->addAction(pExportMenu->menuAction());
+  // Debug menu
+  QMenu *pDebugMenu = new QMenu(menuBar());
+  pDebugMenu->setTitle(tr("&Debug"));
+  // add actions to Debug menu
+  pDebugMenu->addAction(mpDebugConfigurationsAction);
+  pDebugMenu->addAction(mpAttachDebuggerToRunningProcessAction);
+  // add Debug menu to menu bar
+  menuBar()->addAction(pDebugMenu->menuAction());
+  // Git menu
+  QMenu *pGitMenu = new QMenu(menuBar());
+  pGitMenu->setTitle(tr("&Git"));
+  // Traceability actions
+  QMenu *pTraceabilityMenu = new QMenu(menuBar());
+  pTraceabilityMenu->setObjectName(tr("TraceabilityMenu"));
+  pTraceabilityMenu->setTitle(tr("Traceability"));
+  pTraceabilityMenu->addAction(mpTraceabilityQueryAction);
+  // add actions to Git menu
+  pGitMenu->addAction(mpCreateGitRepositoryAction);
+  pGitMenu->addSeparator();
+  pGitMenu->addAction(mpLogCurrentFileAction);
+  pGitMenu->addAction(mpStageCurrentFileForCommitAction);
+  pGitMenu->addAction(mpUnstageCurrentFileFromCommitAction);
+  pGitMenu->addSeparator();
+  pGitMenu->addAction(mpCommitFilesAction);
+  pGitMenu->addAction(mpRevertCommitAction);
+  pGitMenu->addSeparator();
+  pGitMenu->addAction(mpCleanWorkingDirectoryAction);
+  pGitMenu->addSeparator();
+  pGitMenu->addAction(pTraceabilityMenu->menuAction());
+  // add Git menu to menu bar
+  menuBar()->addAction(pGitMenu->menuAction());
   // Tools menu
   QMenu *pToolsMenu = new QMenu(menuBar());
   pToolsMenu->setTitle(tr("&Tools"));
   // add actions to Tools menu
   pToolsMenu->addAction(mpShowOMCLoggerWidgetAction);
+#ifdef Q_OS_WIN
+  pToolsMenu->addAction(mpShowOpenModelicaCommandPromptAction);
+#endif
+  if (isDebug()) {
+    pToolsMenu->addAction(mpShowOMCDiffWidgetAction);
+  }
   pToolsMenu->addSeparator();
   pToolsMenu->addAction(mpExportToOMNotebookAction);
   pToolsMenu->addAction(mpImportFromOMNotebookAction);
   pToolsMenu->addSeparator();
   pToolsMenu->addAction(mpImportNgspiceNetlistAction);
+  pToolsMenu->addSeparator();
+  pToolsMenu->addAction(mpOpenWorkingDirectoryAction);
+  pToolsMenu->addAction(mpOpenTerminalAction);
   pToolsMenu->addSeparator();
   pToolsMenu->addAction(mpOptionsAction);
   // add Tools menu to menu bar
@@ -2875,7 +3373,6 @@ void MainWindow::createMenus()
   // add actions to Help menu
   pHelpMenu->addAction(mpUsersGuideAction);
   pHelpMenu->addAction(mpUsersGuidePdfAction);
-  pHelpMenu->addAction(mpUsersGuideOldPdfAction);
   pHelpMenu->addAction(mpSystemDocumentationAction);
   pHelpMenu->addAction(mpOpenModelicaScriptingAction);
   pHelpMenu->addAction(mpModelicaDocumentationAction);
@@ -2883,82 +3380,190 @@ void MainWindow::createMenus()
   //  pHelpMenu->addAction(mpModelicaByExampleAction);
   //  pHelpMenu->addAction(mpModelicaWebReferenceAction);
   //  pHelpMenu->addSeparator();
+  pHelpMenu->addAction(mpOpenModelicaTLMSimulatorDocumentationAction);
+  pHelpMenu->addSeparator();
   pHelpMenu->addAction(mpAboutOMEditAction);
   // add Help menu to menu bar
   menuBar()->addAction(pHelpMenu->menuAction());
 }
 
 /*!
-  Stores the window states and geometry of all Plot Windows.
-  */
-/*
-  The application window title and window icon gets corrupted when we switch between modeling & plotting perspective.
-  To solve this we tile the plot windows when we switch to modeling and welcome perspective. But before calling tileSubWindows() we save all
-  the plot windows states & geometry and then restore it when switching back to plotting view.
-  */
-void MainWindow::storePlotWindowsStateAndGeometry()
+ * \brief MainWindow::autoSaveHelper
+ * Helper function for MainWindow::autoSave()
+ * \param pLibraryTreeItem
+ */
+void MainWindow::autoSaveHelper(LibraryTreeItem *pLibraryTreeItem)
 {
-  if (mPlotWindowsStatesList.isEmpty() && mPlotWindowsGeometriesList.isEmpty()) {
-    foreach (QMdiSubWindow *pWindow, mpPlotWindowContainer->subWindowList()) {
-      mPlotWindowsStatesList.append(pWindow->windowState());
-      mPlotWindowsGeometriesList.append(pWindow->saveGeometry());
+  foreach (LibraryTreeItem *pChildLibraryTreeItem, pLibraryTreeItem->childrenItems()) {
+    if (pChildLibraryTreeItem && !pChildLibraryTreeItem->isSystemLibrary()) {
+      if (pChildLibraryTreeItem->isFilePathValid() && !pChildLibraryTreeItem->isSaved()) {
+        mpLibraryWidget->saveLibraryTreeItem(pChildLibraryTreeItem);
+      } else {
+        autoSaveHelper(pChildLibraryTreeItem);
+      }
     }
   }
 }
 
+/*!
+ * \brief MainWindow::switchToWelcomePerspective
+ * Switches to Welcome perspective.
+ */
 void MainWindow::switchToWelcomePerspective()
 {
-  storePlotWindowsStateAndGeometry();
-  mpPlotWindowContainer->tileSubWindows();
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget && pModelWidget->getLibraryTreeItem()) {
+    LibraryTreeItem *pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
+    if (!pModelWidget->validateText(&pLibraryTreeItem)) {
+      bool signalsState = mpPerspectiveTabbar->blockSignals(true);
+      mpPerspectiveTabbar->setCurrentIndex(1);
+      mpPerspectiveTabbar->blockSignals(signalsState);
+      return;
+    }
+  }
   mpCentralStackedWidget->setCurrentWidget(mpWelcomePageWidget);
   mpModelWidgetContainer->currentModelWidgetChanged(0);
+  mpUndoAction->setEnabled(false);
+  mpRedoAction->setEnabled(false);
   mpModelSwitcherToolButton->setEnabled(false);
-  mpVariablesDockWidget->hide();
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getHideVariablesBrowserCheckBox()->isChecked()) {
+    mpVariablesDockWidget->hide();
+  }
+  mpStackFramesDockWidget->hide();
+  mpBreakpointsDockWidget->hide();
+  mpLocalsDockWidget->hide();
+  mpTargetOutputDockWidget->hide();
+  mpGDBLoggerDockWidget->hide();
+#if !defined(WITHOUT_OSG)
+  mpThreeDViewerDockWidget->hide();
+#endif
+  // hide toolbars
+  mpEditToolBar->setVisible(false);
+  mpViewToolBar->setVisible(false);
+  mpShapesToolBar->setVisible(false);
+  mpModelSwitcherToolBar->setVisible(false);
+  mpCheckToolBar->setVisible(false);
+  mpSimulationToolBar->setVisible(false);
+  mpPlotToolBar->setVisible(false);
   mpPlotToolBar->setEnabled(false);
+  mpTLMSimulationToolbar->setVisible(false);
 }
 
+/*!
+ * \brief MainWindow::switchToModelingPerspective
+ * Switches to Modeling perspective.
+ */
 void MainWindow::switchToModelingPerspective()
 {
-  storePlotWindowsStateAndGeometry();
-  mpPlotWindowContainer->tileSubWindows();
   mpCentralStackedWidget->setCurrentWidget(mpModelWidgetContainer);
   mpModelWidgetContainer->currentModelWidgetChanged(mpModelWidgetContainer->getCurrentMdiSubWindow());
-  mpVariablesDockWidget->hide();
-  mpPlotToolBar->setEnabled(false);
-  // In case user has tabbed the dock widgets then make LibraryTreeWidget active.
-  QList<QDockWidget*> tabifiedDockWidgetsList = tabifiedDockWidgets(mpLibraryTreeDockWidget);
-  if (tabifiedDockWidgetsList.size() > 0) {
-    tabifyDockWidget(tabifiedDockWidgetsList.at(0), mpLibraryTreeDockWidget);
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getHideVariablesBrowserCheckBox()->isChecked()) {
+    mpVariablesDockWidget->hide();
   }
+  // show/hide toolbars
+  mpEditToolBar->setVisible(true);
+  mpViewToolBar->setVisible(true);
+  mpShapesToolBar->setVisible(true);
+  mpModelSwitcherToolBar->setVisible(true);
+  mpCheckToolBar->setVisible(true);
+  mpSimulationToolBar->setVisible(true);
+  mpPlotToolBar->setVisible(false);
+  mpPlotToolBar->setEnabled(false);
+  mpTLMSimulationToolbar->setVisible(true);
+  // In case user has tabbed the dock widgets then make LibraryWidget active.
+  QList<QDockWidget*> tabifiedDockWidgetsList = tabifiedDockWidgets(mpLibraryDockWidget);
+  if (tabifiedDockWidgetsList.size() > 0) {
+    tabifyDockWidget(tabifiedDockWidgetsList.at(0), mpLibraryDockWidget);
+  }
+  mpStackFramesDockWidget->hide();
+  mpBreakpointsDockWidget->hide();
+  mpLocalsDockWidget->hide();
+  mpTargetOutputDockWidget->hide();
+  mpGDBLoggerDockWidget->hide();
 }
 
+/*!
+ * \brief MainWindow::switchToPlottingPerspective
+ * Switches to plotting perspective.
+ */
 void MainWindow::switchToPlottingPerspective()
 {
-  mpCentralStackedWidget->setCurrentWidget(mpPlotWindowContainer);
-  int i = 0;
-  foreach (QMdiSubWindow *pWindow, mpPlotWindowContainer->subWindowList()) {
-    // sanity check
-    if (mPlotWindowsStatesList.size() > i && mPlotWindowsGeometriesList.size() > i) {
-      pWindow->setWindowState(pWindow->windowState() & (mPlotWindowsStatesList[i]));
-      pWindow->restoreGeometry(mPlotWindowsGeometriesList[i]);
+  ModelWidget *pModelWidget = mpModelWidgetContainer->getCurrentModelWidget();
+  if (pModelWidget && pModelWidget->getLibraryTreeItem()) {
+    LibraryTreeItem *pLibraryTreeItem = pModelWidget->getLibraryTreeItem();
+    if (!pModelWidget->validateText(&pLibraryTreeItem)) {
+      bool signalsState = mpPerspectiveTabbar->blockSignals(true);
+      mpPerspectiveTabbar->setCurrentIndex(1);
+      mpPerspectiveTabbar->blockSignals(signalsState);
+      return;
     }
-    i++;
   }
-  mPlotWindowsStatesList.clear();
-  mPlotWindowsGeometriesList.clear();
+  mpCentralStackedWidget->setCurrentWidget(mpPlotWindowContainer);
   mpModelWidgetContainer->currentModelWidgetChanged(0);
+  mpUndoAction->setEnabled(false);
+  mpRedoAction->setEnabled(false);
   mpModelSwitcherToolButton->setEnabled(false);
-  // if not plotwindow is opened then open one for user
+  // if no plotwindow is opened then open one for user
   if (mpPlotWindowContainer->subWindowList().size() == 0) {
     mpPlotWindowContainer->addPlotWindow(true);
   }
   mpVariablesDockWidget->show();
+  // show/hide toolbars
+  mpEditToolBar->setVisible(false);
+  mpViewToolBar->setVisible(false);
+  mpShapesToolBar->setVisible(false);
+  mpModelSwitcherToolBar->setVisible(false);
+  mpCheckToolBar->setVisible(false);
+  mpSimulationToolBar->setVisible(false);
+  mpPlotToolBar->setVisible(true);
   mpPlotToolBar->setEnabled(true);
+  mpTLMSimulationToolbar->setVisible(false);
   // In case user has tabbed the dock widgets then make VariablesWidget active.
   QList<QDockWidget*> tabifiedDockWidgetsList = tabifiedDockWidgets(mpVariablesDockWidget);
   if (tabifiedDockWidgetsList.size() > 0) {
     tabifyDockWidget(tabifiedDockWidgetsList.at(0), mpVariablesDockWidget);
   }
+  mpStackFramesDockWidget->hide();
+  mpBreakpointsDockWidget->hide();
+  mpLocalsDockWidget->hide();
+  mpTargetOutputDockWidget->hide();
+  mpGDBLoggerDockWidget->hide();
+#if !defined(WITHOUT_OSG)
+  mpThreeDViewerDockWidget->hide();
+#endif
+}
+
+/*!
+ * \brief MainWindow::switchToAlgorithmicDebuggingPerspective
+ * Switches to algorithmic debugging perspective.
+ */
+void MainWindow::switchToAlgorithmicDebuggingPerspective()
+{
+  mpCentralStackedWidget->setCurrentWidget(mpModelWidgetContainer);
+  mpModelWidgetContainer->currentModelWidgetChanged(mpModelWidgetContainer->getCurrentMdiSubWindow());
+  if (OptionsDialog::instance()->getGeneralSettingsPage()->getHideVariablesBrowserCheckBox()->isChecked()) {
+    mpVariablesDockWidget->hide();
+  }
+  // show/hide toolbars
+  mpEditToolBar->setVisible(true);
+  mpViewToolBar->setVisible(true);
+  mpShapesToolBar->setVisible(true);
+  mpModelSwitcherToolBar->setVisible(true);
+  mpCheckToolBar->setVisible(true);
+  mpSimulationToolBar->setVisible(true);
+  mpPlotToolBar->setVisible(false);
+  mpPlotToolBar->setEnabled(false);
+  mpTLMSimulationToolbar->setVisible(true);
+  // In case user has tabbed the dock widgets then make LibraryWidget active.
+  QList<QDockWidget*> tabifiedDockWidgetsList = tabifiedDockWidgets(mpLibraryDockWidget);
+  if (tabifiedDockWidgetsList.size() > 0) {
+    tabifyDockWidget(tabifiedDockWidgetsList.at(0), mpLibraryDockWidget);
+  }
+  mpStackFramesDockWidget->show();
+  mpBreakpointsDockWidget->show();
+  mpLocalsDockWidget->show();
+  mpTargetOutputDockWidget->show();
+  mpGDBLoggerDockWidget->show();
 }
 
 /*!
@@ -3015,27 +3620,26 @@ void MainWindow::tileSubWindows(QMdiArea *pMdiArea, bool horizontally)
 
 /*!
  * \brief MainWindow::fetchInterfaceDataHelper
- * \param pLibraryTreeNode
+ * \param pLibraryTreeItem
  * Helper function for fetching the interface data.
  */
-void MainWindow::fetchInterfaceDataHelper(LibraryTreeNode *pLibraryTreeNode)
+void MainWindow::fetchInterfaceDataHelper(LibraryTreeItem *pLibraryTreeItem, QString singleModel)
 {
   /* if Modelica text is changed manually by user then validate it before saving. */
-  if (pLibraryTreeNode->getModelWidget()) {
-    TLMEditor *pTLMEditor = dynamic_cast<TLMEditor*>(pLibraryTreeNode->getModelWidget()->getEditor());
-    if (pTLMEditor && !pTLMEditor->validateMetaModelText()) {
+  if (pLibraryTreeItem->getModelWidget()) {
+    if (!pLibraryTreeItem->getModelWidget()->validateText(&pLibraryTreeItem)) {
       return;
     }
   }
-  FetchInterfaceDataDialog *pFetchInterfaceDataDialog = new FetchInterfaceDataDialog(pLibraryTreeNode, this);
-  connect(pFetchInterfaceDataDialog, SIGNAL(readInterfaceData(LibraryTreeNode*)), SLOT(readInterfaceData(LibraryTreeNode*)));
+  FetchInterfaceDataDialog *pFetchInterfaceDataDialog = new FetchInterfaceDataDialog(pLibraryTreeItem, singleModel, this);
+  connect(pFetchInterfaceDataDialog, SIGNAL(readInterfaceData(LibraryTreeItem*)), SLOT(readInterfaceData(LibraryTreeItem*)));
   pFetchInterfaceDataDialog->exec();
 }
 
 //! Creates the toolbars
 void MainWindow::createToolbars()
 {
-  int toolbarIconSize = mpOptionsDialog->getGeneralSettingsPage()->getToolbarIconSizeSpinBox()->value();
+  int toolbarIconSize = OptionsDialog::instance()->getGeneralSettingsPage()->getToolbarIconSizeSpinBox()->value();
   setIconSize(QSize(toolbarIconSize, toolbarIconSize));
   // File Toolbar
   mpFileToolBar = addToolBar(tr("File Toolbar"));
@@ -3052,9 +3656,11 @@ void MainWindow::createToolbars()
   mpEditToolBar->setObjectName("Edit Toolbar");
   mpEditToolBar->setAllowedAreas(Qt::TopToolBarArea);
   // add actions to edit toolbar
-  mpEditToolBar->addAction(mpCutAction);
-  mpEditToolBar->addAction(mpCopyAction);
-  mpEditToolBar->addAction(mpPasteAction);
+  mpEditToolBar->addAction(mpUndoAction);
+  mpEditToolBar->addAction(mpRedoAction);
+  //  mpEditToolBar->addAction(mpCutAction);
+  //  mpEditToolBar->addAction(mpCopyAction);
+  //  mpEditToolBar->addAction(mpPasteAction);
   // View Toolbar
   mpViewToolBar = addToolBar(tr("View Toolbar"));
   mpViewToolBar->setObjectName("View Toolbar");
@@ -3078,6 +3684,8 @@ void MainWindow::createToolbars()
   mpShapesToolBar->addAction(mpBitmapShapeAction);
   mpShapesToolBar->addSeparator();
   mpShapesToolBar->addAction(mpConnectModeAction);
+  mpShapesToolBar->addSeparator();
+  mpShapesToolBar->addAction(mpTransitionModeAction);
   // Simulation Toolbar
   mpSimulationToolBar = addToolBar(tr("Simulation Toolbar"));
   mpSimulationToolBar->setObjectName("Simulation Toolbar");
@@ -3107,23 +3715,60 @@ void MainWindow::createToolbars()
   mpModelSwitcherToolButton->setIcon(QIcon(":/Resources/icons/switch.svg"));
   connect(mpModelSwitcherToolButton, SIGNAL(clicked()), this, SLOT(openRecentModelWidget()));
   mpModelSwitcherToolBar->addWidget(mpModelSwitcherToolButton);
+  // Check Toolbar
+  mpCheckToolBar = addToolBar(tr("Check Toolbar"));
+  mpCheckToolBar->setObjectName("Check Toolbar");
+  mpCheckToolBar->setAllowedAreas(Qt::TopToolBarArea);
+  // add actions to Check Toolbar
+  mpCheckToolBar->addAction(mpCheckModelAction);
+  mpCheckToolBar->addAction(mpCheckAllModelsAction);
+  mpCheckToolBar->addAction(mpInstantiateModelAction);
+  // Simulation Toolbar
+  mpSimulationToolBar = addToolBar(tr("Simulation Toolbar"));
+  mpSimulationToolBar->setObjectName("Simulation Toolbar");
+  mpSimulationToolBar->setAllowedAreas(Qt::TopToolBarArea);
+  // add actions to Simulation Toolbar
+  mpSimulationToolBar->addAction(mpSimulateModelAction);
+  mpSimulationToolBar->addAction(mpSimulateWithTransformationalDebuggerAction);
+  mpSimulationToolBar->addAction(mpSimulateWithAlgorithmicDebuggerAction);
+#if !defined(WITHOUT_OSG)
+  mpSimulationToolBar->addAction(mpSimulateWithAnimationAction);
+#endif
+  mpSimulationToolBar->addAction(mpSimulationSetupAction);
+  // Re-simulation Toolbar
+  mpReSimulationToolBar = addToolBar(tr("Re-simulation Toolbar"));
+  mpReSimulationToolBar->setObjectName("Re-simulation Toolbar");
+  mpReSimulationToolBar->setAllowedAreas(Qt::TopToolBarArea);
+  mpReSimulationToolBar->setEnabled(false);
+  // add actions to Re-simulation Toolbar
+  mpReSimulationToolBar->addAction(mpReSimulateModelAction);
+  mpReSimulationToolBar->addAction(mpReSimulateSetupAction);
   // Plot Toolbar
   mpPlotToolBar = addToolBar(tr("Plot Toolbar"));
   mpPlotToolBar->setObjectName("Plot Toolbar");
   mpPlotToolBar->setAllowedAreas(Qt::TopToolBarArea);
   // add actions to Plot Toolbar
-  mpPlotToolBar->addAction(mpReSimulateModelAction);
-  mpPlotToolBar->addAction(mpReSimulateSetupAction);
-  mpPlotToolBar->addSeparator();
   mpPlotToolBar->addAction(mpNewPlotWindowAction);
   mpPlotToolBar->addAction(mpNewParametricPlotWindowAction);
+  mpPlotToolBar->addAction(mpNewArrayPlotWindowAction);
+  mpPlotToolBar->addAction(mpNewArrayParametricPlotWindowAction);
+#if !defined(WITHOUT_OSG)
+  mpPlotToolBar->addAction(mpNewAnimationWindowAction);
+  mpPlotToolBar->addSeparator();
+#endif
+  mpPlotToolBar->addAction(mpExportVariablesAction);
+  mpPlotToolBar->addSeparator();
   mpPlotToolBar->addAction(mpClearPlotWindowAction);
   // TLM Simulation Toolbar
   mpTLMSimulationToolbar = addToolBar(tr("TLM Simulation Toolbar"));
   mpTLMSimulationToolbar->setObjectName("TLM Simulation Toolbar");
   mpTLMSimulationToolbar->setAllowedAreas(Qt::TopToolBarArea);
   // add actions to TLM Simulation Toolbar
+  mpTLMSimulationToolbar->addAction(mpSimulationParamsAction);
+  mpTLMSimulationToolbar->addSeparator();
   mpTLMSimulationToolbar->addAction(mpFetchInterfaceDataAction);
+  mpTLMSimulationToolbar->addAction(mpAlignInterfacesAction);
+  mpTLMSimulationToolbar->addSeparator();
   mpTLMSimulationToolbar->addAction(mpTLMCoSimulationAction);
 }
 
@@ -3164,154 +3809,71 @@ void MainWindow::dropEvent(QDropEvent *event)
 }
 
 /*!
-  Reimplementation of resizeEvent.\n
-  Resizes the AboutOMEditWidget whenever the MainWindow is resized.
-  */
-void MainWindow::resizeEvent(QResizeEvent *event)
-{
-  if (mpAboutOMEditDialog)
-    if (mpAboutOMEditDialog->isVisible())
-      mpAboutOMEditDialog->setGeometry(QRect(rect().center() - QPoint(262, 235), rect().center() + QPoint(262, 235)));
-  QMainWindow::resizeEvent(event);
-}
-
-InfoBar::InfoBar(QWidget *pParent)
-  : QFrame(pParent)
-{
-  QPalette pal = palette();
-  pal.setColor(QPalette::Window, QColor(255, 255, 225));
-  pal.setColor(QPalette::WindowText, Qt::black);
-  setPalette(pal);
-  setFrameStyle(QFrame::StyledPanel);
-  setAutoFillBackground(true);
-  mpInfoLabel = new Label;
-  mpInfoLabel->setWordWrap(true);
-  mpCloseButton = new QToolButton;
-  mpCloseButton->setAutoRaise(true);
-  mpCloseButton->setIcon(QIcon(":/Resources/icons/delete.svg"));
-  mpCloseButton->setToolTip(Helper::close);
-  connect(mpCloseButton, SIGNAL(clicked()), SLOT(hide()));
-  // set the layout
-  QHBoxLayout *pMainLayout = new QHBoxLayout;
-  pMainLayout->setContentsMargins(0, 0, 0, 0);
-  pMainLayout->setMargin(2);
-  pMainLayout->addWidget(mpInfoLabel);
-  pMainLayout->addWidget(mpCloseButton, 0, Qt::AlignTop);
-  setLayout(pMainLayout);
-}
-
-void InfoBar::showMessage(QString message)
-{
-  mpInfoLabel->setText(message);
-  show();
-}
-
+ * \class AboutOMEditDialog
+ * \brief Creates a dialog that shows the about text of OMEdit.
+ * Information about OpenModelica Connection Editor. Shows the list of OMEdit contributors.
+ */
 /*!
-  \class AboutOMEditWidget
-  \brief Creates a widget that shows the about text of OMEdit.
-
-  Information about OpenModelica Connection Editor. Shows the list of OMEdit contributors.
-  */
-
-/*!
-  \param pParent - pointer to MainWindow
-  */
-AboutOMEditWidget::AboutOMEditWidget(MainWindow *pMainWindow)
-  : QWidget(pMainWindow)
+ * \brief AboutOMEditWidget::AboutOMEditDialog
+ * \param pParent - pointer to MainWindow
+ */
+AboutOMEditDialog::AboutOMEditDialog(MainWindow *pMainWindow)
+  : QDialog(pMainWindow)
 {
-  setWindowTitle(QString(Helper::applicationName).append(" - ").append(Helper::information));
-  setMinimumSize(525, 470);
-  setMaximumSize(525, 470);
-  mBackgroundPixmap.load(":/Resources/icons/about-us.png");
-#ifdef Q_OS_MAC
-  int MAC_FONT_FACTOR = 5;  /* the system font size in MAC is too small. */
-#else
-  int MAC_FONT_FACTOR = 0;
+  setWindowTitle(tr("About %1").arg(Helper::applicationName));
+  setAttribute(Qt::WA_DeleteOnClose);
+
+  const QString aboutText = tr(
+     "<h2>%1 - %2</h2>"
+     "<b>%3</b><br />"
+     "<b>Connected to %4</b><br /><br />"
+     "Copyright <b>Open Source Modelica Consortium (OSMC)</b>.<br />"
+     "Distributed under OSMC-PL and GPL, see <u><a href=\"http://www.openmodelica.org\">www.openmodelica.org</a></u>.<br /><br />"
+     "Initially developed by <b>Adeel Asghar</b> and <b>Sonia Tariq</b> as part of their final master thesis."
+#if defined(WITHOUT_OSG)
+     "<br /><em>Compiled without 3D animation support</em>."
 #endif
-  // OMEdit intro text
-  Label *pIntroLabel = new Label(Helper::applicationIntroText);
-  pIntroLabel->setFont(QFont(Helper::systemFontInfo.family(), Helper::systemFontInfo.pointSize() + 3 + MAC_FONT_FACTOR));
-  // OpenModelica compiler info
-  Label *pConnectedLabel = new Label(QString("Connected to OpenModelica ").append(Helper::OpenModelicaVersion));
-  pConnectedLabel->setFont(QFont(Helper::systemFontInfo.family(), Helper::systemFontInfo.pointSize() - 2 + MAC_FONT_FACTOR));
-  // about text
-  QString aboutText = QString("Copyright <b>Open Source Modelica Consortium (OSMC)</b>.<br />")
-      .append("Distributed under OSMC-PL and GPL, see <u><a href=\"http://www.openmodelica.org\">www.openmodelica.org</a></u>.<br /><br />")
-      .append("Initially developed by <b>Adeel Asghar</b> and <b>Sonia Tariq</b> as part of their final master thesis.");
-  Label *pAboutTextLabel = new Label;
-  pAboutTextLabel->setTextFormat(Qt::RichText);
-  pAboutTextLabel->setTextInteractionFlags(pAboutTextLabel->textInteractionFlags() |Qt::LinksAccessibleByMouse | Qt::LinksAccessibleByKeyboard);
-  pAboutTextLabel->setOpenExternalLinks(true);
-  pAboutTextLabel->setFont(QFont(Helper::systemFontInfo.family(), Helper::systemFontInfo.pointSize() - 4 + MAC_FONT_FACTOR));
+     "<br /><br /><b>Contributors:</b>"
+     "<ul>"
+     "<li>Adeel Asghar - <u><a href=\"mailto:adeel.asghar@liu.se\">adeel.asghar@liu.se</a></u></li>"
+     "<li>Sonia Tariq</li>"
+     "<li>Martin Sjölund - <u><a href=\"mailto:martin.sjolund@liu.se\">martin.sjolund@liu.se</a></u></li>"
+     "<li>Alachew Shitahun - <u><a href=\"mailto:alachew.mengist@liu.se\">alachew.mengist@liu.se</a></u></li>"
+     "<li>Jan Kokert - <u><a href=\"mailto:jan.kokert@imtek.uni-freiburg.de\">jan.kokert@imtek.uni-freiburg.de</a></u></li>"
+     "<li>Dr. Henning Kiel - <u><a href=\"mailto:henning.kiel@w-hs.de\">henning.kiel@w-hs.de</a></u></li>"
+     "<li>Haris Kapidzic</li>"
+     "<li>Abhinn Kothari</li>"
+     "<li>Lennart Ochel - <u><a href=\"mailto:lennart.ochel@fh-bielefeld.de\">lennart.ochel@fh-bielefeld.de</a></u></li>"
+     "<li>Volker Waurich - <u><a href=\"mailto:volker.waurich@tu-dresden.de\">volker.waurich@tu-dresden.de</a></u></li>"
+     "<li>Rüdiger Franke</li>"
+     "<li>Martin Flehmig</li>"
+     "<li>Robert Braun - <u><a href=\"mailto:robert.braun@liu.se\">robert.braun@liu.se</a></u></li>"
+     "<li>Per Östlund - <u><a href=\"mailto:per.ostlund@liu.se\">per.ostlund@liu.se</a></u></li>"
+     "<li>Dietmar Winkler</li>"
+     "<li>Anatoly Severin<li>"
+     "<li>Adrian Pop - <u><a href=\"mailto:adrian.pop@liu.se\">adrian.pop@liu.se</a></u></li>"
+     "</ul>")
+     .arg(Helper::applicationName,
+          Helper::applicationIntroText,
+          GIT_SHA,
+          Helper::OpenModelicaVersion);
+  // about text label
+  Label *pAboutTextLabel = new Label(aboutText);
   pAboutTextLabel->setWordWrap(true);
-  pAboutTextLabel->setText(aboutText);
-  QVBoxLayout *pAboutLayout = new QVBoxLayout;
-  pAboutLayout->setContentsMargins(0, 0, 0, 0);
-  pAboutLayout->addWidget(pAboutTextLabel);
-  // contributors heading
-  QString contributorsHeading = QString("<b>Contributors:</b>");
-  Label *pContributorsHeading = new Label;
-  pContributorsHeading->setTextFormat(Qt::RichText);
-  pContributorsHeading->setFont(QFont(Helper::systemFontInfo.family(), Helper::systemFontInfo.pointSize() - 4 + MAC_FONT_FACTOR));
-  pContributorsHeading->setText(contributorsHeading);
-  // contributors text
-  QString contributorsText = QString("<ul style=\"margin: 0px 0px 0px -32px; padding: 2px;\">")
-      .append("<li>Adeel Asghar - <u><a href=\"mailto:adeel.asghar@liu.se\">adeel.asghar@liu.se</a></u></li>")
-      .append("<li>Sonia Tariq</li>")
-      .append("<li>Martin Sjölund - <u><a href=\"mailto:martin.sjolund@liu.se\">martin.sjolund@liu.se</a></u></li>")
-      .append("<li>Haris Kapidzic</li>")
-      .append("<li>Abhinn Kothari</li>")
-      .append("<li>Dr. Henning Kiel</li>")
-      .append("<li>Alachew Shitahun</li>")
-      .append("</ul>");
-  Label *pContributorsLabel = new Label;
-  pContributorsLabel->setTextFormat(Qt::RichText);
-  pContributorsLabel->setTextInteractionFlags(pContributorsLabel->textInteractionFlags() | Qt::LinksAccessibleByMouse | Qt::LinksAccessibleByKeyboard);
-  pContributorsLabel->setOpenExternalLinks(true);
-  pContributorsLabel->setFont(QFont(Helper::systemFontInfo.family(), Helper::systemFontInfo.pointSize() - 4 + MAC_FONT_FACTOR));
-  pContributorsLabel->setText(contributorsText);
-  // QScrollArea
-  QScrollArea *pScrollArea = new QScrollArea;
-  pScrollArea->setFrameShape(QFrame::NoFrame);
-  pScrollArea->setBackgroundRole(QPalette::Base);
-  pScrollArea->setWidgetResizable(true);
-  pScrollArea->setWidget(pContributorsLabel);
+  pAboutTextLabel->setOpenExternalLinks(true);
+  pAboutTextLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+  pAboutTextLabel->setToolTip("");
   // close button
   QPushButton *pCloseButton = new QPushButton(Helper::close);
-  connect(pCloseButton, SIGNAL(clicked()), SLOT(hide()));
-  // set the layout
+  connect(pCloseButton, SIGNAL(clicked()), SLOT(reject()));
+  // logo label
+  Label *pLogoLabel = new Label;
+  QPixmap pixmap(":/Resources/icons/omedit.png");
+  pLogoLabel->setPixmap(pixmap.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  // main layout
   QGridLayout *pMainLayout = new QGridLayout;
-  pMainLayout->setContentsMargins(45, 200, 45, 20);
-  pMainLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-  pMainLayout->addWidget(pIntroLabel, 1, 0, 1, 1, Qt::AlignHCenter);
-  pMainLayout->addWidget(pConnectedLabel, 2, 0, 1, 1, Qt::AlignHCenter);
-  pMainLayout->addLayout(pAboutLayout, 3, 0, 1, 1);
-  pMainLayout->addWidget(pContributorsHeading, 4, 0, 1, 1);
-  pMainLayout->addWidget(pScrollArea, 5, 0, 1, 1);
-  pMainLayout->addWidget(pCloseButton, 6, 0, 1, 1, Qt::AlignRight);
+  pMainLayout->addWidget(pLogoLabel, 0, 0, Qt::AlignTop | Qt::AlignLeft);
+  pMainLayout->addWidget(pAboutTextLabel, 0, 1, Qt::AlignTop | Qt::AlignLeft);
+  pMainLayout->addWidget(pCloseButton, 1, 0, 1, 2, Qt::AlignRight);
   setLayout(pMainLayout);
-}
-
-/*!
-  Reimplementation of paintEvent.\n
-  Draws the background image.
-  \param event - pointer to QPaintEvent
-  */
-void AboutOMEditWidget::paintEvent(QPaintEvent *pEvent)
-{
-  QWidget::paintEvent(pEvent);
-  QPainter painter(this);
-  painter.drawPixmap((size().width() - mBackgroundPixmap.size().width())/2,
-                     (size().height() - mBackgroundPixmap.size().height())/2, mBackgroundPixmap);
-}
-
-/*!
-  Reimplementation of keyPressEvent.\n
-  Hides the widget.
-  */
-void AboutOMEditWidget::keyPressEvent(QKeyEvent *pEvent)
-{
-  if (pEvent->key() == Qt::Key_Escape)
-    hide();
-  QWidget::keyPressEvent(pEvent);
 }

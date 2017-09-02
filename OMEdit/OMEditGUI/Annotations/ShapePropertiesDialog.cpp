@@ -29,38 +29,39 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
-#include "ShapePropertiesDialog.h"
 #include <limits>
 
-ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, MainWindow *pMainWindow)
-  : QDialog(pMainWindow, Qt::WindowTitleHint)
+#include "ShapePropertiesDialog.h"
+#include "MainWindow.h"
+#include "Options/OptionsDialog.h"
+#include "Options/NotificationsDialog.h"
+#include "Modeling/Commands.h"
+
+#include <QHeaderView>
+#include <QColorDialog>
+#include <QMessageBox>
+
+ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, QWidget *pParent)
+  : QDialog(pParent)
 {
   mpShapeAnnotation = pShapeAnnotation;
+  mOldAnnotation = "";
   mpLineAnnotation = dynamic_cast<LineAnnotation*>(mpShapeAnnotation);
   mpPolygonAnnotation = dynamic_cast<PolygonAnnotation*>(mpShapeAnnotation);
   mpRectangleAnnotation = dynamic_cast<RectangleAnnotation*>(mpShapeAnnotation);
   mpEllipseAnnotation = dynamic_cast<EllipseAnnotation*>(mpShapeAnnotation);
   mpTextAnnotation = dynamic_cast<TextAnnotation*>(mpShapeAnnotation);
   mpBitmapAnnotation = dynamic_cast<BitmapAnnotation*>(mpShapeAnnotation);
-  mpMainWindow = pMainWindow;
   QString title = getTitle();
   setWindowTitle(QString(Helper::applicationName).append(" - ").append(title).append(" ").append(Helper::properties));
   setAttribute(Qt::WA_DeleteOnClose);
   // heading label
-  mpShapePropertiesHeading = new Label(QString(title).append(" ").append(Helper::properties));
-  mpShapePropertiesHeading->setFont(QFont(Helper::systemFontInfo.family(), Helper::headingFontSize));
-  mpShapePropertiesHeading->setAlignment(Qt::AlignTop);
-  // set seperator line
-  mHorizontalLine = new QFrame();
-  mHorizontalLine->setFrameShape(QFrame::HLine);
-  mHorizontalLine->setFrameShadow(QFrame::Sunken);
+  mpShapePropertiesHeading = Utilities::getHeadingLabel(QString(title).append(" ").append(Helper::properties));
+  // set separator line
+  mHorizontalLine = Utilities::getHeadingLine();
   // Transformations Group Box
   mpTransformationGroupBox = new QGroupBox(tr("Transformation"));
   mpOriginXLabel = new Label(Helper::originX);
@@ -136,9 +137,11 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpBorderPatternComboBox->addItem(StringHandler::getBorderPatternString(StringHandler::BorderRaised));
   mpBorderPatternComboBox->addItem(StringHandler::getBorderPatternString(StringHandler::BorderSunken));
   mpBorderPatternComboBox->addItem(StringHandler::getBorderPatternString(StringHandler::BorderEngraved));
-  int currentIndex = mpBorderPatternComboBox->findText(StringHandler::getBorderPatternString(mpShapeAnnotation->getBorderPattern()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  int currentIndex = mpBorderPatternComboBox->findText(StringHandler::getBorderPatternString(
+                                                         mpShapeAnnotation->getBorderPattern()), Qt::MatchExactly);
+  if (currentIndex > -1) {
     mpBorderPatternComboBox->setCurrentIndex(currentIndex);
+  }
   // radius
   mpRadiusLabel = new Label(Helper::radius);
   mpRadiusSpinBox = new DoubleSpinBox;
@@ -180,6 +183,7 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   // Text Group Box
   mpTextGroupBox = new QGroupBox(tr("Text"));
   mpTextTextBox = new QLineEdit(mpShapeAnnotation->getTextString());
+  mpTextTextBox->setToolTip(tr("Use \\n for multi-line text"));
   // set the Text Group Box layout
   QHBoxLayout *pTextGroupBoxLayout = new QHBoxLayout;
   pTextGroupBoxLayout->addWidget(mpTextTextBox);
@@ -190,30 +194,33 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpFontNameComboBox = new QFontComboBox;
   mpFontNameComboBox->insertItem(0, "Default");
   currentIndex = mpFontNameComboBox->findText(mpShapeAnnotation->getFontName(), Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpFontNameComboBox->setCurrentIndex(currentIndex);
-  else
+  } else {
     mpFontNameComboBox->setCurrentIndex(0);
+  }
   mpFontSizeLabel = new Label(Helper::size);
   mpFontSizeSpinBox = new DoubleSpinBox;
   mpFontSizeSpinBox->setRange(0, std::numeric_limits<double>::max());
   mpFontSizeSpinBox->setValue(mpShapeAnnotation->getFontSize());
   mpFontSizeSpinBox->setSingleStep(1);
   mpFontStyleLabel = new Label(tr("Style:"));
-  mpTextBoldCheckBox = new QCheckBox(tr("Bold"));
+  mpTextBoldCheckBox = new QCheckBox(Helper::bold);
   mpTextBoldCheckBox->setChecked(StringHandler::getFontWeight(mpShapeAnnotation->getTextStyles()) == QFont::Bold ? true : false);
-  mpTextItalicCheckBox = new QCheckBox(tr("Italic"));
+  mpTextItalicCheckBox = new QCheckBox(Helper::italic);
   mpTextItalicCheckBox->setChecked(StringHandler::getFontItalic(mpShapeAnnotation->getTextStyles()));
-  mpTextUnderlineCheckBox = new QCheckBox(tr("Underline"));
+  mpTextUnderlineCheckBox = new QCheckBox(Helper::underline);
   mpTextUnderlineCheckBox->setChecked(StringHandler::getFontUnderline(mpShapeAnnotation->getTextStyles()));
   mpTextHorizontalAlignmentLabel = new Label(tr("Horizontal Alignment:"));
   mpTextHorizontalAlignmentComboBox = new QComboBox;
   mpTextHorizontalAlignmentComboBox->addItem(StringHandler::getTextAlignmentString(StringHandler::TextAlignmentLeft));
   mpTextHorizontalAlignmentComboBox->addItem(StringHandler::getTextAlignmentString(StringHandler::TextAlignmentCenter));
   mpTextHorizontalAlignmentComboBox->addItem(StringHandler::getTextAlignmentString(StringHandler::TextAlignmentRight));
-  currentIndex = mpTextHorizontalAlignmentComboBox->findText(StringHandler::getTextAlignmentString(mpShapeAnnotation->getTextHorizontalAlignment()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  currentIndex = mpTextHorizontalAlignmentComboBox->findText(StringHandler::getTextAlignmentString(
+                                                               mpShapeAnnotation->getTextHorizontalAlignment()), Qt::MatchExactly);
+  if (currentIndex > -1) {
     mpTextHorizontalAlignmentComboBox->setCurrentIndex(currentIndex);
+  }
   // set the Font Style Group Box layout
   QGridLayout *pFontAndTextStyleGroupBox = new QGridLayout;
   pFontAndTextStyleGroupBox->setColumnStretch(5, 1);
@@ -241,8 +248,9 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpLinePatternLabel = new Label(Helper::pattern);
   mpLinePatternComboBox = StringHandler::getLinePatternComboBox();
   currentIndex = mpLinePatternComboBox->findText(StringHandler::getLinePatternString(mpShapeAnnotation->getLinePattern()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpLinePatternComboBox->setCurrentIndex(currentIndex);
+  }
   // Line Thickness
   mpLineThicknessLabel = new Label(Helper::thickness);
   mpLineThicknessSpinBox = new DoubleSpinBox;
@@ -252,8 +260,9 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   // Line smooth
   mpLineSmoothLabel = new Label(Helper::smooth);
   mpLineSmoothCheckBox = new QCheckBox(Helper::bezier);
-  if (mpShapeAnnotation->getSmooth() == StringHandler::SmoothBezier)
+  if (mpShapeAnnotation->getSmooth() == StringHandler::SmoothBezier) {
     mpLineSmoothCheckBox->setChecked(true);
+  }
   // set the Line style Group Box layout
   QGridLayout *pLineStyleGroupBoxLayout = new QGridLayout;
   pLineStyleGroupBoxLayout->setAlignment(Qt::AlignTop);
@@ -264,8 +273,7 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   pLineStyleGroupBoxLayout->addWidget(mpLinePatternComboBox, 1, 1);
   pLineStyleGroupBoxLayout->addWidget(mpLineThicknessLabel, 2, 0);
   pLineStyleGroupBoxLayout->addWidget(mpLineThicknessSpinBox, 2, 1);
-  if (mpLineAnnotation || mpPolygonAnnotation)
-  {
+  if (mpLineAnnotation || mpPolygonAnnotation) {
     pLineStyleGroupBoxLayout->addWidget(mpLineSmoothLabel, 3, 0);
     pLineStyleGroupBoxLayout->addWidget(mpLineSmoothCheckBox, 3, 1);
   }
@@ -276,13 +284,15 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpLineStartArrowLabel = new Label(Helper::startArrow);
   mpLineStartArrowComboBox = StringHandler::getStartArrowComboBox();
   currentIndex = mpLineStartArrowComboBox->findText(StringHandler::getArrowString(mpShapeAnnotation->getStartArrow()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpLineStartArrowComboBox->setCurrentIndex(currentIndex);
+  }
   mpLineEndArrowLabel = new Label(Helper::endArrow);
   mpLineEndArrowComboBox = StringHandler::getEndArrowComboBox();
   currentIndex = mpLineEndArrowComboBox->findText(StringHandler::getArrowString(mpShapeAnnotation->getEndArrow()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpLineEndArrowComboBox->setCurrentIndex(currentIndex);
+  }
   mpLineArrowSizeLabel = new Label(Helper::arrowSize);
   mpLineArrowSizeSpinBox = new DoubleSpinBox;
   mpLineArrowSizeSpinBox->setRange(0, std::numeric_limits<double>::max());
@@ -312,8 +322,9 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpFillPatternLabel = new Label(Helper::pattern);
   mpFillPatternComboBox = StringHandler::getFillPatternComboBox();
   currentIndex = mpFillPatternComboBox->findText(StringHandler::getFillPatternString(mpShapeAnnotation->getFillPattern()), Qt::MatchExactly);
-  if (currentIndex > -1)
+  if (currentIndex > -1) {
     mpFillPatternComboBox->setCurrentIndex(currentIndex);
+  }
   // set the Fill style Group Box layout
   QGridLayout *pFillStyleGroupBoxLayout = new QGridLayout;
   pFillStyleGroupBoxLayout->setAlignment(Qt::AlignTop);
@@ -325,7 +336,7 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpFillStyleGroupBox->setLayout(pFillStyleGroupBoxLayout);
   // Image Group Box
   mpImageGroupBox = new QGroupBox(tr("Image"));
-  mpFileLabel = new Label(Helper::file);
+  mpFileLabel = new Label(Helper::fileLabel);
   mpFileTextBox = new QLineEdit(mpShapeAnnotation->getFileName());
   mpFileTextBox->setEnabled(false);
   mpBrowseFileButton = new QPushButton(Helper::browse);
@@ -355,7 +366,12 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpPointsTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
   mpPointsTableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
   mpPointsTableWidget->setColumnCount(2);
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
+  mpPointsTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+#else /* Qt4 */
   mpPointsTableWidget->horizontalHeader()->setResizeMode(QHeaderView::Stretch);
+#endif
+  mpPointsTableWidget->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft);
   QStringList headerLabels;
   headerLabels << "X" << "Y";
   mpPointsTableWidget->setHorizontalHeaderLabels(headerLabels);
@@ -365,28 +381,29 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   int rowIndex = 0;
   LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
   if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
-  foreach (QPointF point, points)
-  {
+  foreach (QPointF point, points) {
     QTableWidgetItem *pTableWidgetItemX = new QTableWidgetItem(QString::number(point.x()));
-    if ((rowIndex == 0 || rowIndex == points.size() - 1) && (lineType == LineAnnotation::ConnectionType))
+    if ((rowIndex == 0 || rowIndex == points.size() - 1) && (lineType == LineAnnotation::ConnectionType)) {
       pTableWidgetItemX->setFlags(Qt::NoItemFlags);
-    else
+    } else {
       pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
+    }
     mpPointsTableWidget->setItem(rowIndex, 0, pTableWidgetItemX);
     QTableWidgetItem *pTableWidgetItemY = new QTableWidgetItem(QString::number(point.y()));
-    if ((rowIndex == 0 || rowIndex == points.size() - 1) && (lineType == LineAnnotation::ConnectionType))
+    if ((rowIndex == 0 || rowIndex == points.size() - 1) && (lineType == LineAnnotation::ConnectionType)) {
       pTableWidgetItemY->setFlags(Qt::NoItemFlags);
-    else
+    } else {
       pTableWidgetItemY->setFlags(pTableWidgetItemY->flags() | Qt::ItemIsEditable);
+    }
     mpPointsTableWidget->setItem(rowIndex, 1, pTableWidgetItemY);
     rowIndex++;
   }
-  if (rowIndex > 0)
-  {
-    if (lineType == LineAnnotation::ConnectionType)
+  if (rowIndex > 0) {
+    if (lineType == LineAnnotation::ConnectionType) {
       mpPointsTableWidget->setCurrentCell(1, 1);
-    else
+    } else {
       mpPointsTableWidget->setCurrentCell(0, 0);
+    }
   }
   // points navigation buttons
   mpMovePointUpButton = new QToolButton;
@@ -432,8 +449,8 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   mpApplyButton = new QPushButton(Helper::apply);
   mpApplyButton->setAutoDefault(false);
   connect(mpApplyButton, SIGNAL(clicked()), this, SLOT(applyShapeProperties()));
-  if (mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeNode()->isSystemLibrary() || mpShapeAnnotation->isInheritedShape())
-  {
+  if (mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() ||
+      mpShapeAnnotation->isInheritedShape()) {
     mpOkButton->setDisabled(true);
     mpApplyButton->setDisabled(true);
   }
@@ -450,36 +467,30 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
   pMainLayout->addWidget(mpShapePropertiesHeading, row++, 0, 1, colSpan);
   pMainLayout->addWidget(mHorizontalLine, row++, 0, 1, colSpan);
   pMainLayout->addWidget(mpTransformationGroupBox, row++, 0, 1, colSpan);
-  if (!mpLineAnnotation && !mpPolygonAnnotation)
+  if (!mpLineAnnotation && !mpPolygonAnnotation) {
     pMainLayout->addWidget(mpExtentGroupBox, row++, 0, 1, colSpan);
-  if (mpRectangleAnnotation)
+  }
+  if (mpRectangleAnnotation) {
     pMainLayout->addWidget(mpBorderStyleGroupBox, row++, 0, 1, colSpan);
-  if (mpEllipseAnnotation)
+  }
+  if (mpEllipseAnnotation) {
     pMainLayout->addWidget(mpAngleGroupBox, row++, 0, 1, colSpan);
-  if (mpTextAnnotation)
-  {
+  }
+  if (mpTextAnnotation) {
     pMainLayout->addWidget(mpTextGroupBox, row++, 0, 1, colSpan);
     pMainLayout->addWidget(mpFontAndTextStyleGroupBox, row++, 0, 1, colSpan);
   }
-  if (mpBitmapAnnotation)
-  {
-    pMainLayout->addWidget(mpLineStyleGroupBox, row++, 0, 1, colSpan);
+  if (mpBitmapAnnotation) {
     pMainLayout->addWidget(mpImageGroupBox, row++, 0, 1, colSpan);
-  }
-  else
-  {
+  } else {
     pMainLayout->addWidget(mpLineStyleGroupBox, row, 0);
   }
-  if (mpLineAnnotation)
-  {
+  if (mpLineAnnotation) {
     pMainLayout->addWidget(mpArrowStyleGroupBox, row++, 1);
-  }
-  else if (!mpBitmapAnnotation)
-  {
+  } else if (!mpBitmapAnnotation) {
     pMainLayout->addWidget(mpFillStyleGroupBox, row++, 1);
   }
-  if (mpLineAnnotation || mpPolygonAnnotation)
-  {
+  if (mpLineAnnotation || mpPolygonAnnotation) {
     pMainLayout->addWidget(mpPointsGroupBox, row++, 0, 1, colSpan);
   }
   pMainLayout->addWidget(mpButtonBox, row, 0, 1, colSpan);
@@ -488,23 +499,29 @@ ShapePropertiesDialog::ShapePropertiesDialog(ShapeAnnotation *pShapeAnnotation, 
 
 QString ShapePropertiesDialog::getTitle()
 {
-  if (mpLineAnnotation)
-    if (mpLineAnnotation->getLineType() == LineAnnotation::ConnectionType)
+  if (mpLineAnnotation) {
+    if (mpLineAnnotation->getLineType() == LineAnnotation::ConnectionType) {
       return "Connection";
-    else
+    } else if (mpLineAnnotation->getLineType() == LineAnnotation::TransitionType) {
+      return "Transition";
+    } else if (mpLineAnnotation->getLineType() == LineAnnotation::InitialStateType) {
+      return "Initial State";
+    } else {
       return "Line";
-  else if (mpPolygonAnnotation)
+    }
+  } else if (mpPolygonAnnotation) {
     return "Polygon";
-  else if (mpRectangleAnnotation)
+  } else if (mpRectangleAnnotation) {
     return "Rectangle";
-  else if (mpEllipseAnnotation)
+  } else if (mpEllipseAnnotation) {
     return "Ellipse";
-  else if (mpTextAnnotation)
+  } else if (mpTextAnnotation) {
     return "Text";
-  else if (mpBitmapAnnotation)
+  } else if (mpBitmapAnnotation) {
     return "Bitmap";
-  else
+  } else {
     return "";
+  }
 }
 
 void ShapePropertiesDialog::setLineColor(QColor color)
@@ -545,8 +562,9 @@ void ShapePropertiesDialog::linePickColor()
 {
   QColor color = QColorDialog::getColor(getLineColor());
   // if user press ESC
-  if (!color.isValid())
+  if (!color.isValid()) {
     return;
+  }
   setLineColor(color);
   setLinePickColorButtonIcon();
 }
@@ -555,8 +573,9 @@ void ShapePropertiesDialog::fillPickColor()
 {
   QColor color = QColorDialog::getColor(getFillColor());
   // if user press ESC
-  if (!color.isValid())
+  if (!color.isValid()) {
     return;
+  }
   setFillColor(color);
   setFillPickColorButtonIcon();
 }
@@ -565,13 +584,17 @@ void ShapePropertiesDialog::movePointUp()
 {
   LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
   if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
-  if (mpPointsTableWidget->selectedItems().size() > 0)
-  {
+  if (lineType == LineAnnotation::InitialStateType) {
+    return;
+  }
+  if (mpPointsTableWidget->selectedItems().size() > 0) {
     int row = mpPointsTableWidget->selectedItems().at(0)->row();
-    if (row == 0)
+    if (row == 0) {
       return;
-    if (row == 1 && lineType == LineAnnotation::ConnectionType)
+    }
+    if (row == 1 && (lineType == LineAnnotation::ConnectionType || lineType == LineAnnotation::TransitionType)) {
       return;
+    }
     QTableWidgetItem *pSourceItemX = mpPointsTableWidget->takeItem(row, 0);
     QTableWidgetItem *pSourceItemY = mpPointsTableWidget->takeItem(row, 1);
     QTableWidgetItem *pDestinationItemX = mpPointsTableWidget->takeItem(row - 1, 0);
@@ -588,13 +611,17 @@ void ShapePropertiesDialog::movePointDown()
 {
   LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
   if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
-  if (mpPointsTableWidget->selectedItems().size() > 0)
-  {
+  if (lineType == LineAnnotation::InitialStateType) {
+    return;
+  }
+  if (mpPointsTableWidget->selectedItems().size() > 0) {
     int row = mpPointsTableWidget->selectedItems().at(0)->row();
-    if (row == mpPointsTableWidget->rowCount() - 1)
+    if (row == mpPointsTableWidget->rowCount() - 1) {
       return;
-    if (row == mpPointsTableWidget->rowCount() - 2 && lineType == LineAnnotation::ConnectionType)
+    }
+    if (row == mpPointsTableWidget->rowCount() - 2 && (lineType == LineAnnotation::ConnectionType || lineType == LineAnnotation::TransitionType)) {
       return;
+    }
     QTableWidgetItem *pSourceItemX = mpPointsTableWidget->takeItem(row, 0);
     QTableWidgetItem *pSourceItemY = mpPointsTableWidget->takeItem(row, 1);
     QTableWidgetItem *pDestinationItemX = mpPointsTableWidget->takeItem(row + 1, 0);
@@ -609,11 +636,14 @@ void ShapePropertiesDialog::movePointDown()
 
 void ShapePropertiesDialog::addPoint()
 {
-  if (mpPointsTableWidget->selectedItems().size() > 0)
-  {
+  if (mpPointsTableWidget->selectedItems().size() > 0) {
+    LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
+    if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
+    if (lineType == LineAnnotation::InitialStateType) {
+      return;
+    }
     int row = mpPointsTableWidget->selectedItems().at(0)->row();
-    if (row == mpPointsTableWidget->rowCount() - 1)
-    {
+    if (row == mpPointsTableWidget->rowCount() - 1) {
       /* insert a new row which is similar to last row. */
       mpPointsTableWidget->insertRow(row + 1);
       QTableWidgetItem *pTableWidgetItemX = new QTableWidgetItem(mpPointsTableWidget->item(row, 0)->text());
@@ -623,9 +653,7 @@ void ShapePropertiesDialog::addPoint()
       pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
       mpPointsTableWidget->setItem(row + 1, 1, pTableWidgetItemY);
       mpPointsTableWidget->setCurrentCell(row + 1, 0);
-    }
-    else
-    {
+    } else {
       /* get middle of two surronding points */
       QPointF point1(mpPointsTableWidget->item(row, 0)->text().toFloat(), mpPointsTableWidget->item(row, 1)->text().toFloat());
       QPointF point2(mpPointsTableWidget->item(row + 1, 0)->text().toFloat(), mpPointsTableWidget->item(row + 1, 1)->text().toFloat());
@@ -640,54 +668,61 @@ void ShapePropertiesDialog::addPoint()
       mpPointsTableWidget->setItem(row + 1, 1, pTableWidgetItemY);
       mpPointsTableWidget->setCurrentCell(row + 1, 0);
     }
-  }
-  else if (mpLineAnnotation && mpPointsTableWidget->rowCount() == 2)
-  {
-    if (mpLineAnnotation->getLineType() == LineAnnotation::ConnectionType)
-    {
-      /* get middle of two surronding points */
-      QPointF point1(mpPointsTableWidget->item(0, 0)->text().toFloat(), mpPointsTableWidget->item(0, 1)->text().toFloat());
-      QPointF point2(mpPointsTableWidget->item(1, 0)->text().toFloat(), mpPointsTableWidget->item(1, 1)->text().toFloat());
-      QPointF point3 = (point1 + point2) / 2;
-      /* insert new row */
-      mpPointsTableWidget->insertRow(1);
-      QTableWidgetItem *pTableWidgetItemX = new QTableWidgetItem(QString::number(point3.x()));
-      pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
-      mpPointsTableWidget->setItem(1, 0, pTableWidgetItemX);
-      QTableWidgetItem *pTableWidgetItemY = new QTableWidgetItem(QString::number(point3.y()));
-      pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
-      mpPointsTableWidget->setItem(1, 1, pTableWidgetItemY);
-      mpPointsTableWidget->setCurrentCell(1, 0);
-    }
+  } else if (mpLineAnnotation && mpPointsTableWidget->rowCount() == 2 &&
+             (mpLineAnnotation->getLineType() == LineAnnotation::ConnectionType ||
+              mpLineAnnotation->getLineType() == LineAnnotation::TransitionType)) {
+    /* get middle of two surronding points */
+    QPointF point1(mpPointsTableWidget->item(0, 0)->text().toFloat(), mpPointsTableWidget->item(0, 1)->text().toFloat());
+    QPointF point2(mpPointsTableWidget->item(1, 0)->text().toFloat(), mpPointsTableWidget->item(1, 1)->text().toFloat());
+    QPointF point3 = (point1 + point2) / 2;
+    /* insert new row */
+    mpPointsTableWidget->insertRow(1);
+    QTableWidgetItem *pTableWidgetItemX = new QTableWidgetItem(QString::number(point3.x()));
+    pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
+    mpPointsTableWidget->setItem(1, 0, pTableWidgetItemX);
+    QTableWidgetItem *pTableWidgetItemY = new QTableWidgetItem(QString::number(point3.y()));
+    pTableWidgetItemX->setFlags(pTableWidgetItemX->flags() | Qt::ItemIsEditable);
+    mpPointsTableWidget->setItem(1, 1, pTableWidgetItemY);
+    mpPointsTableWidget->setCurrentCell(1, 0);
   }
 }
 
 void ShapePropertiesDialog::removePoint()
 {
-  if (mpPointsTableWidget->selectedItems().size() > 0)
-  {
-    if ((mpLineAnnotation && mpPointsTableWidget->rowCount() > 2) || (mpPolygonAnnotation && mpPointsTableWidget->rowCount() > 4))
-      mpPointsTableWidget->removeRow(mpPointsTableWidget->selectedItems().at(0)->row());
+  if (mpPointsTableWidget->selectedItems().size() > 0) {
+    if ((mpLineAnnotation && mpPointsTableWidget->rowCount() > 2) || (mpPolygonAnnotation && mpPointsTableWidget->rowCount() > 4)) {
+      LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
+      if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
+      int row = mpPointsTableWidget->selectedItems().at(0)->row();
+      if (lineType == LineAnnotation::InitialStateType && row == 0) {
+        return;
+      }
+      mpPointsTableWidget->removeRow(row);
+    }
   }
 }
 
 void ShapePropertiesDialog::saveShapeProperties()
 {
-  if (applyShapeProperties())
+  if (applyShapeProperties()) {
+    mpShapeAnnotation->emitChanged();
     accept();
+  }
 }
 
 bool ShapePropertiesDialog::applyShapeProperties()
 {
+  // we need to set focus on the OK button otherwise QTableWidget doesn't read any active cell editing value.
+  mpOkButton->setFocus(Qt::ActiveWindowFocusReason);
+  // save the old annotation before applying anything.
+  mOldAnnotation = mpShapeAnnotation->getOMCShapeAnnotation();
   /* validate points */
-  for (int i = 0 ; i < mpPointsTableWidget->rowCount() ; i++)
-  {
+  for (int i = 0 ; i < mpPointsTableWidget->rowCount() ; i++) {
     QTableWidgetItem *pTableWidgetItem = mpPointsTableWidget->item(i, 0); /* point X value */
     bool Ok;
     pTableWidgetItem->text().toFloat(&Ok);
-    if (!Ok || pTableWidgetItem->text().isEmpty())
-    {
-      QMessageBox::critical(mpMainWindow, QString(Helper::applicationName).append(" - ").append(Helper::error),
+    if (!Ok || pTableWidgetItem->text().isEmpty()) {
+      QMessageBox::critical(MainWindow::instance(), QString(Helper::applicationName).append(" - ").append(Helper::error),
                             GUIMessages::getMessage(GUIMessages::ENTER_VALID_NUMBER)
                             .arg("points item ("+  QString::number(i+1) +",0)"), Helper::ok);
       mpPointsTableWidget->editItem(pTableWidgetItem);
@@ -695,9 +730,8 @@ bool ShapePropertiesDialog::applyShapeProperties()
     }
     pTableWidgetItem = mpPointsTableWidget->item(i, 1); /* point Y value */
     pTableWidgetItem->text().toFloat(&Ok);
-    if (!Ok || pTableWidgetItem->text().isEmpty())
-    {
-      QMessageBox::critical(mpMainWindow, QString(Helper::applicationName).append(" - ").append(Helper::error),
+    if (!Ok || pTableWidgetItem->text().isEmpty()) {
+      QMessageBox::critical(MainWindow::instance(), QString(Helper::applicationName).append(" - ").append(Helper::error),
                             GUIMessages::getMessage(GUIMessages::ENTER_VALID_NUMBER)
                             .arg("points table ["+  QString::number(i+1) +",1]"), Helper::ok);
       mpPointsTableWidget->editItem(pTableWidgetItem);
@@ -705,24 +739,18 @@ bool ShapePropertiesDialog::applyShapeProperties()
     }
   }
   /* validate the bitmap file name */
-  if (mpBitmapAnnotation)
-  {
-    if (mpStoreImageInModelCheckBox->isChecked() && mpShapeAnnotation->getImageSource().isEmpty())
-    {
-      if (mpFileTextBox->text().isEmpty())
-      {
-        QMessageBox::critical(mpMainWindow, QString(Helper::applicationName).append(" - ").append(Helper::error),
-                              GUIMessages::getMessage(GUIMessages::ENTER_NAME).arg(Helper::file), Helper::ok);
+  if (mpBitmapAnnotation) {
+    if (mpStoreImageInModelCheckBox->isChecked() && mpShapeAnnotation->getImageSource().isEmpty()) {
+      if (mpFileTextBox->text().isEmpty()) {
+        QMessageBox::critical(MainWindow::instance(), QString(Helper::applicationName).append(" - ").append(Helper::error),
+                              GUIMessages::getMessage(GUIMessages::ENTER_NAME).arg(Helper::fileLabel), Helper::ok);
         mpFileTextBox->setFocus();
         return false;
       }
-    }
-    else if (!mpStoreImageInModelCheckBox->isChecked())
-    {
-      if (mpFileTextBox->text().isEmpty())
-      {
-        QMessageBox::critical(mpMainWindow, QString(Helper::applicationName).append(" - ").append(Helper::error),
-                              GUIMessages::getMessage(GUIMessages::ENTER_NAME).arg(Helper::file), Helper::ok);
+    } else if (!mpStoreImageInModelCheckBox->isChecked()) {
+      if (mpFileTextBox->text().isEmpty()) {
+        QMessageBox::critical(MainWindow::instance(), QString(Helper::applicationName).append(" - ").append(Helper::error),
+                              GUIMessages::getMessage(GUIMessages::ENTER_NAME).arg(Helper::fileLabel), Helper::ok);
         mpFileTextBox->setFocus();
         return false;
       }
@@ -731,29 +759,26 @@ bool ShapePropertiesDialog::applyShapeProperties()
   /* apply properties */
   mpShapeAnnotation->setOrigin(QPointF(mpOriginXSpinBox->value(), mpOriginYSpinBox->value()));
   mpShapeAnnotation->setRotationAngle(mpRotationSpinBox->value());
-  if (!mpLineAnnotation && !mpPolygonAnnotation)
-  {
+  if (!mpLineAnnotation && !mpPolygonAnnotation) {
     QList<QPointF> extents;
     QPointF p1(mpExtent1XSpinBox->value(), mpExtent1YSpinBox->value());
     QPointF p2(mpExtent2XSpinBox->value(), mpExtent2YSpinBox->value());
     extents << p1 << p2;
     mpShapeAnnotation->setExtents(extents);
   }
-  if (mpRectangleAnnotation)
-  {
+  if (mpRectangleAnnotation) {
     mpShapeAnnotation->setBorderPattern(StringHandler::getBorderPatternType(mpBorderPatternComboBox->currentText()));
     mpShapeAnnotation->setRadius(mpRadiusSpinBox->value());
   }
-  if (mpEllipseAnnotation)
-  {
+  if (mpEllipseAnnotation) {
     mpShapeAnnotation->setStartAngle(mpStartAngleSpinBox->value());
     mpShapeAnnotation->setEndAngle(mpEndAngleSpinBox->value());
   }
-  if (mpTextAnnotation)
-  {
+  if (mpTextAnnotation) {
     mpShapeAnnotation->setTextString(mpTextTextBox->text().trimmed());
-    if (mpFontNameComboBox->currentText().compare("Default") != 0)
+    if (mpFontNameComboBox->currentText().compare("Default") != 0) {
       mpShapeAnnotation->setFontName(mpFontNameComboBox->currentText());
+    }
     mpShapeAnnotation->setFontSize(mpFontSizeSpinBox->value());
     QList<StringHandler::TextStyle> textStyles;
     if (mpTextBoldCheckBox->isChecked()) textStyles.append(StringHandler::TextStyleBold);
@@ -766,14 +791,11 @@ bool ShapePropertiesDialog::applyShapeProperties()
   mpShapeAnnotation->setLinePattern(StringHandler::getLinePatternType(mpLinePatternComboBox->currentText()));
   mpShapeAnnotation->setLineThickness(mpLineThicknessSpinBox->value());
   mpShapeAnnotation->setSmooth(mpLineSmoothCheckBox->isChecked() ? StringHandler::SmoothBezier : StringHandler::SmoothNone);
-  if (mpLineAnnotation)
-  {
+  if (mpLineAnnotation) {
     mpShapeAnnotation->setStartArrow(StringHandler::getArrowType(mpLineStartArrowComboBox->currentText()));
     mpShapeAnnotation->setEndArrow(StringHandler::getArrowType(mpLineEndArrowComboBox->currentText()));
     mpShapeAnnotation->setArrowSize(mpLineArrowSizeSpinBox->value());
-  }
-  else
-  {
+  } else {
     mpShapeAnnotation->setFillColor(getFillColor());
     mpShapeAnnotation->setFillPattern(StringHandler::getFillPatternType(mpFillPatternComboBox->currentText()));
   }
@@ -785,68 +807,86 @@ bool ShapePropertiesDialog::applyShapeProperties()
   }
   mpShapeAnnotation->setPoints(points);
   /* save bitmap file name and image source */
-  if (mpBitmapAnnotation)
-  {
-    if (mpStoreImageInModelCheckBox->isChecked())
-    {
+  if (mpBitmapAnnotation) {
+    if (mpStoreImageInModelCheckBox->isChecked()) {
       mpShapeAnnotation->setFileName("");
-      if (!mpFileTextBox->text().isEmpty())
-      {
+      if (!mpFileTextBox->text().isEmpty()) {
         QUrl fileUrl(mpFileTextBox->text());
         QFileInfo fileInfo(mpFileTextBox->text());
-        QFileInfo classFileInfo(mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeNode()->getFileName());
-        MainWindow *pMainWindow = mpShapeAnnotation->getGraphicsView()->getModelWidget()->getModelWidgetContainer()->getMainWindow();
+        QFileInfo classFileInfo(mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem()->getFileName());
+        MainWindow *pMainWindow = MainWindow::instance();
         /* if its a modelica:// link then make it absolute path */
         QString fileName;
-        if (fileUrl.scheme().toLower().compare("modelica") == 0)
+        if (fileUrl.scheme().toLower().compare("modelica") == 0) {
           fileName = pMainWindow->getOMCProxy()->uriToFilename(mpFileTextBox->text());
-        else if (fileInfo.isRelative())
+        } else if (fileInfo.isRelative()) {
           fileName = QString(classFileInfo.absoluteDir().absolutePath()).append("/").append(mpFileTextBox->text());
-        else if (fileInfo.isAbsolute())
+        } else if (fileInfo.isAbsolute()) {
           fileName = mpFileTextBox->text();
-        else
+        } else {
           fileName = "";
+        }
         QFile imageFile(fileName);
         imageFile.open(QIODevice::ReadOnly);
         QByteArray imageByteArray = imageFile.readAll();
         mpShapeAnnotation->setImageSource(imageByteArray.toBase64());
       }
       mpShapeAnnotation->setImage(mpPreviewImageLabel->pixmap()->toImage());
-    }
-    else
-    {
+    } else {
       /* find the class to create a relative path */
-      MainWindow *pMainWindow = mpShapeAnnotation->getGraphicsView()->getModelWidget()->getModelWidgetContainer()->getMainWindow();
-      LibraryTreeNode *pLibraryTreeNode;
-      pLibraryTreeNode = mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeNode();
-      pLibraryTreeNode = pMainWindow->getLibraryTreeWidget()->getLibraryTreeNode(StringHandler::getFirstWordBeforeDot(pLibraryTreeNode->getNameStructure()));
-      /* get the class directory path and use it to get the relative path of the choosen bitmap file */
-      QFileInfo classFileInfo(pLibraryTreeNode->getFileName());
+      MainWindow *pMainWindow = MainWindow::instance();
+      LibraryTreeItem *pLibraryTreeItem = mpShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem();
+      QString nameStructure = StringHandler::getFirstWordBeforeDot(pLibraryTreeItem->getNameStructure());
+      pLibraryTreeItem = pMainWindow->getLibraryWidget()->getLibraryTreeModel()->findLibraryTreeItem(nameStructure);
+      /* get the class directory path and use it to get the relative path of the chosen bitmap file */
+      QFileInfo classFileInfo(pLibraryTreeItem->getFileName());
       QDir classDirectory = classFileInfo.absoluteDir();
       QString relativeImagePath = classDirectory.relativeFilePath(mpFileTextBox->text());
-      mpShapeAnnotation->setFileName(QString("modelica://").append(pLibraryTreeNode->getNameStructure()).append("/").append(relativeImagePath));
+      mpShapeAnnotation->setFileName(QString("modelica://").append(pLibraryTreeItem->getNameStructure()).append("/").append(relativeImagePath));
       mpShapeAnnotation->setImageSource("");
       mpShapeAnnotation->setImage(mpPreviewImageLabel->pixmap()->toImage());
     }
   }
   LineAnnotation::LineType lineType = LineAnnotation::ShapeType;
-  if (mpLineAnnotation) lineType = mpLineAnnotation->getLineType();
-  if (mpLineAnnotation && lineType == LineAnnotation::ConnectionType)
-  {
-    mpShapeAnnotation->removeCornerItems();
-    mpShapeAnnotation->drawCornerItems();
-    mpShapeAnnotation->adjustGeometries();
-    mpLineAnnotation->updateConnectionAnnotation();
-    mpLineAnnotation->update();
+  if (mpLineAnnotation) {
+    lineType = mpLineAnnotation->getLineType();
+    if (lineType == LineAnnotation::ConnectionType || lineType == LineAnnotation::TransitionType) {
+      mpLineAnnotation->adjustGeometries();
+    }
   }
-  else
-  {
-    mpShapeAnnotation->initializeTransformation();
-    mpShapeAnnotation->removeCornerItems();
-    mpShapeAnnotation->drawCornerItems();
-    mpShapeAnnotation->update();
-    mpShapeAnnotation->getGraphicsView()->addClassAnnotation();
-    mpShapeAnnotation->getGraphicsView()->setCanAddClassAnnotation(true);
+  // if nothing has changed then just simply return true.
+  if (mOldAnnotation.compare(mpShapeAnnotation->getOMCShapeAnnotation()) == 0) {
+    return true;
+  } else if (mpLineAnnotation && lineType == LineAnnotation::ConnectionType) {
+    // create a UpdateConnectionCommand object and push it to the undo stack.
+    UpdateConnectionCommand *pUpdateConnectionCommand;
+    pUpdateConnectionCommand = new UpdateConnectionCommand(mpLineAnnotation, mOldAnnotation, mpShapeAnnotation->getOMCShapeAnnotation());
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->getUndoStack()->push(pUpdateConnectionCommand);
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->updateModelText();
+  } else if (mpLineAnnotation && lineType == LineAnnotation::TransitionType) {
+    // create a UpdateTransitionCommand object and push it to the undo stack.
+    UpdateTransitionCommand *pUpdateTransitionCommand;
+    pUpdateTransitionCommand = new UpdateTransitionCommand(mpLineAnnotation, mpLineAnnotation->getCondition(), mpLineAnnotation->getImmediate(),
+                                                           mpLineAnnotation->getReset(), mpLineAnnotation->getSynchronize(),
+                                                           mpLineAnnotation->getPriority(), mOldAnnotation, mpLineAnnotation->getCondition(),
+                                                           mpLineAnnotation->getImmediate(), mpLineAnnotation->getReset(),
+                                                           mpLineAnnotation->getSynchronize(), mpLineAnnotation->getPriority(),
+                                                           mpShapeAnnotation->getOMCShapeAnnotation());
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->getUndoStack()->push(pUpdateTransitionCommand);
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->updateModelText();
+  } else if (mpLineAnnotation && lineType == LineAnnotation::InitialStateType) {
+    // create a UpdateInitialStateCommand object and push it to the undo stack.
+    UpdateInitialStateCommand *pUpdateInitialStateCommand;
+    pUpdateInitialStateCommand = new UpdateInitialStateCommand(mpLineAnnotation, mOldAnnotation, mpShapeAnnotation->getOMCShapeAnnotation());
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->getUndoStack()->push(pUpdateInitialStateCommand);
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->updateModelText();
+  } else {
+    // create a UpdateShapeCommand object and push it to the undo stack.
+    UpdateShapeCommand *pUpdateShapeCommand;
+    pUpdateShapeCommand = new UpdateShapeCommand(mpShapeAnnotation, mOldAnnotation, mpShapeAnnotation->getOMCShapeAnnotation());
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->getUndoStack()->push(pUpdateShapeCommand);
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->updateClassAnnotationIfNeeded();
+    mpShapeAnnotation->getGraphicsView()->getModelWidget()->updateModelText();
   }
   return true;
 }
@@ -855,8 +895,9 @@ void ShapePropertiesDialog::browseImageFile()
 {
   QString imageFileName = StringHandler::getOpenFileName(this, QString(Helper::applicationName).append(" - ").append(Helper::chooseFile),
                                                          NULL, Helper::bitmapFileTypes, NULL);
-  if (imageFileName.isEmpty())
+  if (imageFileName.isEmpty()) {
     return;
+  }
   mpFileTextBox->setText(imageFileName);
   QPixmap pixmap;
   pixmap.load(imageFileName);
@@ -865,17 +906,13 @@ void ShapePropertiesDialog::browseImageFile()
 
 void ShapePropertiesDialog::storeImageInModelToggled(bool checked)
 {
-  /*
-    If store image in model check box is unchecked then see if model is saved or not.
-    If the model is not saved then make the check box checked again.
-    */
-  if (!checked)
-  {
-    MainWindow *pMainWindow = mpBitmapAnnotation->getGraphicsView()->getModelWidget()->getModelWidgetContainer()->getMainWindow();
-    if (mpBitmapAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeNode()->getFileName().isEmpty())
-    {
-      if (pMainWindow->getOptionsDialog()->getNotificationsPage()->getSaveModelForBitmapInsertionCheckBox()->isChecked())
-      {
+  /* If store image in model check box is unchecked then see if model is saved or not.
+   * If the model is not saved then make the check box checked again.
+   */
+  if (!checked) {
+    MainWindow *pMainWindow = MainWindow::instance();
+    if (!mpBitmapAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem()->isFilePathValid()) {
+      if (OptionsDialog::instance()->getNotificationsPage()->getSaveModelForBitmapInsertionCheckBox()->isChecked()) {
         NotificationsDialog *pNotificationsDialog = new NotificationsDialog(NotificationsDialog::SaveModelForBitmapInsertion,
                                                                             NotificationsDialog::InformationIcon,
                                                                             pMainWindow);

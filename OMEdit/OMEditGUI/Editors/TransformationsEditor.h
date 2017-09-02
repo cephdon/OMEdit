@@ -28,18 +28,14 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef TRANSFORMATIONSEDITOR_H
 #define TRANSFORMATIONSEDITOR_H
 
-#include "BaseEditor.h"
-#include "TransformationsWidget.h"
+#include "Editors/BaseEditor.h"
+#include "TransformationalDebugger/TransformationsWidget.h"
 
 class TransformationsWidget;
 class TransformationsEditor : public BaseEditor
@@ -47,6 +43,7 @@ class TransformationsEditor : public BaseEditor
   Q_OBJECT
 public:
   TransformationsEditor(TransformationsWidget *pTransformationsWidget);
+  virtual void popUpCompleter();
 private:
   TransformationsWidget *mpTransformationsWidget;
 private slots:

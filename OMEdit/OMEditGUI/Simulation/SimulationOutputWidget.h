@@ -28,25 +28,30 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef SIMULATIONOUTPUTWIDGET_H
 #define SIMULATIONOUTPUTWIDGET_H
 
-#include "MainWindow.h"
-#include "SimulationDialog.h"
-#include "SimulationProcessThread.h"
-#include "SimulationOutputHandler.h"
+#include "SimulationOptions.h"
+#include "Util/StringHandler.h"
 
+#include <QTreeView>
+#include <QPlainTextEdit>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QTextBrowser>
+#include <QProcess>
+#include <QDateTime>
+#include <QTcpServer>
+
+class Label;
 class SimulationProcessThread;
 class SimulationOutputHandler;
 class SimulationOutputWidget;
 class SimulationMessage;
+class ArchivedSimulationItem;
 
 class SimulationOutputTree : public QTreeView
 {
@@ -74,20 +79,21 @@ class SimulationOutputWidget : public QWidget
 {
   Q_OBJECT
 public:
-  SimulationOutputWidget(SimulationOptions simulationOptions, MainWindow *pMainWindow);
+  SimulationOutputWidget(SimulationOptions simulationOptions, QWidget *pParent = 0);
   ~SimulationOutputWidget();
   SimulationOptions getSimulationOptions() {return mSimulationOptions;}
-  MainWindow* getMainWindow() {return mpMainWindow;}
+  QProgressBar* getProgressBar() {return mpProgressBar;}
   QTabWidget* getGeneratedFilesTabWidget() {return mpGeneratedFilesTabWidget;}
   bool isOutputStructured() {return mIsOutputStructured;}
   SimulationOutputTree* getSimulationOutputTree() {return mpSimulationOutputTree;}
   QPlainTextEdit* getCompilationOutputTextBox() {return mpCompilationOutputTextBox;}
+  QTcpServer* getTcpServer() {return mpTcpServer;}
+  bool isSocketDisconnected() {return mSocketDisconnected;}
   SimulationProcessThread* getSimulationProcessThread() {return mpSimulationProcessThread;}
   void addGeneratedFileTab(QString fileName);
   void writeSimulationMessage(SimulationMessage *pSimulationMessage);
 private:
   SimulationOptions mSimulationOptions;
-  MainWindow *mpMainWindow;
   Label *mpProgressLabel;
   QProgressBar *mpProgressBar;
   QPushButton *mpCancelButton;
@@ -98,9 +104,14 @@ private:
   SimulationOutputTree *mpSimulationOutputTree;
   QPlainTextEdit *mpCompilationOutputTextBox;
   ArchivedSimulationItem *mpArchivedSimulationItem;
+  QTcpServer *mpTcpServer;
+  bool mSocketDisconnected;
   SimulationProcessThread *mpSimulationProcessThread;
   QDateTime mResultFileLastModifiedDateTime;
 public slots:
+  void createSimulationProgressSocket();
+  void readSimulationProgress();
+  void socketDisconnected();
   void compilationProcessStarted();
   void writeCompilationOutput(QString output, QColor color);
   void compilationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
@@ -109,6 +120,8 @@ public slots:
   void simulationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
   void cancelCompilationOrSimulation();
   void openTransformationBrowser(QUrl url);
+protected:
+  virtual void keyPressEvent(QKeyEvent *event);
 };
 
 #endif // SIMULATIONOUTPUTWIDGET_H

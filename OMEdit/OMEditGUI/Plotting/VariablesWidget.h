@@ -29,21 +29,21 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef VARIABLESWIDGET_H
 #define VARIABLESWIDGET_H
 
-#include "MainWindow.h"
-#include "SimulationDialog.h"
+#include <QDomDocument>
+
+#include "Simulation/SimulationOptions.h"
 #include "PlotWindow.h"
 
-class MainWindow;
+class OMCProxy;
+class TreeSearchFilters;
+class Label;
+
 class VariablesTreeItem
 {
 public:
@@ -57,10 +57,14 @@ public:
   QString getVariableName() {return mVariableName;}
   bool isValueChanged() {return mValueChanged;}
   QString getUnit() {return mUnit;}
+  QString getDisplayUnit() {return mDisplayUnit;}
+  QString getPreviousUnit() {return mPreviousUnit;}
+  QStringList getDisplayUnits() {return mDisplayUnits;}
   bool isChecked() const {return mChecked;}
   void setChecked(bool set) {mChecked = set;}
   bool isEditable() const {return mEditable;}
   void setEditable(bool set) {mEditable = set;}
+  bool isMainArray() const {return mIsMainArray;}
   SimulationOptions getSimulationOptions() {return mSimulationOptions;}
   void setSimulationOptions(SimulationOptions simulationOptions) {mSimulationOptions = simulationOptions;}
   QIcon getVariableTreeItemIcon(QString name) const;
@@ -72,8 +76,10 @@ public:
   bool setData(int column, const QVariant &value, int role = Qt::EditRole);
   QVariant data(int column, int role = Qt::DisplayRole) const;
   int row() const;
-  VariablesTreeItem* parent();
+  VariablesTreeItem* parent() {return mpParentVariablesTreeItem;}
+  VariablesTreeItem* parent() const {return mpParentVariablesTreeItem;}
   VariablesTreeItem* rootParent();
+  QVariant getValue(QString fromUnit, QString toUnit);
 private:
   QList<VariablesTreeItem*> mChildren;
   VariablesTreeItem *mpParentVariablesTreeItem;
@@ -86,10 +92,13 @@ private:
   bool mValueChanged;
   QString mUnit;
   QString mDisplayUnit;
+  QString mPreviousUnit;
+  QStringList mDisplayUnits;
   QString mDescription;
   QString mToolTip;
   bool mChecked;
   bool mEditable;
+  bool mIsMainArray;
   SimulationOptions mSimulationOptions;
 };
 
@@ -126,6 +135,7 @@ private:
                               QString *displayUnit, QString *description);
 signals:
   void itemChecked(const QModelIndex &index, qreal curveThickness, int curveStyle);
+  void unitChanged(const QModelIndex &index);
   void variableTreeItemRemoved(QString variable);
 public slots:
   void removeVariableTreeItem();
@@ -158,8 +168,8 @@ class VariablesWidget : public QWidget
 {
   Q_OBJECT
 public:
-  VariablesWidget(MainWindow *pMainWindow);
-  MainWindow* getMainWindow() {return mpMainWindow;}
+  VariablesWidget(QWidget *pParent = 0);
+  QComboBox* getSimulationTimeComboBox() {return mpSimulationTimeComboBox;}
   VariableTreeProxyModel* getVariableTreeProxyModel() {return mpVariableTreeProxyModel;}
   VariablesTreeModel* getVariablesTreeModel() {return mpVariablesTreeModel;}
   VariablesTreeView* getVariablesTreeView() {return mpVariablesTreeView;}
@@ -172,12 +182,10 @@ public:
   void reSimulate(bool showSetup);
   void updateInitXmlFile(SimulationOptions simulationOptions);
 private:
-  MainWindow *mpMainWindow;
-  QLineEdit *mpFindVariablesTextBox;
-  QComboBox *mpFindSyntaxComboBox;
-  QCheckBox *mpFindCaseSensitiveCheckBox;
-  QPushButton *mpExpandAllButton;
-  QPushButton *mpCollapseAllButton;
+  TreeSearchFilters *mpTreeSearchFilters;
+  Label *mpSimulationTimeLabel;
+  QComboBox *mpSimulationTimeComboBox;
+  QSlider *mpSimulationTimeSlider;
   VariableTreeProxyModel *mpVariableTreeProxyModel;
   VariablesTreeModel *mpVariablesTreeModel;
   VariablesTreeView *mpVariablesTreeView;
@@ -187,6 +195,9 @@ private:
 public slots:
   void plotVariables(const QModelIndex &index, qreal curveThickness, int curveStyle, OMPlot::PlotCurve *pPlotCurve = 0,
                      OMPlot::PlotWindow *pPlotWindow = 0);
+  void unitChanged(const QModelIndex &index);
+  void simulationTimeChanged(int timePercent);
+  void timeUnitChanged(QString unit);
   void updateVariablesTree(QMdiSubWindow *pSubWindow);
   void showContextMenu(QPoint point);
   void findVariables();

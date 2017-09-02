@@ -29,33 +29,29 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef OMCPROXY_H
 #define OMCPROXY_H
 
 #include "OpenModelicaScriptingAPIQt.h"
-#include "MainWindow.h"
-#include "Component.h"
-#include "StringHandler.h"
-#include "Utilities.h"
+#include "Component/Component.h"
+#include "Util/StringHandler.h"
+#include "Util/Utilities.h"
+#include "Util/Helper.h"
 
-class MainWindow;
 class CustomExpressionBox;
 class ComponentInfo;
 class StringHandler;
 class OMCInterface;
+class LibraryTreeItem;
 
-struct cachedOMCCommand
-{
-  QString mOMCCommand;
-  QString mOMCCommandResult;
-};
+typedef struct {
+  QString mFromUnit;
+  QString mToUnit;
+  OMCInterface::convertUnits_res mConvertUnits;
+} UnitConverion;
 
 class OMCProxy : public QObject
 {
@@ -67,30 +63,31 @@ private:
   CustomExpressionBox *mpExpressionTextBox;
   QPushButton *mpOMCLoggerSendButton;
   QPlainTextEdit *mpOMCLoggerTextBox;
-  Label *mpOMCLoggerEnableHintLabel;
+  QTextCursor mOMCLoggerTextCursor;
+  QWidget *mpOMCDiffWidget;
+  Label *mpOMCDiffBeforeLabel;
+  QPlainTextEdit *mpOMCDiffBeforeTextBox;
+  Label *mpOMCDiffAfterLabel;
+  QPlainTextEdit *mpOMCDiffAfterTextBox;
+  Label *mpOMCDiffMergedLabel;
+  QPlainTextEdit *mpOMCDiffMergedTextBox;
   QString mObjectRefFile;
   QList<QString> mCommandsList;
   int mCurrentCommandIndex;
-  QFile mCommunicationLogFile;
-  QTextStream mCommunicationLogFileTextStream;
-  QFile mCommandsMosFile;
-  QTextStream mCommandsLogFileTextStream;
-  MainWindow *mpMainWindow;
-  int mAnnotationVersion;
-  QMap<QString, QList<cachedOMCCommand> > mCachedOMCCommandsMap;
+  FILE *mpCommunicationLogFile;
+  FILE *mpCommandsLogFile;
+  double mTotalOMCCallsTime;
+  QList<UnitConverion> mUnitConversionList;
+  QMap<QString, QList<QString> > mDerivedUnitsMap;
   OMCInterface *mpOMCInterface;
 public:
-  OMCProxy(MainWindow *pMainWindow);
+  OMCProxy(QWidget *pParent = 0);
   ~OMCProxy();
-  void enableCustomExpression(bool enable);
   void getPreviousCommand();
   void getNextCommand();
-  cachedOMCCommand getcachedOMCCommand(QString className, QString command);
-  void cacheOMCCommand(QString className, QString command, QString commandResult);
-  void removeCachedOMCCommand(QString className);
   bool initializeOMC();
   void quitOMC();
-  void sendCommand(const QString expression, bool cacheCommand = false, QString className = QString(), bool dontUseCachedCommand = false);
+  void sendCommand(const QString expression);
   void setResult(QString value);
   QString getResult();
   void exitApplication();
@@ -109,11 +106,11 @@ public:
   QString getErrorKind();
   QString getErrorLevel();
   QString getVersion(QString className = QString("OpenModelica"));
-  void loadSystemLibraries(QSplashScreen *pSplashScreen);
-  void loadUserLibraries(QSplashScreen *pSplashScreen);
-  QStringList getClassNames(QString className = QString("AllLoadedClasses"), bool recursive = false, bool qualified = "false",
-                            bool sort = false, bool builtin = false, bool showProtected = "true");
-  QStringList searchClassNames(QString searchText, bool findInText = "false");
+  void loadSystemLibraries();
+  void loadUserLibraries();
+  QStringList getClassNames(QString className = QString("AllLoadedClasses"), bool recursive = false, bool qualified = false,
+                            bool sort = false, bool builtin = false, bool showProtected = true, bool includeConstants = false);
+  QStringList searchClassNames(QString searchText, bool findInText = false);
   OMCInterface::getClassInformation_res getClassInformation(QString className);
   bool isPackage(QString className);
   bool isBuiltinType(QString typeName);
@@ -121,35 +118,44 @@ public:
   bool isWhat(StringHandler::ModelicaClasses type, QString className);
   bool isProtectedClass(QString className, QString nestedClassName);
   bool isPartial(QString className);
+  bool isReplaceable(QString parentClassName, QString className);
   StringHandler::ModelicaClasses getClassRestriction(QString className);
   QString getParameterValue(QString className, QString parameter);
   QStringList getComponentModifierNames(QString className, QString name);
   QString getComponentModifierValue(QString className, QString name);
   bool setComponentModifierValue(QString className, QString name, QString modifierValue);
+  bool removeComponentModifiers(QString className, QString name);
+  QString getComponentModifierValues(QString className, QString name);
   QStringList getExtendsModifierNames(QString className, QString extendsClassName);
   QString getExtendsModifierValue(QString className, QString extendsClassName, QString modifierName);
   bool setExtendsModifierValue(QString className, QString extendsClassName, QString modifierName, QString modifierValue);
   bool isExtendsModifierFinal(QString className, QString extendsClassName, QString modifierName);
+  bool removeExtendsModifiers(QString className, QString extendsClassName);
   QString getIconAnnotation(QString className);
   QString getDiagramAnnotation(QString className);
   int getConnectionCount(QString className);
-  QString getNthConnection(QString className, int num);
+  QList<QString> getNthConnection(QString className, int index);
   QString getNthConnectionAnnotation(QString className, int num);
+  QList<QList<QString> > getTransitions(QString className);
+  QList<QList<QString> > getInitialStates(QString className);
   int getInheritanceCount(QString className);
   QString getNthInheritedClass(QString className, int num);
+  QList<QString> getInheritedClasses(QString className);
   QList<ComponentInfo*> getComponents(QString className);
   QStringList getComponentAnnotations(QString className);
-  QString getDocumentationAnnotation(QString className);
+  QString getDocumentationAnnotationInfoHeader(LibraryTreeItem *pLibraryTreeItem, QString infoHeader);
+  QString getDocumentationAnnotation(LibraryTreeItem *pLibraryTreeItem);
+  QList<QString> getDocumentationAnnotationInClass(LibraryTreeItem *pLibraryTreeItem);
   QString getClassComment(QString className);
   QString changeDirectory(QString directory = QString(""));
   bool loadModel(QString className, QString priorityVersion = QString("default"), bool notify = false, QString languageStandard = QString(""),
                  bool requireExactVersion = false);
   bool loadFile(QString fileName, QString encoding = Helper::utf8, bool uses = true);
-  bool loadString(QString value, QString fileName, QString encoding = Helper::utf8, bool checkError = true);
+  bool loadString(QString value, QString fileName, QString encoding = Helper::utf8, bool merge = false, bool checkError = true);
   QList<QString> parseFile(QString fileName, QString encoding = Helper::utf8);
   QList<QString> parseString(QString value, QString fileName);
-  bool createClass(QString type, QString className, QString extendsClass);
-  bool createSubClass(QString type, QString className, QString parentClassName, QString extendsClass);
+  bool createClass(QString type, QString className, LibraryTreeItem *pExtendsLibraryTreeItem);
+  bool createSubClass(QString type, QString className, LibraryTreeItem *pParentLibraryTreeItem, LibraryTreeItem *pExtendsLibraryTreeItem);
   bool existClass(QString className);
   bool renameClass(QString oldName, QString newName);
   bool deleteClass(QString className);
@@ -157,8 +163,10 @@ public:
   bool setSourceFile(QString className, QString path);
   bool save(QString className);
   bool saveModifiedModel(QString modelText);
-  bool saveTotalSCode(QString fileName, QString className);
+  bool saveTotalModel(QString fileName, QString className);
   QString list(QString className);
+  QString listFile(QString className);
+  QString diffModelicaFileListings(QString before, QString after);
   QString instantiateModel(QString className);
   bool addClassAnnotation(QString className, QString annotation);
   QString getDefaultComponentName(QString className);
@@ -175,6 +183,16 @@ public:
   bool setComponentDimensions(QString className, QString componentName, QString dimensions);
   bool addConnection(QString from, QString to, QString className, QString annotation);
   bool deleteConnection(QString from, QString to, QString className);
+  bool addTransition(QString className, QString from, QString to, QString condition, bool immediate, bool reset, bool synchronize,
+                     int priority, QString annotation);
+  bool deleteTransition(QString className, QString from, QString to, QString condition, bool immediate, bool reset, bool synchronize,
+                        int priority);
+  bool updateTransition(QString className, QString from, QString to, QString oldCondition, bool oldImmediate, bool oldReset,
+                        bool oldSynchronize, int oldPriority, QString condition, bool immediate, bool reset, bool synchronize, int priority,
+                        QString annotation);
+  bool addInitialState(QString className, QString state, QString annotation);
+  bool deleteInitialState(QString className, QString state);
+  bool updateInitialState(QString className, QString state, QString annotation);
   bool simulate(QString className, QString simualtionParameters);
   bool buildModel(QString className, QString simualtionParameters);
   bool translateModel(QString className, QString simualtionParameters);
@@ -184,15 +202,16 @@ public:
   bool ngspicetoModelica(QString fileName);
   QString checkAllModelsRecursive(QString className);
   bool isExperiment(QString className);
-  QStringList getSimulationOptions(QString className, double defaultTolerance = 1e-4);
-  bool translateModelFMU(QString className, double version, QString fileNamePrefix);
-  bool translateModelXML(QString className);
+  OMCInterface::getSimulationOptions_res getSimulationOptions(QString className, double defaultTolerance = 1e-6);
+  QString buildModelFMU(QString className, double version, QString type, QString fileNamePrefix, QList<QString> platforms, bool includeResources = true);
+  QString translateModelXML(QString className);
   QString importFMU(QString fmuName, QString outputDirectory, int logLevel, bool debugLogging, bool generateInputConnectors, bool generateOutputConnectors);
+  QString importFMUModelDescription(QString fmuModelDescriptionName, QString outputDirectory, int logLevel, bool debugLogging, bool generateInputConnectors, bool generateOutputConnectors);
   QString getMatchingAlgorithm();
-  void getAvailableMatchingAlgorithms(QStringList *choices, QStringList *comments);
+  OMCInterface::getAvailableMatchingAlgorithms_res getAvailableMatchingAlgorithms();
   bool setMatchingAlgorithm(QString matchingAlgorithm);
   QString getIndexReductionMethod();
-  void getAvailableIndexReductionMethods(QStringList *choices, QStringList *comments);
+  OMCInterface::getAvailableIndexReductionMethods_res getAvailableIndexReductionMethods();
   bool setIndexReductionMethod(QString method);
   bool setCommandLineOptions(QString options);
   bool clearCommandLineOptions();
@@ -201,18 +220,35 @@ public:
   QString getModelicaPath();
   QStringList getAvailableLibraries();
   QString getDerivedClassModifierValue(QString className, QString modifierName);
+  OMCInterface::convertUnits_res convertUnits(QString from, QString to);
+  QList<QString> getDerivedUnits(QString baseUnit);
+  QString getVersionDateAnnotation(QString className);
+  QString getVersionBuildAnnotation(QString className);
   bool getDocumentationClassAnnotation(QString className);
-  QString numProcessors();
+  QString getCommandLineOptionsAnnotation(QString className);
+  QList<QString> getAnnotationNamedModifiers(QString className, QString annotation);
+  QString getAnnotationModifierValue(QString className, QString annotation, QString modifier);
+  QString getSimulationFlagsAnnotation(QString className);
+  int numProcessors();
   QString help(QString topic);
-  QStringList getConfigFlagValidOptions(QString topic, QString *mainDescription = 0, QStringList *descriptions = 0);
+  OMCInterface::getConfigFlagValidOptions_res getConfigFlagValidOptions(QString topic);
   bool setDebugFlags(QString flags);
   bool exportToFigaro(QString className, QString directory, QString database, QString mode, QString options, QString processor);
   bool copyClass(QString className, QString newClassName, QString withIn);
   QStringList getEnumerationLiterals(QString className);
   void getSolverMethods(QStringList *methods, QStringList *descriptions);
+  void getJacobianMethods(QStringList *methods, QStringList *descriptions);
+  QString getJacobianFlagDetailedDescription();
   void getInitializationMethods(QStringList *methods, QStringList *descriptions);
   void getLinearSolvers(QStringList *methods, QStringList *descriptions);
   void getNonLinearSolvers(QStringList *methods, QStringList *descriptions);
+  void getLogStreams(QStringList *names, QStringList *descriptions);
+  bool moveClass(QString className, int offset);
+  bool moveClassToTop(QString className);
+  bool moveClassToBottom(QString className);
+  bool inferBindings(QString className);
+  bool generateVerificationScenarios(QString className);
+  QList<QList<QString > > getUses(QString className);
 signals:
   void commandFinished();
 public slots:
@@ -221,6 +257,7 @@ public slots:
   void showException(QString exception);
   void openOMCLoggerWidget();
   void sendCustomExpression();
+  void openOMCDiffWidget();
 };
 
 class CustomExpressionBox : public QLineEdit

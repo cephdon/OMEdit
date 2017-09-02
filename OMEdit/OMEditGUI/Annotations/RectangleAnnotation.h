@@ -29,33 +29,35 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef RECTANGLEANNOTATION_H
 #define RECTANGLEANNOTATION_H
 
 #include "ShapeAnnotation.h"
-#include "Component.h"
 
 class Component;
-
 class RectangleAnnotation : public ShapeAnnotation
 {
   Q_OBJECT
 public:
-  RectangleAnnotation(QString annotation, Component *pParent);
-  RectangleAnnotation(QString annotation, bool inheritedShape, GraphicsView *pGraphicsView);
+  // Used for icon/diagram shape
+  RectangleAnnotation(QString annotation, GraphicsView *pGraphicsView);
+  // Used for shape inside a component
+  RectangleAnnotation(ShapeAnnotation *pShapeAnnotation, Component *pParent);
+  // Used for icon/diagram inherited shape
+  RectangleAnnotation(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
+  // Used for default component
+  RectangleAnnotation(Component *pParent);
   void parseShapeAnnotation(QString annotation);
   QRectF boundingRect() const;
   QPainterPath shape() const;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0);
   void drawRectangleAnnotaion(QPainter *painter);
+  QString getOMCShapeAnnotation();
   QString getShapeAnnotation();
+  void updateShape(ShapeAnnotation *pShapeAnnotation);
 public slots:
   void duplicate();
 };

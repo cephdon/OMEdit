@@ -29,25 +29,18 @@
  *
  */
 /*
- *
  * @author Adeel Asghar <adeel.asghar@liu.se>
- *
- * RCS: $Id$
- *
  */
 
 #ifndef LIBRARYTREEWIDGET_H
 #define LIBRARYTREEWIDGET_H
 
-#include "MainWindow.h"
-#include "StringHandler.h"
+#include "OMC/OMCProxy.h"
+#include "Util/StringHandler.h"
 
-class MainWindow;
-class Component;
-class OMCProxy;
-class LibraryTreeWidget;
-class LibraryComponent;
-class ModelWidget;
+#include <QItemDelegate>
+#include <QTreeView>
+#include <QSortFilterProxyModel>
 
 class ItemDelegate : public QItemDelegate
 {
@@ -68,41 +61,38 @@ public:
   void drawHover(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const;
   virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const;
   virtual bool editorEvent(QEvent *event, QAbstractItemModel *model, const QStyleOptionViewItem &option, const QModelIndex &index);
+  virtual QWidget* createEditor(QWidget *pParent, const QStyleOptionViewItem &option, const QModelIndex &index) const;
+  virtual void setEditorData(QWidget *editor, const QModelIndex &index) const;
+public slots:
+  void unitComboBoxChanged(QString text);
 };
 
-class SearchClassWidget : public QWidget
+class ModelWidget;
+class ShapeAnnotation;
+class Component;
+class LineAnnotation;
+class LibraryTreeModel;
+class LibraryTreeItem : public QObject
 {
   Q_OBJECT
-private:
-  MainWindow *mpMainWindow;
-  QLineEdit *mpSearchClassTextBox;
-  QPushButton *mpSearchClassButton;
-  QCheckBox *mpFindInModelicaTextCheckBox;
-  Label *mpNoModelicaClassFoundLabel;
-  LibraryTreeWidget *mpLibraryTreeWidget;
-public:
-  SearchClassWidget(MainWindow *pMainWindow);
-  QLineEdit* getSearchClassTextBox();
-public slots:
-  void searchClasses();
-};
-
-class LibraryTreeNode : public QTreeWidgetItem
-{
 public:
   enum LibraryType {
-    InvalidType, /* Used to catch errors */
-    Modelica,   /* Used to represent Modelica models. */
-    Text,       /* Used to represent text based files. */
-    TLM         /* Used to represent TLM files. */
+    Modelica,    /* Used to represent Modelica models. */
+    Text,        /* Used to represent text based files. */
+    CompositeModel    /* Used to represent CompositeModel files. */
   };
   enum SaveContentsType {
     SaveInOneFile,
-    SaveFolderStructure,
-    SaveUnspecified
+    SaveFolderStructure
   };
-  LibraryTreeNode(LibraryType type, QString text, QString parentName, QString nameStructure,
-                  OMCInterface::getClassInformation_res classInformation, QString fileName, bool isSaved, LibraryTreeWidget *pParent);
+  LibraryTreeItem();
+  LibraryTreeItem(LibraryType type, QString text, QString nameStructure, OMCInterface::getClassInformation_res classInformation,
+                  QString fileName, bool isSaved, LibraryTreeItem *pParent = 0);
+  ~LibraryTreeItem();
+  bool isRootItem() {return mIsRootItem;}
+  int childrenSize() const {return mChildren.size();}
+  LibraryTreeItem* childAt(int index) const {return mChildren.at(index);}
+  QList<LibraryTreeItem*> childrenItems() {return mChildren;}
   LibraryType getLibraryType() {return mLibraryType;}
   void setLibraryType(LibraryType libraryType) {mLibraryType = libraryType;}
   void setSystemLibrary(bool systemLibrary) {mSystemLibrary = systemLibrary;}
@@ -111,169 +101,327 @@ public:
   ModelWidget* getModelWidget() {return mpModelWidget;}
   void setName(QString name) {mName = name;}
   const QString& getName() const {return mName;}
-  void setParentName(QString parentName) {mParentName = parentName;}
-  const QString& getParentName() {return mParentName;}
   void setNameStructure(QString nameStructure) {mNameStructure = nameStructure;}
   const QString& getNameStructure() {return mNameStructure;}
   void setClassInformation(OMCInterface::getClassInformation_res classInformation);
-  OMCInterface::getClassInformation_res getClassInformation() {return mClassInformation;}
-  void setFileName(QString fileName);
-  const QString& getFileName() {return mFileName;}
+  void setFileName(QString fileName) {mFileName = fileName;}
+  const QString& getFileName() const {return mFileName;}
+  bool isFilePathValid();
   void setReadOnly(bool readOnly) {mReadOnly = readOnly;}
   bool isReadOnly() {return mReadOnly;}
   void setIsSaved(bool isSaved) {mIsSaved = isSaved;}
   bool isSaved() {return mIsSaved;}
-  void setIsProtected(bool isProtected) {mIsProtected = isProtected;}
-  bool isProtected() {return mIsProtected;}
-  void setIsDocumentationClass(bool documentationClass) {mDocumentationClass = documentationClass;}
-  bool isDocumentationClass() {return mDocumentationClass;}
-  void setSaveContentsType(LibraryTreeNode::SaveContentsType saveContentsType) {mSaveContentsType = saveContentsType;}
-  StringHandler::ModelicaClasses getRestriction() {return StringHandler::getModelicaClassType(mClassInformation.restriction);}
+  bool isProtected() {return mLibraryType == LibraryTreeItem::Modelica ? mClassInformation.isProtectedClass : false;}
+  bool isDocumentationClass();
+  StringHandler::ModelicaClasses getRestriction() const {return StringHandler::getModelicaClassType(mClassInformation.restriction);}
+  bool isConnector() {return (getRestriction() == StringHandler::ExpandableConnector || getRestriction() == StringHandler::Connector);}
   bool isPartial() {return mClassInformation.partialPrefix;}
+  bool isState() {return mClassInformation.state;}
+  void setSaveContentsType(LibraryTreeItem::SaveContentsType saveContentsType) {mSaveContentsType = saveContentsType;}
   SaveContentsType getSaveContentsType() {return mSaveContentsType;}
-  void updateAttributes();
-  QIcon getModelicaNodeIcon();
-  bool inRange(int lineNumber) {return (lineNumber >= mClassInformation.lineNumberStart) && (lineNumber <= mClassInformation.lineNumberEnd);}
+  void setPixmap(QPixmap pixmap) {mPixmap = pixmap;}
+  QPixmap getPixmap() {return mPixmap;}
+  void setDragPixmap(QPixmap dragPixmap) {mDragPixmap = dragPixmap;}
+  QPixmap getDragPixmap() {return mDragPixmap;}
+  void setClassTextBefore(QString classTextBefore) {mClassTextBefore = classTextBefore;}
+  QString getClassTextBefore() {return mClassTextBefore;}
+  void setClassText(QString classText) {mClassText = classText;}
+  QString getClassText(LibraryTreeModel *pLibraryTreeModel);
+  void setClassTextAfter(QString classTextAfter) {mClassTextAfter = classTextAfter;}
+  QString getClassTextAfter() {return mClassTextAfter;}
+  void setExpanded(bool expanded) {mExpanded = expanded;}
+  bool isExpanded() const {return mExpanded;}
+  void setNonExisting(bool nonExisting) {mNonExisting = nonExisting;}
+  bool isNonExisting() const {return mNonExisting;}
+  QString getTooltip() const;
+  QIcon getLibraryTreeItemIcon() const;
+  bool inRange(int lineNumber);
+  bool isInPackageOneFile();
+  void insertChild(int position, LibraryTreeItem *pLibraryTreeItem);
+  LibraryTreeItem* child(int row);
+  void moveChild(int from, int to);
+  void addInheritedClass(LibraryTreeItem *pLibraryTreeItem);
+  void removeInheritedClasses();
+  QList<LibraryTreeItem*> getInheritedClasses() const {return mInheritedClasses;}
+  void removeChild(LibraryTreeItem *pLibraryTreeItem);
+  QVariant data(int column, int role = Qt::DisplayRole) const;
+  int row() const;
+  void setParent(LibraryTreeItem *pParentLibraryTreeItem) {mpParentLibraryTreeItem = pParentLibraryTreeItem;}
+  LibraryTreeItem* parent() {return mpParentLibraryTreeItem;}
+  bool isTopLevel();
+  bool isSimulationAllowed();
+  void emitLoaded();
+  void emitUnLoaded();
+  void emitShapeAdded(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
+  void emitComponentAdded(Component *pComponent);
+  void emitConnectionAdded(LineAnnotation *pConnectionLineAnnotation) {emit connectionAdded(pConnectionLineAnnotation);}
+  void emitCoOrdinateSystemUpdated(GraphicsView *pGraphicsView) {emit coOrdinateSystemUpdated(pGraphicsView);}
+
+  OMCInterface::getClassInformation_res mClassInformation;
 private:
+  bool mIsRootItem;
+  LibraryTreeItem *mpParentLibraryTreeItem;
+  QList<LibraryTreeItem*> mChildren;
+  QList<LibraryTreeItem*> mInheritedClasses;
   LibraryType mLibraryType;
   bool mSystemLibrary;
   ModelWidget *mpModelWidget;
-  LibraryTreeWidget *mpLibraryTreeWidget;
   QString mName;
   QString mParentName;
   QString mNameStructure;
-  OMCInterface::getClassInformation_res mClassInformation;
   QString mFileName;
   bool mReadOnly;
   bool mIsSaved;
-  bool mIsProtected;
-  bool mDocumentationClass;
   SaveContentsType mSaveContentsType;
+  QPixmap mPixmap;
+  QPixmap mDragPixmap;
+  QString mClassTextBefore;
+  QString mClassText;
+  QString mClassTextAfter;
+  bool mExpanded;
+  bool mNonExisting;
+signals:
+  void loaded(LibraryTreeItem *pLibraryTreeItem);
+  void loadedForComponent();
+  void unLoaded();
+  void unLoadedForComponent();
+  void shapeAdded(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
+  void shapeAddedForComponent();
+  void componentAdded(Component *pComponent);
+  void componentAddedForComponent();
+  void connectionAdded(LineAnnotation *pConnectionLineAnnotation);
+  void iconUpdated();
+  void coOrdinateSystemUpdated(GraphicsView *pGraphicsView);
+public slots:
+  void handleLoaded(LibraryTreeItem *pLibraryTreeItem);
+  void handleUnloaded();
+  void handleShapeAdded(ShapeAnnotation *pShapeAnnotation, GraphicsView *pGraphicsView);
+  void handleComponentAdded(Component *pComponent);
+  void handleConnectionAdded(LineAnnotation *pConnectionLineAnnotation);
+  void handleIconUpdated();
+  void handleCoOrdinateSystemUpdated(GraphicsView *pGraphicsView);
 };
 
-class LibraryTreeWidget : public QTreeWidget
+class LibraryWidget;
+class LibraryTreeProxyModel : public QSortFilterProxyModel
 {
   Q_OBJECT
 public:
-  LibraryTreeWidget(bool isSearchTree, MainWindow *pParent);
-  ~LibraryTreeWidget();
-  MainWindow* getMainWindow();
-  void setIsSearchedTree(bool isSearchTree);
-  bool isSearchedTree();
-  void addToExpandedLibraryTreeNodesList(LibraryTreeNode *pLibraryTreeNode);
-  void removeFromExpandedLibraryTreeNodesList(LibraryTreeNode *pLibraryTreeNode);
-  void createActions();
-  void addModelicaLibraries(QSplashScreen *pSplashScreen);
-  void createLibraryTreeNodes(LibraryTreeNode *pLibraryTreeNode);
-  void expandLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode);
-  void loadLibraryTreeNode(LibraryTreeNode *pParentLibraryTreeNode, LibraryTreeNode *pLibraryTreeNode);
-  void addLibraryTreeNodes(QList<LibraryTreeNode*> libraryTreeNodes);
-  bool isLibraryTreeNodeExpanded(QTreeWidgetItem *item);
-  static bool sortNodesAscending(const LibraryTreeNode *node1, const LibraryTreeNode *node2);
-  LibraryTreeNode* addLibraryTreeNode(QString name, QString parentName = QString(""), bool isSaved = true, int insertIndex = 0);
-  LibraryTreeNode* addLibraryTreeNode(LibraryTreeNode::LibraryType type, QString name, bool isSaved, int insertIndex = 0);
-  LibraryTreeNode* getLibraryTreeNode(QString nameStructure, Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive);
-  QList<LibraryTreeNode*> getLibraryTreeNodesList();
-  void addLibraryComponentObject(LibraryComponent *libraryComponent);
-  Component *getComponentObject(QString className);
-  LibraryComponent* getLibraryComponentObject(QString className);
-  bool isFileWritAble(QString filePath);
-  void showProtectedClasses(bool enable);
-  bool unloadClass(LibraryTreeNode *pLibraryTreeNode, bool askQuestion = true);
-  bool unloadTextFile(LibraryTreeNode *pLibraryTreeNode, bool askQuestion = true);
-  bool unloadTLMFile(LibraryTreeNode *pLibraryTreeNode, bool askQuestion = true);
-  void unloadClassHelper(LibraryTreeNode *pLibraryTreeNode);
-  bool saveLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode);
-  LibraryTreeNode* findParentLibraryTreeNodeSavedInSameFile(LibraryTreeNode *pLibraryTreeNode, QFileInfo fileInfo);
-  QString getUniqueLibraryTreeNodeName(QString name, int number = 1);
-  bool isSimulationAllowed(LibraryTreeNode *pLibraryTreeNode);
-  void loadDependentLibraries(QStringList libraries);
-  LibraryTreeNode* getLibraryTreeNodeFromFile(QString fileName, int lineNumber);
+  LibraryTreeProxyModel(LibraryWidget *pLibraryWidget, bool showOnlyModelica);
 private:
-  MainWindow *mpMainWindow;
-  bool mIsSearchTree;
-  QList<LibraryTreeNode*> mLibraryTreeNodesList;
-  QList<LibraryTreeNode*> mExpandedLibraryTreeNodesList;
-  QList<LibraryComponent*> mLibraryComponentsList;
-  QAction *mpViewClassAction;
+  LibraryWidget *mpLibraryWidget;
+  bool mShowOnlyModelica;
+protected:
+  virtual bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const;
+};
+
+class LibraryTreeModel : public QAbstractItemModel
+{
+  Q_OBJECT
+public:
+  LibraryTreeModel(LibraryWidget *pLibraryWidget);
+  LibraryTreeItem* getRootLibraryTreeItem() {return mpRootLibraryTreeItem;}
+  int columnCount(const QModelIndex &parent = QModelIndex()) const;
+  int rowCount(const QModelIndex &parent = QModelIndex()) const;
+  QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
+  QModelIndex index(int row, int column, const QModelIndex &parent = QModelIndex()) const;
+  QModelIndex parent(const QModelIndex & index) const;
+  QVariant data(const QModelIndex & index, int role = Qt::DisplayRole) const;
+  Qt::ItemFlags flags(const QModelIndex &index) const;
+  LibraryTreeItem* findLibraryTreeItem(const QString &name, LibraryTreeItem *pLibraryTreeItem = 0,
+                                       Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive) const;
+  LibraryTreeItem* findLibraryTreeItem(const QRegExp &regExp, LibraryTreeItem *pLibraryTreeItem = 0) const;
+  LibraryTreeItem* findLibraryTreeItemOneLevel(const QString &name, LibraryTreeItem *pLibraryTreeItem = 0,
+                                               Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive) const;
+  LibraryTreeItem* findNonExistingLibraryTreeItem(const QString &name, Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive) const;
+  QModelIndex libraryTreeItemIndex(const LibraryTreeItem *pLibraryTreeItem) const;
+  void addModelicaLibraries();
+  LibraryTreeItem* createLibraryTreeItem(QString name, LibraryTreeItem *pParentLibraryTreeItem, bool isSaved = true,
+                                         bool isSystemLibrary = false, bool load = false, int row = -1);
+  LibraryTreeItem* createNonExistingLibraryTreeItem(QString nameStructure);
+  void createLibraryTreeItems(QFileInfo fileInfo, LibraryTreeItem *pParentLibraryTreeItem);
+  LibraryTreeItem* createLibraryTreeItem(LibraryTreeItem::LibraryType type, QString name, QString nameStructure, QString path, bool isSaved,
+                                         LibraryTreeItem *pParentLibraryTreeItem, int row = -1);
+  void checkIfAnyNonExistingClassLoaded();
+  void addNonExistingLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem) {mNonExistingLibraryTreeItemsList.append(pLibraryTreeItem);}
+  void removeNonExistingLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem) {mNonExistingLibraryTreeItemsList.removeOne(pLibraryTreeItem);}
+  void updateLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  void updateLibraryTreeItemClassText(LibraryTreeItem *pLibraryTreeItem);
+  void updateLibraryTreeItemClassTextManually(LibraryTreeItem *pLibraryTreeItem, QString contents);
+  void readLibraryTreeItemClassText(LibraryTreeItem *pLibraryTreeItem);
+  LibraryTreeItem* getContainingFileParentLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  void loadLibraryTreeItemPixmap(LibraryTreeItem *pLibraryTreeItem);
+  void loadDependentLibraries(QStringList libraries);
+  LibraryTreeItem* getLibraryTreeItemFromFile(QString fileName, int lineNumber);
+  void showModelWidget(LibraryTreeItem *pLibraryTreeItem, bool show = true);
+  void showHideProtectedClasses();
+  bool unloadClass(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true);
+  bool unloadCompositeModelOrTextFile(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true);
+  bool unloadLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem, bool doDeleteClass);
+  bool removeLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool deleteTextFile(LibraryTreeItem *pLibraryTreeItem, bool askQuestion = true);
+  void moveClassUpDown(LibraryTreeItem *pLibraryTreeItem, bool up);
+  void moveClassTopBottom(LibraryTreeItem *pLibraryTreeItem, bool top);
+  void updateBindings(LibraryTreeItem *pLibraryTreeItem);
+  void generateVerificationScenarios(LibraryTreeItem *pLibraryTreeItem);
+  QString getUniqueTopLevelItemName(QString name, int number = 1);
+  void emitDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight) {emit dataChanged(topLeft, bottomRight);}
+private:
+  LibraryWidget *mpLibraryWidget;
+  LibraryTreeItem *mpRootLibraryTreeItem;
+  QList<LibraryTreeItem*> mNonExistingLibraryTreeItemsList;
+  QModelIndex libraryTreeItemIndexHelper(const LibraryTreeItem *pLibraryTreeItem, const LibraryTreeItem *pParentLibraryTreeItem,
+                                         const QModelIndex &parentIndex) const;
+  LibraryTreeItem* getLibraryTreeItemFromFileHelper(LibraryTreeItem *pLibraryTreeItem, QString fileName, int lineNumber);
+  void updateChildLibraryTreeItemClassText(LibraryTreeItem *pLibraryTreeItem, QString contents, QString fileName);
+  void readLibraryTreeItemClassTextFromText(LibraryTreeItem *pLibraryTreeItem, QString contents);
+  QString readLibraryTreeItemClassTextFromFile(LibraryTreeItem *pLibraryTreeItem);
+  void createLibraryTreeItems(LibraryTreeItem *pLibraryTreeItem);
+  LibraryTreeItem* createLibraryTreeItemImpl(QString name, LibraryTreeItem *pParentLibraryTreeItem, bool isSaved = true,
+                                             bool isSystemLibrary = false, bool load = false, int row = -1);
+  void createNonExistingLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem, LibraryTreeItem *pParentLibraryTreeItem, bool isSaved = true,
+                                        int row = -1);
+  void createLibraryTreeItemsImpl(QFileInfo fileInfo, LibraryTreeItem *pParentLibraryTreeItem);
+  LibraryTreeItem* createLibraryTreeItemImpl(LibraryTreeItem::LibraryType type, QString name, QString nameStructure, QString path, bool isSaved,
+                                             LibraryTreeItem *pParentLibraryTreeItem, int row = -1);
+  void unloadClassHelper(LibraryTreeItem *pLibraryTreeItem, LibraryTreeItem *pParentLibraryTreeItem);
+  void unloadClassChildren(LibraryTreeItem *pLibraryTreeItem);
+  void unloadFileHelper(LibraryTreeItem *pLibraryTreeItem, LibraryTreeItem *pParentLibraryTreeItem);
+  void unloadFileChildren(LibraryTreeItem *pLibraryTreeItem);
+  void deleteFileHelper(LibraryTreeItem *pLibraryTreeItem, LibraryTreeItem *pParentLibraryTreeItem);
+  void deleteFileChildren(LibraryTreeItem *pLibraryTreeItem);
+protected:
+  Qt::DropActions supportedDropActions() const;
+};
+
+class LibraryTreeView : public QTreeView
+{
+  Q_OBJECT
+public:
+  LibraryTreeView(LibraryWidget *pLibraryWidget);
+  LibraryWidget* getLibraryWidget() {return mpLibraryWidget;}
+private:
+  LibraryWidget *mpLibraryWidget;
+  QAction *mpOpenClassAction;
   QAction *mpViewDocumentationAction;
+  QAction *mpInformationAction;
   QAction *mpNewModelicaClassAction;
+  QAction *mpSaveAction;
+  QAction *mpSaveAsAction;
+  QAction *mpSaveTotalAction;
+  QAction *mpMoveUpAction;
+  QAction *mpMoveDownAction;
+  QAction *mpMoveTopAction;
+  QAction *mpMoveBottomAction;
+  QMenu *mpOrderMenu;
   QAction *mpInstantiateModelAction;
   QAction *mpCheckModelAction;
   QAction *mpCheckAllModelsAction;
   QAction *mpSimulateAction;
   QAction *mpSimulateWithTransformationalDebuggerAction;
   QAction *mpSimulateWithAlgorithmicDebuggerAction;
+#if !defined(WITHOUT_OSG)
+  QAction *mpSimulateWithAnimationAction;
+#endif
   QAction *mpSimulationSetupAction;
   QAction *mpDuplicateClassAction;
   QAction *mpUnloadClassAction;
-  QAction *mpUnloadTextFileAction;
-  QAction *mpUnloadTLMFileAction;
-  QAction *mpRefreshAction;
+  QAction *mpUnloadCompositeModelFileAction;
+  QAction *mpNewFileAction;
+  QAction *mpNewFolderAction;
+  QAction *mpRenameAction;
+  QAction *mpDeleteAction;
   QAction *mpExportFMUAction;
   QAction *mpExportXMLAction;
   QAction *mpExportFigaroAction;
+  QAction *mpUpdateBindingsAction;
+  QAction *mpGenerateVerificationScenariosAction;
   QAction *mpFetchInterfaceDataAction;
   QAction *mpTLMCoSimulationAction;
-  bool saveModelicaLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode);
-  bool saveTextLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode);
-  bool saveTLMLibraryTreeNode(LibraryTreeNode *pLibraryTreeNode);
-  bool saveLibraryTreeNodeHelper(LibraryTreeNode *pLibraryTreeNode);
-  bool saveLibraryTreeNodeOneFileHelper(LibraryTreeNode *pLibraryTreeNode);
-  bool setSubModelsFileNameOneFileHelper(LibraryTreeNode *pLibraryTreeNode, QString filePath);
-  void setSubModelsSavedOneFileHelper(LibraryTreeNode *pLibraryTreeNode);
-  bool saveLibraryTreeNodeFolderHelper(LibraryTreeNode *pLibraryTreeNode);
-  bool saveSubModelsFolderHelper(LibraryTreeNode *pLibraryTreeNode, QString directoryName);
-  bool saveLibraryTreeNodeOneFileOrFolderHelper(LibraryTreeNode *pLibraryTreeNode);
-  void unloadLibraryTreeNodeAndModelWidget(LibraryTreeNode *pLibraryTreeNode);
+  void createActions();
+  LibraryTreeItem* getSelectedLibraryTreeItem();
+  void libraryTreeItemExpanded(LibraryTreeItem* pLibraryTreeItem);
 public slots:
-  void expandLibraryTreeNode(QTreeWidgetItem *item);
+  void libraryTreeItemExpanded(QModelIndex index);
   void showContextMenu(QPoint point);
-  void createNewModelicaClass();
+  void openClass();
   void viewDocumentation();
-  void simulate();
-  void simulateWithTransformationalDebugger();
-  void simulateWithAlgorithmicDebugger();
-  void simulationSetup();
+  void openInformationDialog();
+  void createNewModelicaClass();
+  void saveClass();
+  void saveAsClass();
+  void saveTotalClass();
+  void moveClassUp();
+  void moveClassDown();
+  void moveClassTop();
+  void moveClassBottom();
   void instantiateModel();
   void checkModel();
   void checkAllModels();
+  void simulate();
+  void simulateWithTransformationalDebugger();
+  void simulateWithAlgorithmicDebugger();
+  void simulateWithAnimation();
+  void simulationSetup();
   void duplicateClass();
   void unloadClass();
-  void unloadTextFile();
-  void unloadTLMFile();
-  void refresh();
+  void unloadCompositeModelOrTextFile();
+  void createNewFile();
+  void createNewFolder();
+  void renameLibraryTreeItem();
+  void deleteTextFile();
   void exportModelFMU();
   void exportModelXML();
   void exportModelFigaro();
+  void updateBindings();
+  void generateVerificationScenarios();
   void fetchInterfaceData();
   void TLMSimulate();
-  void openFile(QString fileName, QString encoding = Helper::utf8, bool showProgress = true, bool checkFileExists = false);
-  void openModelicaFile(QString fileName, QString encoding = Helper::utf8, bool showProgress = true);
-  void openTLMFile(QFileInfo fileInfo, bool showProgress = true);
-  void parseAndLoadModelicaText(QString modelText);
-  void showModelWidget(LibraryTreeNode *pLibraryTreeNode = 0, bool newClass = false, bool extendsClass = false, QString text = QString());
-  void openLibraryTreeNode(QString nameStructure);
-  void loadLibraryComponent(LibraryTreeNode *pLibraryTreeNode);
 protected:
   virtual void mouseDoubleClickEvent(QMouseEvent *event);
   virtual void startDrag(Qt::DropActions supportedActions);
-  Qt::DropActions supportedDropActions() const;
+  virtual void keyPressEvent(QKeyEvent *event);
 };
 
-class LibraryComponent
+class LibraryWidget : public QWidget
 {
+  Q_OBJECT
 public:
-  LibraryComponent(QString value, QString className, OMCProxy *omc);
-  ~LibraryComponent();
-  QPixmap getComponentPixmap(QSize size);
-  void hasIconAnnotation(Component *pComponent);
-
-  QString mClassName;
-  Component *mpComponent;
-  QGraphicsView *mpGraphicsView;
-  QRectF mRectangle;
-  bool mHasIconAnnotation;
+  LibraryWidget(QWidget *pParent = 0);
+  TreeSearchFilters* getTreeSearchFilters() {return mpTreeSearchFilters;}
+  LibraryTreeModel* getLibraryTreeModel() {return mpLibraryTreeModel;}
+  LibraryTreeProxyModel* getLibraryTreeProxyModel() {return mpLibraryTreeProxyModel;}
+  LibraryTreeView* getLibraryTreeView() {return mpLibraryTreeView;}
+  void openFile(QString fileName, QString encoding = Helper::utf8, bool showProgress = true, bool checkFileExists = false,
+                bool loadExternalModel = false);
+  void openModelicaFile(QString fileName, QString encoding = Helper::utf8, bool showProgress = true);
+  void openCompositeModelOrTextFile(QFileInfo fileInfo, bool showProgress = true);
+  void openDirectory(QFileInfo fileInfo, bool showProgress = true);
+  bool parseCompositeModelFile(QFileInfo fileInfo, QString *pCompositeModelName);
+  void parseAndLoadModelicaText(QString modelText);
+  bool saveFile(QString fileName, QString contents);
+  bool saveLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  void saveAsLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool saveTotalLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  void openLibraryTreeItem(QString nameStructure);
+private:
+  TreeSearchFilters *mpTreeSearchFilters;
+  LibraryTreeModel *mpLibraryTreeModel;
+  LibraryTreeProxyModel *mpLibraryTreeProxyModel;
+  LibraryTreeView *mpLibraryTreeView;
+  bool saveModelicaLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool saveModelicaLibraryTreeItemHelper(LibraryTreeItem *pLibraryTreeItem);
+  bool saveModelicaLibraryTreeItemOneFile(LibraryTreeItem *pLibraryTreeItem);
+  void saveChildLibraryTreeItemsOneFile(LibraryTreeItem *pLibraryTreeItem);
+  void saveChildLibraryTreeItemsOneFileHelper(LibraryTreeItem *pLibraryTreeItem);
+  bool saveModelicaLibraryTreeItemFolder(LibraryTreeItem *pLibraryTreeItem);
+  bool saveTextLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool saveCompositeModelLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool saveAsCompositeModelLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem);
+  bool saveCompositeModelLibraryTreeItem(LibraryTreeItem *pLibraryTreeItem, QString fileName);
+  bool saveTotalLibraryTreeItemHelper(LibraryTreeItem *pLibraryTreeItem);
+public slots:
+  void searchClasses();
 };
 
 #endif // LIBRARYTREEWIDGET_H
